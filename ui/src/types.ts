@@ -140,6 +140,19 @@ export interface GraphSnapshot {
   truncated: boolean;
 }
 
+export interface NodeKind {
+  id: number;
+  name: string;
+  description: string;
+}
+
+export interface GraphQueryResult {
+  items: GraphNode[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface BusTopicSnapshot {
   topic: string;
   publishedCount: number;

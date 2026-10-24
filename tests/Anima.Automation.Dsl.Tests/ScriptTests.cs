@@ -47,6 +47,19 @@ public sealed class ScriptTests
     }
 
     [Fact]
+    public void Evaluate_is_an_alias_for_eval()
+    {
+        var result = new AutomationScriptParser().Parse("""
+            name: evaluate-alias
+            steps:
+              - evaluate: "document.title"
+            """);
+
+        Assert.True(result.IsValid);
+        Assert.IsType<EvaluateStep>(result.Script!.Steps.Single());
+    }
+
+    [Fact]
     public async Task Runner_executes_steps_against_the_session()
     {
         var session = new FakeSession();

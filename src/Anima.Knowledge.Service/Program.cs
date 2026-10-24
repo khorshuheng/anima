@@ -288,6 +288,7 @@ app.MapDelete("/api/edges", async (
 
 app.MapGet("/api/search", async (
     string q,
+    string? kind,
     string? scope,
     long? within,
     string? via,
@@ -301,6 +302,7 @@ app.MapGet("/api/search", async (
 {
     var query = new NodeQuery
     {
+        Kind = kind,
         Scope = KnowledgeEndpointMappings.ParseScope(scope),
         Within = within,
         Via = via,

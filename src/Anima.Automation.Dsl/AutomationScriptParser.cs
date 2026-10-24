@@ -214,6 +214,7 @@ public sealed class AutomationScriptParser
                     : null;
 
             case "eval":
+            case "evaluate":
             case "script":
                 return RequireScalar(value, verb, index, diagnostics) is { } expression
                     ? new EvaluateStep(expression)

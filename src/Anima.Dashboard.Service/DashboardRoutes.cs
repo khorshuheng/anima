@@ -44,6 +44,15 @@ public static class DashboardRoutes
         return parameters.Count == 0 ? "api/graph" : $"api/graph?{string.Join('&', parameters)}";
     }
 
+    /// <summary><c>/api/dashboard/nodes</c> -> knowledge <c>api/nodes</c> with the caller's filters.</summary>
+    public static string Nodes(string? queryString = null) => "api/nodes" + queryString;
+
+    /// <summary><c>/api/dashboard/search</c> -> knowledge <c>api/search</c> with the caller's filters.</summary>
+    public static string Search(string? queryString = null) => "api/search" + queryString;
+
+    /// <summary><c>/api/dashboard/kinds</c> -> knowledge <c>api/node-kinds</c>.</summary>
+    public static string Kinds() => "api/node-kinds";
+
     /// <summary><c>/api/dashboard/bus</c> -> bus <c>api/bus/snapshot</c>.</summary>
     public static string BusSnapshot() => "api/bus/snapshot";
 

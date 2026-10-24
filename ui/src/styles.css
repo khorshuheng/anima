@@ -302,3 +302,83 @@ summary { cursor: pointer; color: var(--accent); font-size: 12px; }
   .topbar { flex-wrap: wrap; }
   .feed-item { grid-template-columns: 70px 1fr; }
 }
+
+/* Graph search and fact browsing */
+.graph-search-panel { display: flex; flex-direction: column; gap: 12px; }
+.graph-search-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 170px 190px auto;
+  gap: 10px;
+  align-items: end;
+}
+.field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.field > span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+.field input, .field select {
+  width: 100%;
+  background: #0b0f14;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+.field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+.field-search input { min-width: 0; }
+.graph-search-error { margin: 0; }
+.search-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 2px;
+}
+.search-result {
+  text-align: left;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text);
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  cursor: pointer;
+  min-width: 0;
+}
+.search-result:hover { border-color: #3d4b5e; }
+.search-result.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.search-result-heading { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.search-result-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.search-result-description {
+  color: #c9d1d9;
+  font-size: 11px;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.kind-catalog { margin: 0; }
+.kind-catalog ul { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.kind-catalog li { display: flex; align-items: baseline; gap: 8px; }
+.kind-catalog .chip { flex: 0 0 auto; }
+@media (max-width: 900px) {
+  .graph-search-form { grid-template-columns: 1fr 1fr; }
+  .graph-search-form .field-search { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  .graph-search-form { grid-template-columns: 1fr; }
+}
+.graph-filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  padding-bottom: 9px;
+}
+.graph-filter-toggle input { accent-color: var(--accent); }
+.inspector-focus { margin-top: 10px; }

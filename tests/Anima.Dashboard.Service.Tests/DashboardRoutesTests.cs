@@ -50,6 +50,29 @@ public sealed class DashboardRoutesTests
     }
 
     [Fact]
+    public void Nodes_forwards_kind_scope_and_limit_filters()
+    {
+        Assert.Equal("api/nodes", DashboardRoutes.Nodes());
+        Assert.Equal(
+            "api/nodes?kind=goal&scope=all&summary=true&limit=100",
+            DashboardRoutes.Nodes("?kind=goal&scope=all&summary=true&limit=100"));
+    }
+
+    [Fact]
+    public void Search_forwards_the_knowledge_search_filters()
+    {
+        Assert.Equal(
+            "api/search?q=workflow&kind=goal&scope=resolved&limit=50",
+            DashboardRoutes.Search("?q=workflow&kind=goal&scope=resolved&limit=50"));
+    }
+
+    [Fact]
+    public void Kinds_targets_the_node_kind_catalog()
+    {
+        Assert.Equal("api/node-kinds", DashboardRoutes.Kinds());
+    }
+
+    [Fact]
     public void Bus_snapshot_targets_the_bus_diagnostics_endpoint()
     {
         Assert.Equal("api/bus/snapshot", DashboardRoutes.BusSnapshot());

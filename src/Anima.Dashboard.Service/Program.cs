@@ -84,6 +84,52 @@ app.MapGet("/api/dashboard/graph", async (
     await upstream.WriteAsync(context.Response, cancellationToken);
 });
 
+app.MapGet("/api/dashboard/nodes", async (
+    HttpContext context,
+    IHttpClientFactory httpClientFactory,
+    IOptions<DashboardOptions> options,
+    CancellationToken cancellationToken) =>
+{
+    var proxy = new DashboardProxy(
+        httpClientFactory.CreateClient(DashboardUpstreams.Knowledge),
+        DashboardUpstreams.Knowledge,
+        options.Value.UpstreamTimeout);
+    var upstream = await proxy.GetAsync(
+        DashboardRoutes.Nodes(context.Request.QueryString.Value),
+        cancellationToken);
+    await upstream.WriteAsync(context.Response, cancellationToken);
+});
+
+app.MapGet("/api/dashboard/search", async (
+    HttpContext context,
+    IHttpClientFactory httpClientFactory,
+    IOptions<DashboardOptions> options,
+    CancellationToken cancellationToken) =>
+{
+    var proxy = new DashboardProxy(
+        httpClientFactory.CreateClient(DashboardUpstreams.Knowledge),
+        DashboardUpstreams.Knowledge,
+        options.Value.UpstreamTimeout);
+    var upstream = await proxy.GetAsync(
+        DashboardRoutes.Search(context.Request.QueryString.Value),
+        cancellationToken);
+    await upstream.WriteAsync(context.Response, cancellationToken);
+});
+
+app.MapGet("/api/dashboard/kinds", async (
+    HttpContext context,
+    IHttpClientFactory httpClientFactory,
+    IOptions<DashboardOptions> options,
+    CancellationToken cancellationToken) =>
+{
+    var proxy = new DashboardProxy(
+        httpClientFactory.CreateClient(DashboardUpstreams.Knowledge),
+        DashboardUpstreams.Knowledge,
+        options.Value.UpstreamTimeout);
+    var upstream = await proxy.GetAsync(DashboardRoutes.Kinds(), cancellationToken);
+    await upstream.WriteAsync(context.Response, cancellationToken);
+});
+
 app.MapGet("/api/dashboard/bus", async (
     HttpContext context,
     IHttpClientFactory httpClientFactory,

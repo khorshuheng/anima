@@ -1,0 +1,15 @@
+name: dashboard-explore
+description: Browse goals and facts from the Graph tab and verify completion filtering.
+steps:
+  - goto: /
+  - click: "button.tab:has-text('Graph')"
+  - waitFor: { target: "h2:has-text('Knowledge graph')" }
+  - fill: { target: "[data-testid=graph-search]", value: "goal" }
+  - click: "[data-testid=graph-search-submit]"
+  - waitFor: { target: "[data-testid=graph-search-results]" }
+  - eval: "document.querySelector('[data-testid=graph-result-count]').textContent"
+  - eval: "document.querySelectorAll('[data-testid^=graph-result-]').length"
+  - eval: "document.querySelector('[data-testid=graph-kinds]').textContent.includes('goal')"
+  - select: { target: "[data-testid=graph-scope]", value: "resolved" }
+  - eval: "document.querySelector('[data-testid=graph-result-count]').textContent"
+  - screenshot: /tmp/anima-dashboard-explore.png

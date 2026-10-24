@@ -2,7 +2,9 @@ import type {
   AnswerView,
   AssignmentView,
   BusSnapshot,
+  GraphQueryResult,
   GraphSnapshot,
+  NodeKind,
   QuestionView,
   ResultView,
   SpecView,
@@ -68,6 +70,22 @@ export const api = {
     ),
 
   bus: () => get<BusSnapshot>(`${dashboardBase}/bus`),
+  kinds: () => get<{ items: NodeKind[] }>(`${dashboardBase}/kinds`),
+
+  nodes: (params: { kind?: string; scope?: string; limit?: number }) => {
+    const query = new URLSearchParams({ summary: 'true', limit: String(params.limit ?? 100) });
+    if (params.kind) query.set('kind', params.kind);
+    if (params.scope) query.set('scope', params.scope);
+    return get<GraphQueryResult>(`${dashboardBase}/nodes?${query.toString()}`);
+  },
+
+  search: (params: { q: string; kind?: string; scope?: string; limit?: number }) => {
+    const query = new URLSearchParams({ q: params.q, summary: 'true', limit: String(params.limit ?? 100) });
+    if (params.kind) query.set('kind', params.kind);
+    if (params.scope) query.set('scope', params.scope);
+    return get<GraphQueryResult>(`${dashboardBase}/search?${query.toString()}`);
+  },
+
 
   busStreamUrl: (topics: string) =>
     `${dashboardBase}/bus/stream?topics=${encodeURIComponent(topics)}`,
