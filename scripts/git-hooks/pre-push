@@ -1,32 +1,21 @@
 #!/usr/bin/env bash
 # Reject pushes whose commits add or modify SQLite/database files.
-#
-# A local deployment hook can be attached through:
-#   git config --local anima.deployPrePushHook /path/to/pre-push
-# That hook receives the same arguments and stdin. Deployment code itself is
-# intentionally not stored in this repository.
 set -euo pipefail
 
 zero=0000000000000000000000000000000000000000
-pushes=()
-while IFS= read -r line; do
-  pushes+=("$line")
-done
-
 status=0
-for line in "${pushes[@]}"; do
-  read -r local_ref local_sha remote_ref remote_sha <<<"$line"
-  [ "$local_sha" = "$zero" ] && continue
 
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
   if [ "$remote_sha" = "$zero" ]; then
-    # First push: inspect the whole tree, including the root commit.
+    # First push: inspect the whole tree, including the root commit (diff-tree
+    # without --root hides root-commit files).
     blocked=$(git ls-tree -r --name-only "$local_sha" |
       grep -Ei '\.(db|db3|db-wal|db-shm|db-journal|sqlite|sqlite3|sqlite-wal|sqlite-shm)$' || true)
   else
     blocked=$(git diff-tree --no-commit-id --name-only -r "$remote_sha..$local_sha" |
       grep -Ei '\.(db|db3|db-wal|db-shm|db-journal|sqlite|sqlite3|sqlite-wal|sqlite-shm)$' || true)
   fi
-
   if [ -n "$blocked" ]; then
     echo "refusing to push SQLite/database files on $local_ref:" >&2
     printf '  %s\n' $blocked >&2
@@ -34,11 +23,4 @@ for line in "${pushes[@]}"; do
   fi
 done
 
-[ "$status" -eq 0 ] || exit 1
-
-extra=$(git config --get anima.deployPrePushHook || true)
-if [ -n "$extra" ] && [ -x "$extra" ]; then
-  if ! printf '%s\n' "${pushes[@]}" | "$extra" "$@"; then
-    echo "warning: anima deployment pre-push hook failed; push continues" >&2
-  fi
-fi
+exit "$status"
