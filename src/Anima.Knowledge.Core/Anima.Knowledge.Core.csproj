@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <ProjectReference Include="../Anima.Knowledge.Abstractions/Anima.Knowledge.Abstractions.csproj" />
+    <ProjectReference Include="../Anima.Bus.Abstractions/Anima.Bus.Abstractions.csproj" />
+    <ProjectReference Include="../Anima.Contracts/Anima.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

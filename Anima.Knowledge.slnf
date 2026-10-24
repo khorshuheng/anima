@@ -6,7 +6,9 @@
       "src/Anima.Knowledge.Client/Anima.Knowledge.Client.csproj",
       "src/Anima.Knowledge.Core/Anima.Knowledge.Core.csproj",
       "src/Anima.Knowledge.Service/Anima.Knowledge.Service.csproj",
-      "tests/Anima.Knowledge.Core.Tests/Anima.Knowledge.Core.Tests.csproj"
+      "src/Anima.Knowledge.Sqlite/Anima.Knowledge.Sqlite.csproj",
+      "tests/Anima.Knowledge.Core.Tests/Anima.Knowledge.Core.Tests.csproj",
+      "tests/Anima.Knowledge.Sqlite.Tests/Anima.Knowledge.Sqlite.Tests.csproj"
     ]
   }
 }

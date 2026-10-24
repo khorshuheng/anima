@@ -54,7 +54,8 @@ anima workflow answer <id> --answer 12="Target is Windows" --answer 13="Chrome o
 Repeat until the analyst has no more questions. Stop when the analyst says the
 spec is ready; do not invent questions for Anima.
 
-Watch for wake-ups if useful, but always re-read state:
+Watch for wake-ups if useful, but always re-read state (the visualizer at
+`http://127.0.0.1:7415/ui/` does the same):
 
 ```bash
 anima bus watch --topics anima.workflow.events
@@ -134,6 +135,7 @@ A successful review sets `completed`; a failed one sets `failed`.
 ## 7. Bus usage
 
 - Events: `anima bus watch --topics anima.workflow.events`.
+- Knowledge changes: `anima.knowledge.changed` (question/spec/task/result nodes).
 - Request/response to a running agent:
 
 ```bash

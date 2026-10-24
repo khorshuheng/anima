@@ -27,7 +27,7 @@ transports messages, drives browsers and runs deploy scripts.
 | Service | Owns |
 | --- | --- |
 | Workflow | questions/answers, spec + tasks, assignment metadata, results, phases, timeline, bus dispatch |
-| Knowledge | graph, task/memory vocabulary, workflow vocabulary, compact reads |
+| Knowledge | SQLite graph, task/memory and workflow vocabulary, compact reads, graph events |
 | Bus | publish, SSE subscribe, request/response, contract validation |
 | Automation | browser sessions, CDP, YAML script execution |
 | Deploy | push normalization, rule matching, script execution |
@@ -108,8 +108,14 @@ question->workflow, `answers` answer->question (resolves), `phase_of`,
 Reads support `summary=true` (drop content) and exact property filters, which is
 how the workflow finds a spec task or assignment without fetching the graph.
 
-Persistence is in-memory by default; `Anima.Knowledge.Client` targets a
-memgraph-compatible service for shared, durable state.
+Persistence is SQLite (`Anima.Knowledge.Sqlite`) with versioned migrations, WAL,
+foreign keys, JSON properties and an FTS5 index kept in sync by triggers. Writes
+are serialized in-process and transactional; reads run on WAL connections.
+In-memory is test-only.
+
+Every successful mutation publishes a compact `GraphEvent` on
+`anima.knowledge.changed`. It carries ids and names, not payloads; consumers
+refetch. `Anima.Knowledge.Client` targets any memgraph-compatible service.
 
 ## Contracts
 
@@ -117,6 +123,13 @@ Descriptor-driven JSON: `.proto` is the IDL, `contracts/descriptors/anima.pb` is
 loaded at runtime, and payloads are validated against the descriptors. No C#
 message types are generated. `application/x-protobuf+json` is the bus content
 type.
+
+## UI
+
+`ui/` is a React/Vite read-only visualizer. `Anima.Workflow.Service` serves
+`ui/dist` at `/ui/`; the browser fetches the workflow API same-origin and
+subscribes to `anima.**` on the bus (CORS restricted to local UI origins). A
+10-second poll is the fallback. No mutations are exposed.
 
 ## Automation and deploy
 

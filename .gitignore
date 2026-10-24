@@ -486,3 +486,7 @@ artifacts/
 
 # workflow worktrees and logs
 .anima/
+
+# ui
+ui/node_modules/
+ui/dist/

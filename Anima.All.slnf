@@ -19,6 +19,7 @@
       "src/Anima.Knowledge.Client/Anima.Knowledge.Client.csproj",
       "src/Anima.Knowledge.Core/Anima.Knowledge.Core.csproj",
       "src/Anima.Knowledge.Service/Anima.Knowledge.Service.csproj",
+      "src/Anima.Knowledge.Sqlite/Anima.Knowledge.Sqlite.csproj",
       "src/Anima.Workflow.Abstractions/Anima.Workflow.Abstractions.csproj",
       "src/Anima.Workflow.Core/Anima.Workflow.Core.csproj",
       "src/Anima.Workflow.Service/Anima.Workflow.Service.csproj",
@@ -29,6 +30,7 @@
       "tests/Anima.Contracts.Tests/Anima.Contracts.Tests.csproj",
       "tests/Anima.Deploy.Core.Tests/Anima.Deploy.Core.Tests.csproj",
       "tests/Anima.Knowledge.Core.Tests/Anima.Knowledge.Core.Tests.csproj",
+      "tests/Anima.Knowledge.Sqlite.Tests/Anima.Knowledge.Sqlite.Tests.csproj",
       "tests/Anima.Workflow.Core.Tests/Anima.Workflow.Core.Tests.csproj"
     ]
   }

@@ -38,6 +38,7 @@ public sealed record WorkflowState(
     long Id,
     long GoalId,
     string Name,
+    string Requirement,
     WorkflowStatus Status,
     string RepoPath,
     string BaseRef,

@@ -21,8 +21,9 @@ contracts/proto/anima/<area>/v1/*.proto   schema sources (user-editable)
 contracts/descriptors/anima.pb            generated descriptor set (committed)
 ```
 
-Area packages: `common`, `bus`, `knowledge`, `automation`, `deploy`, `agent`
-(external agent messages), `workflow` (role tasks, results and events).
+Area packages: `common`, `bus`, `knowledge` (nodes, `GraphEvent`), `automation`,
+`deploy`, `agent` (external agent messages), `workflow` (role tasks, results and
+events).
 
 ## Wire format
 

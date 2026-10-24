@@ -1,8 +1,12 @@
 using System.Text.Json;
+using Anima.Bus;
+using Anima.Bus.Client;
 using Anima.Hosting;
 using Anima.Knowledge;
 using Anima.Knowledge.Service;
 using Anima.Knowledge.Service.Contracts;
+using Anima.Knowledge.Sqlite;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddAnimaServiceDefaults("knowledge", AnimaPorts.Knowledge);
@@ -12,8 +16,35 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
     options.SerializerOptions.DictionaryKeyPolicy = null;
 });
-builder.Services.AddInMemoryKnowledgeGraph();
 builder.Services.Configure<KnowledgeOptions>(builder.Configuration.GetSection("Anima:Knowledge"));
+builder.Services.AddHttpBus(options =>
+{
+    options.BaseUrl = builder.Configuration["Anima:Bus:BaseUrl"] ?? "http://127.0.0.1:7412";
+});
+
+var provider = builder.Configuration["Anima:Knowledge:Provider"] ?? "Sqlite";
+if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddSqliteKnowledgeGraph(options =>
+    {
+        options.DatabasePath = builder.Configuration["Anima:Knowledge:DatabasePath"];
+    });
+    builder.Services.AddSingleton<IKnowledgeGraph>(serviceProvider => new PublishingKnowledgeGraph(
+        serviceProvider.GetRequiredService<SqliteKnowledgeGraph>(),
+        serviceProvider.GetService<IBusPublisher>(),
+        serviceProvider.GetRequiredService<IOptions<KnowledgeOptions>>(),
+        serviceProvider.GetRequiredService<ILogger<PublishingKnowledgeGraph>>()));
+    builder.Services.AddHealthChecks().AddCheck<SqliteKnowledgeHealthCheck>("knowledge-db");
+}
+else
+{
+    builder.Services.AddInMemoryKnowledgeGraph();
+    builder.Services.AddSingleton<IKnowledgeGraph>(serviceProvider => new PublishingKnowledgeGraph(
+        serviceProvider.GetRequiredService<InMemoryKnowledgeGraph>(),
+        serviceProvider.GetService<IBusPublisher>(),
+        serviceProvider.GetRequiredService<IOptions<KnowledgeOptions>>(),
+        serviceProvider.GetRequiredService<ILogger<PublishingKnowledgeGraph>>()));
+}
 
 var app = builder.Build();
 app.UseAnimaServiceDefaults("knowledge");

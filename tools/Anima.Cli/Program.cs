@@ -25,6 +25,9 @@ try
         "workflow" => await WorkflowCommands.RunAsync(
             rest,
             Environment.GetEnvironmentVariable("ANIMA_WORKFLOW_URL") ?? "http://127.0.0.1:7415"),
+        "knowledge" => await KnowledgeCommands.RunAsync(
+            rest,
+            Environment.GetEnvironmentVariable("ANIMA_KNOWLEDGE_URL") ?? "http://127.0.0.1:7411"),
         "help" or "--help" or "-h" => Help(),
         _ => Unknown(command),
     };
@@ -49,6 +52,7 @@ static int Help()
           anima scripts validate <script.yaml>
           anima bus publish|ask|watch ...
           anima workflow start|show|ask|answer|spec|assign|result ...
+          anima knowledge kinds|search|get|create-node|edge|plan ...
           anima browser check [--browser <name>]
           anima scripts run <script.yaml> [--browser <name>] [--base-url <url>] [--headed] [--var key=value]
 

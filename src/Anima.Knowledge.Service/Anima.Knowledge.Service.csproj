@@ -11,6 +11,8 @@
   <ItemGroup>
     <ProjectReference Include="../Anima.Knowledge.Abstractions/Anima.Knowledge.Abstractions.csproj" />
     <ProjectReference Include="../Anima.Knowledge.Core/Anima.Knowledge.Core.csproj" />
+    <ProjectReference Include="../Anima.Knowledge.Sqlite/Anima.Knowledge.Sqlite.csproj" />
+    <ProjectReference Include="../Anima.Bus.Client/Anima.Bus.Client.csproj" />
     <ProjectReference Include="../Anima.Knowledge.Client/Anima.Knowledge.Client.csproj" />
     <ProjectReference Include="../Anima.Hosting/Anima.Hosting.csproj" />
   </ItemGroup>

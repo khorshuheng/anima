@@ -12,8 +12,14 @@ builder.Services.AddRepoContracts();
 builder.Services.AddInProcBus();
 builder.Services.Configure<BusOptions>(builder.Configuration.GetSection("Anima:Bus"));
 
+var allowedOrigins = builder.Configuration.GetSection("Anima:Bus:AllowedOrigins").Get<string[]>()
+    ?? ["http://127.0.0.1:7415", "http://localhost:7415", "http://127.0.0.1:5173", "http://localhost:5173"];
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
+    policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
+
 var app = builder.Build();
 app.UseAnimaServiceDefaults("bus");
+app.UseCors();
 
 app.MapPost("/api/bus/publish", async (
     PublishRequest request,

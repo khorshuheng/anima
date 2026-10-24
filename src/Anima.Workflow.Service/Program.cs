@@ -7,6 +7,7 @@ using Anima.Knowledge;
 using Anima.Knowledge.Client;
 using Anima.Workflow;
 using Anima.Workflow.Service.Contracts;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddAnimaServiceDefaults("workflow", AnimaPorts.Workflow);
@@ -48,6 +49,28 @@ builder.Services.Configure<WorkflowOptions>(builder.Configuration.GetSection("An
 
 var app = builder.Build();
 app.UseAnimaServiceDefaults("workflow");
+
+var uiRoot = Path.Combine(RepoLayout.Root, "ui", "dist");
+if (Directory.Exists(uiRoot))
+{
+    var uiFiles = new PhysicalFileProvider(uiRoot);
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path == "/ui")
+        {
+            context.Response.Redirect("/ui/");
+            return;
+        }
+
+        await next(context);
+    });
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = uiFiles, RequestPath = "/ui" });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = uiFiles, RequestPath = "/ui" });
+}
+else
+{
+    app.Logger.LogWarning("UI build not found at {UiRoot}; run 'make ui-build'.", uiRoot);
+}
 
 app.Use(async (context, next) =>
 {

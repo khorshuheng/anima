@@ -10,11 +10,11 @@ creates a worktree.
 
 | Service | Port | Responsibility |
 | --- | --- | --- |
-| `Anima.Knowledge.Service` | 7411 | Task planning and long-term memory over one node/edge graph, memgraph-compatible HTTP |
+| `Anima.Knowledge.Service` | 7411 | Task planning and long-term memory over one **SQLite** node/edge graph, memgraph-compatible HTTP |
 | `Anima.Bus.Service` | 7412 | Agent message transport: publish, SSE subscribe, contract validation |
 | `Anima.Automation.Service` | 7413 | CDP-capable UI automation sessions and YAML script execution |
 | `Anima.Deploy.Service` | 7414 | Git-push sink that runs repo-owned deploy scripts |
-| `Anima.Workflow.Service` | 7415 | Durable workflow state: questions, spec, assignments, results, timeline |
+| `Anima.Workflow.Service` | 7415 | Durable workflow state: questions, spec, assignments, results, timeline; serves the UI at `/ui` |
 
 Ports live in `src/Anima.Hosting/AnimaPorts.cs`. `make dev` starts the five
 services; agent harnesses are not started by Anima.
@@ -30,12 +30,13 @@ config/                     deploy rule examples
 src/
   Anima.Contracts           descriptor catalog + descriptor-driven JSON codec
   Anima.Bus.*               abstractions, in-proc bus, HTTP client, host
-  Anima.Knowledge.*         abstractions, in-memory graph, memgraph-compatible client, host
+  Anima.Knowledge.*         abstractions, SQLite graph, in-memory test graph, memgraph-compatible client, host
   Anima.Automation.*        driver/session abstractions, Playwright driver, YAML DSL, host
   Anima.Deploy.*            hook normalization/validation, script runner, host
   Anima.Workflow.*          state models, graph-backed store, bus dispatcher, host
   Anima.Hosting             shared host defaults, repo layout, ports
-tools/Anima.Cli             harness-facing CLI: contracts, scripts, browser, bus, workflow
+ui/                         React/Vite read-only workflow visualizer (served at /ui)
+tools/Anima.Cli             harness-facing CLI: contracts, scripts, browser, bus, knowledge, workflow
 tests/                      one xUnit project per component
 .agents/skills/             project skill: anima-orchestration (harness runbook)
 Anima.sln + Anima.*.slnf    solution filters per component
@@ -44,18 +45,36 @@ Anima.sln + Anima.*.slnf    solution filters per component
 ## Quick start
 
 Prerequisites: .NET 10 SDK, `protoc` (only when contracts change), Chrome for UI
-automation.
+automation, Node 20+ for the React visualizer.
 
 ```bash
 make contracts      # .proto -> contracts/descriptors/anima.pb
 make build
 make test
+make ui-build       # React UI -> ui/dist (make dev does this too)
 make dev            # knowledge, bus, automation, deploy, workflow
 make browser-check  # Chrome executable Playwright will launch
 ```
 
-Windows: `make` is optional; run the underlying `dotnet` commands. The deployment
-target has **no PowerShell assumption** (see Deploy below).
+UI: `http://127.0.0.1:7415/ui/`. Vite dev server: `make ui-dev`.
+Windows: `make` is optional; run the underlying `dotnet`/`npm` commands. The
+deployment target has **no PowerShell assumption** (see Deploy below).
+
+## Persistence and events
+
+- SQLite is the production knowledge store (`Anima.Knowledge.Sqlite`): versioned
+  migrations, WAL, foreign keys, JSON properties, and an FTS5 index with sync
+  triggers.
+- Default path: `$XDG_DATA_HOME/anima/knowledge.db` (Linux) or
+  `%LOCALAPPDATA%\anima\knowledge.db` (Windows). Override with
+  `Anima:Knowledge:DatabasePath` or `ANIMA_KNOWLEDGE_DB`.
+- In-memory is test-only; `Provider=InMemory` exists for isolated tests, not
+  production.
+- Graph writes publish `anima.knowledge.v1.GraphEvent` on
+  `anima.knowledge.changed`. Workflow mutations publish
+  `anima.workflow.v1.WorkflowEvent` on `anima.workflow.events`. Events are
+  wake-ups; readers fetch state from HTTP.
+- The UI subscribes to both topics live and falls back to polling.
 
 ## Harness workflow
 
@@ -85,6 +104,10 @@ Facts, not guesses, drive the state:
    (`anima workflow assign`), and posts results (`anima workflow result`).
 5. Merger and reviewer do the same; review findings are stored.
 6. Status becomes `completed` only when a successful review result exists.
+
+Inspect it at `http://127.0.0.1:7415/ui/` or with `anima workflow show <id>`.
+Knowledge plans can be created in Anima's own graph with
+`anima knowledge create-node` / `anima knowledge plan --file plan.json`.
 
 Anima stores the assignment metadata (path, branch, agent id) but does not create
 the worktree. See `docs/adr/0005-workflow-boundary.md`.

@@ -895,6 +895,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             workflow.Id,
             ParseLong(workflow.Properties.GetValueOrDefault("goalId")),
             workflow.Name,
+            Clip(workflow.Properties.GetValueOrDefault("requirement") ?? string.Empty) ?? string.Empty,
             ParseStatus(workflow.Properties),
             workflow.Properties.GetValueOrDefault("repoPath") ?? string.Empty,
             workflow.Properties.GetValueOrDefault("baseRef") ?? "main",

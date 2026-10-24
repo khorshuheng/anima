@@ -7,7 +7,7 @@ CLI := $(DOTNET) run --project tools/Anima.Cli -c $(CONFIG) --
 .DEFAULT_GOAL := help
 
 .PHONY: help restore build test fmt fmt-check check contracts dev browser-check \
-        playwright-install hooks-install clean \
+        playwright-install hooks-install clean ui-install ui-build ui-dev \
         build-contracts test-contracts build-bus test-bus build-knowledge test-knowledge \
         build-automation test-automation build-deploy test-deploy build-workflow test-workflow \
         run-knowledge run-bus run-automation run-deploy run-workflow
@@ -22,6 +22,9 @@ help:
 	@echo "  make contracts         recompile .proto -> contracts/descriptors/anima.pb"
 	@echo "  make dev               run all five services locally"
 	@echo "  make browser-check     show the Chrome executable Playwright will use"
+	@echo "  make ui-install        install React UI dependencies"
+	@echo "  make ui-build          build ui/dist served at /ui"
+	@echo "  make ui-dev            run the Vite dev server (proxy to :7415)"
 	@echo ""
 	@echo "  per component: make build-<name> / test-<name>"
 	@echo "    contracts bus knowledge automation deploy workflow"
@@ -50,7 +53,7 @@ check: build test fmt-check
 contracts:
 	$(CLI) contracts compile
 
-dev:
+dev: ui-build
 	./scripts/dev.sh
 
 browser-check:
@@ -66,6 +69,16 @@ playwright-install:
 
 hooks-install:
 	./scripts/install-local-hooks.sh $(REPO)
+
+ui-install:
+	npm --prefix ui install
+
+ui-build:
+	@if [ ! -d ui/node_modules ]; then npm --prefix ui install --no-audit --no-fund; fi
+	npm --prefix ui run build
+
+ui-dev:
+	npm --prefix ui run dev
 
 clean:
 	$(DOTNET) clean $(SOLUTION) -c $(CONFIG)

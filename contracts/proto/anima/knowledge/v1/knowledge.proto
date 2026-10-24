@@ -27,6 +27,19 @@ message Edge {
   string edge_type = 4;
 }
 
+// A compact graph-change notification. Consumers refetch state by node id.
+message GraphEvent {
+  string change = 1;
+  string node_kind = 2;
+  int64 node_id = 3;
+  string node_name = 4;
+  int64 edge_id = 5;
+  int64 source = 6;
+  int64 destination = 7;
+  string edge_type = 8;
+  google.protobuf.Timestamp timestamp = 9;
+}
+
 // Published on the bus whenever the graph changes.
 message GraphChanged {
   string change = 1;
