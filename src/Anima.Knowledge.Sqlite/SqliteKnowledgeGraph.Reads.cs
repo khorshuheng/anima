@@ -201,10 +201,12 @@ public sealed partial class SqliteKnowledgeGraph
         var maxNodes = query.EffectiveMaxNodes;
         var maxEdges = query.EffectiveMaxEdges;
         await using var connection = await OpenConnectionAsync(cancellationToken);
+        using var transaction = connection.BeginTransaction();
 
         var nodes = new List<GraphSnapshotNode>();
         await using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = $"""
                 SELECT n.id, k.name, n.name, n.description,
                        CASE WHEN {ResolvedExists} THEN 1 ELSE 0 END AS resolved
@@ -230,6 +232,7 @@ public sealed partial class SqliteKnowledgeGraph
         var edges = new List<GraphSnapshotEdge>();
         await using (var command = connection.CreateCommand())
         {
+            command.Transaction = transaction;
             command.CommandText = """
                 SELECT e.id, e.source, e.destination, t.name
                 FROM edge e JOIN edge_type t ON t.id = e.edge_type_id
@@ -255,6 +258,7 @@ public sealed partial class SqliteKnowledgeGraph
         int edgeCount;
         await using (var countCommand = connection.CreateCommand())
         {
+            countCommand.Transaction = transaction;
             countCommand.CommandText = "SELECT (SELECT COUNT(*) FROM node), (SELECT COUNT(*) FROM edge);";
             await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
             await reader.ReadAsync(cancellationToken);
@@ -262,6 +266,7 @@ public sealed partial class SqliteKnowledgeGraph
             edgeCount = (int)reader.GetInt64(1);
         }
 
+        transaction.Commit();
         return new GraphSnapshot(
             nodes,
             edges,

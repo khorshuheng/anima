@@ -30,7 +30,22 @@ if (Directory.Exists(uiRoot))
 {
     var uiFiles = new PhysicalFileProvider(uiRoot);
     app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = uiFiles });
-    app.UseStaticFiles(new StaticFileOptions { FileProvider = uiFiles });
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = uiFiles,
+        OnPrepareResponse = context =>
+        {
+            var headers = context.Context.Response.Headers;
+            if (string.Equals(context.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
+            {
+                headers.CacheControl = "no-cache";
+            }
+            else if (context.Context.Request.Path.StartsWithSegments("/assets"))
+            {
+                headers.CacheControl = "public,max-age=31536000,immutable";
+            }
+        },
+    });
 }
 else
 {

@@ -1,6 +1,6 @@
 # Unified Anima dashboard
 
-Status: refined spec (stored as knowledge node 16 / workflow 14)
+Status: refined spec (workflow 14; latest spec node is tracked by the workflow)
 
 ## Goal
 One local user-facing server and UI at `:7416`:
@@ -16,7 +16,7 @@ One local user-facing server and UI at `:7416`:
 - `Anima.Workflow.Service` stops serving `/ui`; it stays API-only.
 - No agent runtime or agent spawning in Anima.
 
-## Work breakdown
+## Implementation tasks
 
 ### graph-api — Knowledge graph snapshot
 - `IKnowledgeGraph.GetGraphAsync(GraphSnapshotQuery)` returning
@@ -50,6 +50,8 @@ One local user-facing server and UI at `:7416`:
 - Workflow: existing views, now under `/api/dashboard/workflows`.
 - Live via `/api/dashboard/bus/stream`; polling fallback.
 - Vite base `/`, dev proxy to `:7416`.
+
+## Process gates (not spec tasks)
 
 ### merge — Integration
 - Harness-owned: merge implementation branches into `main`, resolve conflicts,

@@ -6,13 +6,10 @@ API-only; the dashboard proxies reads under `/api/dashboard/*`.
 
 What it shows:
 
-- workflow list and status chips
-- requirement and progress counters
-- all questions with open/answered state and the user's answers
-- refined spec markdown, task acceptance criteria and verify commands
-- harness-owned worktree assignments (path, branch, agent)
-- implementation/merge/review results, changed files, conflicts and findings
-- phase timeline
+- **Workflows** tab: list/status, requirement, Q/A, spec/tasks, assignments,
+  implementation/merge/review results/findings and phase timeline
+- **Graph** tab: force-directed knowledge graph, caps/truncation, node inspector
+- **Bus** tab: topics/producers, subscribers and counters, live event feed
 
 Live updates come from the bus:
 

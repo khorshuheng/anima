@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BusTab } from './BusTab';
 import { GraphTab } from './GraphTab';
 import { WorkflowsTab } from './WorkflowsTab';
@@ -25,6 +25,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('workflows');
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<number | null>(null);
   const [revision, setRevision] = useState(0);
+  const refreshTimer = useRef<number | null>(null);
   const { status, events } = useBusStream('anima.**');
   const latestEvent = events[0];
 
@@ -32,9 +33,19 @@ export default function App() {
 
   useEffect(() => {
     if (!latestEvent || !isDataEvent(latestEvent)) return;
-    const timer = window.setTimeout(refresh, refreshDelay);
-    return () => window.clearTimeout(timer);
+    if (refreshTimer.current !== null) return;
+    refreshTimer.current = window.setTimeout(() => {
+      refreshTimer.current = null;
+      refresh();
+    }, refreshDelay);
   }, [latestEvent, refresh]);
+
+  useEffect(() => () => {
+    if (refreshTimer.current !== null) {
+      window.clearTimeout(refreshTimer.current);
+      refreshTimer.current = null;
+    }
+  }, []);
 
   // The stream reconnects on its own; poll only while it is unavailable.
   useEffect(() => {

@@ -450,6 +450,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 ["specId"] = Id(specNode.Id),
                 ["acceptance"] = JsonSerializer.Serialize(acceptance, JsonOptions),
                 ["verify"] = JsonSerializer.Serialize(verify, JsonOptions),
+                ["role"] = Wire(task.Role),
             };
 
             var existing = await FindTaskNodeAsync(workflowId, task.Key, cancellationToken);
@@ -479,7 +480,8 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 task.Description,
                 acceptance,
                 verify,
-                taskNode.Id));
+                taskNode.Id,
+                task.Role));
         }
 
         specNode = await _graph.UpdateNodeAsync(
@@ -755,9 +757,11 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         var spec = await GetSpecAsync(workflowId, cancellationToken);
         var existingResults = await GetResultsAsync(workflowId, cancellationToken);
         var latestByTask = LatestImplementationByTask(existingResults);
-        var allImplemented = spec is not null &&
-                             spec.Tasks.Count > 0 &&
-                             spec.Tasks.All(task =>
+        var implementationTasks = spec?.Tasks
+            .Where(task => task.Role == WorkflowTaskRole.Implementation)
+            .ToArray() ?? [];
+        var allImplemented = implementationTasks.Length > 0 &&
+                             implementationTasks.All(task =>
                                  latestByTask.TryGetValue(task.Key, out var item) && item.Success);
         var latestMerge = Latest(existingResults, WorkflowResultKind.Merge);
 
@@ -996,7 +1000,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             workflow.Properties.GetValueOrDefault("baseRef") ?? "main",
             spec?.Id,
             questions.Count,
-            spec?.Tasks.Count ?? 0,
+            spec?.Tasks.Count(task => task.Role == WorkflowTaskRole.Implementation) ?? 0,
             completed,
             workflow.CreatedAt,
             workflow.UpdatedAt);
@@ -1025,8 +1029,11 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
 
         var results = await GetResultsAsync(workflowId, cancellationToken);
         var latestByTask = LatestImplementationByTask(results);
-        var allImplemented = spec.Tasks.Count > 0 &&
-                             spec.Tasks.All(task =>
+        var implementationTasks = spec.Tasks
+            .Where(task => task.Role == WorkflowTaskRole.Implementation)
+            .ToArray();
+        var allImplemented = implementationTasks.Length > 0 &&
+                             implementationTasks.All(task =>
                                  latestByTask.TryGetValue(task.Key, out var item) && item.Success);
         var review = Latest(results, WorkflowResultKind.Review);
         if (review is not null)
@@ -1412,6 +1419,8 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
     private static string Wire(WorkflowStatus status) => status.ToString().ToLowerInvariant();
 
     private static string Wire(WorkflowResultKind kind) => kind.ToString().ToLowerInvariant();
+
+    private static string Wire(WorkflowTaskRole role) => role.ToString().ToLowerInvariant();
 
     private static string Wire(FindingSeverity severity) => severity.ToString().ToLowerInvariant();
 

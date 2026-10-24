@@ -17,7 +17,7 @@ dashboard 7416.
 ## 0. Preconditions
 
 ```bash
-make dev                 # knowledge, bus, automation, deploy, workflow
+make dev                 # knowledge, bus, automation, deploy, workflow, dashboard
 anima workflow list      # CLI talks to ANIMA_WORKFLOW_URL (default 7415)
 ```
 

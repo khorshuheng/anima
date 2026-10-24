@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using Anima.Bus;
 using Anima.Bus.Service.Contracts;
 using Anima.Contracts;
@@ -113,13 +114,19 @@ app.MapGet("/api/bus/stream", async (
     context.Response.Headers.ContentType = "text/event-stream";
     context.Response.Headers.CacheControl = "no-cache";
 
+    var channel = Channel.CreateBounded<MessageEnvelope>(new BoundedChannelOptions(256)
+    {
+        FullMode = BoundedChannelFullMode.DropOldest,
+        SingleReader = true,
+        SingleWriter = false,
+    });
+
     await using var subscription = await bus.SubscribeAsync(
         topics,
-        async (envelope, token) =>
+        (envelope, _) =>
         {
-            var json = JsonSerializer.Serialize(BusEnvelopeJson.ToJson(envelope), BusJson.Sse);
-            await context.Response.WriteAsync($"event: message\ndata: {json}\n\n", token);
-            await context.Response.Body.FlushAsync(token);
+            channel.Writer.TryWrite(envelope);
+            return Task.CompletedTask;
         },
         cancellationToken: cancellationToken);
 
@@ -128,11 +135,23 @@ app.MapGet("/api/bus/stream", async (
 
     try
     {
-        await Task.Delay(Timeout.Infinite, cancellationToken);
+        // Only this request task writes after the ready frame. The subscription
+        // handler feeds a channel, so concurrent publishes cannot interleave with
+        // the response stream.
+        await foreach (var envelope in channel.Reader.ReadAllAsync(cancellationToken))
+        {
+            var json = JsonSerializer.Serialize(BusEnvelopeJson.ToJson(envelope), BusJson.Sse);
+            await context.Response.WriteAsync($"event: message\ndata: {json}\n\n", cancellationToken);
+            await context.Response.Body.FlushAsync(cancellationToken);
+        }
     }
     catch (OperationCanceledException)
     {
         // Client disconnected.
+    }
+    finally
+    {
+        channel.Writer.TryComplete();
     }
 });
 

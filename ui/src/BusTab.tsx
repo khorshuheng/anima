@@ -22,6 +22,7 @@ export function BusTab({ events, status, revision }: BusTabProps) {
   const [snapshot, setSnapshot] = useState<BusSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const refreshTimer = useRef<number | null>(null);
   const latestEvent = events[0];
 
   const load = useCallback(async () => {
@@ -45,10 +46,19 @@ export function BusTab({ events, status, revision }: BusTabProps) {
   // Keep counters moving while the stream delivers traffic without refetching
   // once per frame: a burst of events collapses into one trailing refresh.
   useEffect(() => {
-    if (!latestEvent) return;
-    const timer = window.setTimeout(() => void load(), snapshotRefreshDelay);
-    return () => window.clearTimeout(timer);
+    if (!latestEvent || refreshTimer.current !== null) return;
+    refreshTimer.current = window.setTimeout(() => {
+      refreshTimer.current = null;
+      void load();
+    }, snapshotRefreshDelay);
   }, [latestEvent, load]);
+
+  useEffect(() => () => {
+    if (refreshTimer.current !== null) {
+      window.clearTimeout(refreshTimer.current);
+      refreshTimer.current = null;
+    }
+  }, []);
 
   return (
     <div className="bus-tab">

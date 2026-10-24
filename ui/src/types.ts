@@ -47,6 +47,7 @@ export interface SpecTaskView {
   acceptanceCriteria: string[];
   verifyCommands: string[];
   nodeId: number;
+  role?: 'implementation' | 'merge' | 'review' | 'verification' | 'documentation';
 }
 
 export interface SpecView {

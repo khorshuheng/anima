@@ -187,6 +187,32 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Process_role_tasks_do_not_block_merge_or_count_as_implementation()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec",
+        [
+            new SpecTaskInput("one", "One"),
+            new SpecTaskInput("merge", "Merge", Role: WorkflowTaskRole.Merge),
+            new SpecTaskInput("review", "Review", Role: WorkflowTaskRole.Review),
+            new SpecTaskInput("verify", "Verify", Role: WorkflowTaskRole.Verification),
+        ]));
+
+        await store.AddResultAsync(workflow.Id, new ResultInput("one", WorkflowResultKind.Implementation, true, "one"));
+        var implemented = await store.GetAsync(workflow.Id);
+        Assert.Equal(WorkflowStatus.ImplementationComplete, implemented!.Status);
+        Assert.Equal(1, implemented.TaskCount);
+        Assert.Equal(1, implemented.CompletedTaskCount);
+
+        await store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Merge, true, "merged"));
+        Assert.Equal(WorkflowStatus.MergeComplete, (await store.GetAsync(workflow.Id))!.Status);
+
+        await store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Review, true, "reviewed"));
+        Assert.Equal(WorkflowStatus.Completed, (await store.GetAsync(workflow.Id))!.Status);
+    }
+
+    [Fact]
     public async Task Review_before_implementation_is_rejected()
     {
         var store = CreateStore();

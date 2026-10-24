@@ -67,12 +67,22 @@ public sealed record AnswerView(
     string Text,
     DateTimeOffset AnsweredAt);
 
+public enum WorkflowTaskRole
+{
+    Implementation,
+    Merge,
+    Review,
+    Verification,
+    Documentation,
+}
+
 public sealed record SpecTaskInput(
     string Key,
     string Title,
     string Description = "",
     IReadOnlyList<string>? AcceptanceCriteria = null,
-    IReadOnlyList<string>? VerifyCommands = null);
+    IReadOnlyList<string>? VerifyCommands = null,
+    WorkflowTaskRole Role = WorkflowTaskRole.Implementation);
 
 public sealed record SpecTaskView(
     string Key,
@@ -80,7 +90,8 @@ public sealed record SpecTaskView(
     string Description,
     IReadOnlyList<string> AcceptanceCriteria,
     IReadOnlyList<string> VerifyCommands,
-    long NodeId);
+    long NodeId,
+    WorkflowTaskRole Role = WorkflowTaskRole.Implementation);
 
 public sealed record SpecInput(
     string Markdown,

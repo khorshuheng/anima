@@ -110,6 +110,13 @@ resolution graph-derived rather than adding a status field to everything.
   worktree path/branch, spec id, and the last result summary only.
 - No endpoint returns raw agent transcripts.
 
+## Dashboard
+
+`Anima.Dashboard.Service` (port 7416) serves the unified UI at `/` and a
+read-only BFF at `/api/dashboard/*`. It proxies workflow, knowledge-graph and
+bus-diagnostics reads and the bus SSE stream. The knowledge graph and bus
+contracts are defined by their services; the dashboard does not mutate state.
+
 ## Q&A path (decision)
 
 The workflow API is the system of record for questions and answers:
