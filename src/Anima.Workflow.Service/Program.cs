@@ -270,10 +270,10 @@ app.MapPost("/api/workflows/{id:long}/dispatch", async (
         await store.RegisterAssignmentAsync(
             id,
             new AssignmentInput(
-                request.TaskKey,
+                request.TaskKey!,
                 request.AgentId,
-                request.WorktreePath ?? string.Empty,
-                request.Branch ?? string.Empty,
+                request.WorktreePath!,
+                request.Branch!,
                 request.Note,
                 messageId),
             cancellationToken);
