@@ -22,7 +22,7 @@ builder.Services.AddHttpBus(options =>
     options.BaseUrl = builder.Configuration["Anima:Bus:BaseUrl"] ?? "http://127.0.0.1:7412";
 });
 
-var provider = builder.Configuration["Anima:Knowledge:Provider"] ?? "Sqlite";
+var provider = (builder.Configuration["Anima:Knowledge:Provider"] ?? "Sqlite").Trim();
 if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddSqliteKnowledgeGraph(options =>
@@ -36,7 +36,7 @@ if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
         serviceProvider.GetRequiredService<ILogger<PublishingKnowledgeGraph>>()));
     builder.Services.AddHealthChecks().AddCheck<SqliteKnowledgeHealthCheck>("knowledge-db");
 }
-else
+else if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddInMemoryKnowledgeGraph();
     builder.Services.AddSingleton<IKnowledgeGraph>(serviceProvider => new PublishingKnowledgeGraph(
@@ -44,6 +44,11 @@ else
         serviceProvider.GetService<IBusPublisher>(),
         serviceProvider.GetRequiredService<IOptions<KnowledgeOptions>>(),
         serviceProvider.GetRequiredService<ILogger<PublishingKnowledgeGraph>>()));
+}
+else
+{
+    throw new InvalidOperationException(
+        $"Unsupported Anima:Knowledge:Provider '{provider}'. Use 'Sqlite' (production) or 'InMemory' (tests only).");
 }
 
 var app = builder.Build();

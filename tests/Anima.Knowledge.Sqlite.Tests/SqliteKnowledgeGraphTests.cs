@@ -87,6 +87,70 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
     }
 
     [Fact]
+    public async Task Page_totals_remain_correct_when_offset_is_past_the_end()
+    {
+        using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));
+        for (var index = 0; index < 2; index++)
+        {
+            await graph.CreateNodeAsync(new NodeDraft(
+                KnowledgeKinds.Memory,
+                $"probe {index}",
+                Content: "searchable token"));
+        }
+
+        var page = await graph.QueryNodesAsync(new NodeQuery
+        {
+            Kind = KnowledgeKinds.Memory,
+            Scope = KnowledgeScope.All,
+            Limit = 10,
+            Offset = 10,
+        });
+        var search = await graph.SearchAsync("searchable", new NodeQuery
+        {
+            Scope = KnowledgeScope.All,
+            Limit = 10,
+            Offset = 10,
+        });
+
+        Assert.Empty(page.Items);
+        Assert.Equal(2, page.Total);
+        Assert.Empty(search.Items);
+        Assert.Equal(2, search.Total);
+    }
+
+    [Fact]
+    public async Task Reanchoring_an_existing_goal_is_applied_or_rejected()
+    {
+        using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));
+        var repoOne = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "repo-one"));
+        var repoTwo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "repo-two"));
+        var anchored = await graph.CreatePlanAsync(new PlanDraft(
+            "Anchored",
+            Anchor: new PlanAnchor(repoOne.Id, KnowledgeEdgeTypes.BelongsTo)));
+
+        await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.CreatePlanAsync(new PlanDraft(
+                "Re-anchor",
+                GoalId: anchored.Goal!.Id,
+                Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo))));
+
+        var same = await graph.CreatePlanAsync(new PlanDraft(
+            "Same anchor",
+            GoalId: anchored.Goal!.Id,
+            Anchor: new PlanAnchor(repoOne.Id, KnowledgeEdgeTypes.BelongsTo)));
+        Assert.Equal(anchored.Goal!.Id, same.Goal!.Id);
+
+        var loose = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Goal, "Loose"));
+        await graph.CreatePlanAsync(new PlanDraft(
+            "Attach loose",
+            GoalId: loose.Id,
+            Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo)));
+        var neighbors = await graph.GetNeighborsAsync(
+            new NeighborQuery(loose.Id, EdgeDirection.Outgoing, KnowledgeEdgeTypes.BelongsTo));
+        Assert.Contains(neighbors, neighbor => neighbor.Node.Id == repoTwo.Id);
+    }
+
+    [Fact]
     public async Task Updates_replace_properties_and_summary_omits_content()
     {
         using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));

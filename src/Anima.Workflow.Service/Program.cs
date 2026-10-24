@@ -17,7 +17,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
 });
 
-var knowledgeTransport = builder.Configuration["Anima:Knowledge:Transport"] ?? "Http";
+var knowledgeTransport = (builder.Configuration["Anima:Knowledge:Transport"] ?? "Http").Trim();
 if (string.Equals(knowledgeTransport, "Http", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddKnowledgeClient(options =>
@@ -26,12 +26,17 @@ if (string.Equals(knowledgeTransport, "Http", StringComparison.OrdinalIgnoreCase
         options.SessionId = "anima-workflow";
     });
 }
-else
+else if (string.Equals(knowledgeTransport, "InMemory", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddInMemoryKnowledgeGraph();
 }
+else
+{
+    throw new InvalidOperationException(
+        $"Unsupported Anima:Knowledge:Transport '{knowledgeTransport}'. Use 'Http' or 'InMemory' (tests only).");
+}
 
-var busTransport = builder.Configuration["Anima:Bus:Transport"] ?? "Http";
+var busTransport = (builder.Configuration["Anima:Bus:Transport"] ?? "Http").Trim();
 if (string.Equals(busTransport, "Http", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddHttpBus(options =>
@@ -39,9 +44,14 @@ if (string.Equals(busTransport, "Http", StringComparison.OrdinalIgnoreCase))
         options.BaseUrl = builder.Configuration["Anima:Bus:BaseUrl"] ?? "http://127.0.0.1:7412";
     });
 }
-else
+else if (string.Equals(busTransport, "InProc", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddInProcBus();
+}
+else
+{
+    throw new InvalidOperationException(
+        $"Unsupported Anima:Bus:Transport '{busTransport}'. Use 'Http' or 'InProc'.");
 }
 
 builder.Services.AddWorkflowCore();

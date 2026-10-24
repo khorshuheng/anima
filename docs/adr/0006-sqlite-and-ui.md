@@ -18,8 +18,14 @@ workflow also needs a human-viewable state surface.
   - JSON properties with `json_each` filters,
   - an FTS5 external-content index kept in sync by triggers.
 - In-memory remains only for tests (`Provider=InMemory`).
-- Successful mutations publish `anima.knowledge.v1.GraphEvent` on
-  `anima.knowledge.changed`. Publish failures never fail the write.
+- Successful mutations enqueue `anima.knowledge.v1.GraphEvent` on
+  `anima.knowledge.changed`. Publish is bounded
+  (`BusClientOptions.PublishTimeout`, default 5s) and runs on a bounded
+  background queue, so a stalled bus cannot block the write path.
+- Unknown provider/transport settings fail startup; in-memory must be explicit.
+- Workflow phase gates reject review-before-merge and review-with-error-findings.
+- Result aggregation paginates through all result pages, so `MaxPageSize` is a
+  view limit, not a status-accuracy limit.
 - The workflow visualizer is a React/Vite read-only SPA served by the workflow
   host at `/ui`; it uses the workflow HTTP API and subscribes to bus SSE
   (`anima.**`) with polling as fallback. Bus CORS is restricted to local UI

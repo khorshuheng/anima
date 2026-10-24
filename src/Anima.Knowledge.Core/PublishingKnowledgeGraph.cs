@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Threading.Channels;
 using Anima.Bus;
 using Anima.Contracts;
 using Microsoft.Extensions.Logging;
@@ -13,12 +14,14 @@ namespace Anima.Knowledge;
 /// successful graph mutations. Events are wake-ups for agents/the UI; readers
 /// still fetch state from the HTTP API. Publish failures never fail the write.
 /// </summary>
-public sealed class PublishingKnowledgeGraph : IKnowledgeGraph
+public sealed class PublishingKnowledgeGraph : IKnowledgeGraph, IAsyncDisposable
 {
     private readonly IKnowledgeGraph _inner;
     private readonly IBusPublisher? _bus;
     private readonly KnowledgeOptions _options;
     private readonly ILogger<PublishingKnowledgeGraph> _logger;
+    private readonly Channel<MessageEnvelope>? _queue;
+    private readonly Task? _pump;
 
     public PublishingKnowledgeGraph(
         IKnowledgeGraph inner,
@@ -33,6 +36,17 @@ public sealed class PublishingKnowledgeGraph : IKnowledgeGraph
         _bus = bus;
         _options = options.Value;
         _logger = logger;
+
+        if (bus is not null)
+        {
+            _queue = Channel.CreateBounded<MessageEnvelope>(new BoundedChannelOptions(1024)
+            {
+                FullMode = BoundedChannelFullMode.DropOldest,
+                SingleReader = true,
+                SingleWriter = false,
+            });
+            _pump = Task.Run(PumpAsync);
+        }
     }
 
     public async Task<KnowledgeNode> CreateNodeAsync(NodeDraft draft, CancellationToken cancellationToken = default)
@@ -51,10 +65,11 @@ public sealed class PublishingKnowledgeGraph : IKnowledgeGraph
 
     public async Task<bool> DeleteNodeAsync(long id, CancellationToken cancellationToken = default)
     {
+        var node = await _inner.GetNodeAsync(id, cancellationToken);
         var deleted = await _inner.DeleteNodeAsync(id, cancellationToken);
         if (deleted)
         {
-            await PublishAsync("node.deleted", new KnowledgeNode { Id = id, Kind = string.Empty, Name = string.Empty }, null, cancellationToken);
+            await PublishAsync("node.deleted", node, null, cancellationToken);
         }
 
         return deleted;
@@ -124,48 +139,76 @@ public sealed class PublishingKnowledgeGraph : IKnowledgeGraph
         return task;
     }
 
-    private async Task PublishAsync(
+    private Task PublishAsync(
         string change,
         KnowledgeNode? node,
         KnowledgeEdge? edge,
         CancellationToken cancellationToken)
     {
-        if (!_options.PublishEvents || _bus is null)
+        if (!_options.PublishEvents || _queue is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        var payload = new JsonObject
+        {
+            ["change"] = change,
+            ["nodeKind"] = node?.Kind ?? string.Empty,
+            ["nodeId"] = (node?.Id ?? 0).ToString(CultureInfo.InvariantCulture),
+            ["nodeName"] = node?.Name ?? string.Empty,
+            ["edgeId"] = (edge?.Id ?? 0).ToString(CultureInfo.InvariantCulture),
+            ["source"] = (edge?.Source ?? 0).ToString(CultureInfo.InvariantCulture),
+            ["destination"] = (edge?.Destination ?? 0).ToString(CultureInfo.InvariantCulture),
+            ["edgeType"] = edge?.EdgeType ?? string.Empty,
+            ["timestamp"] = DateTimeOffset.UtcNow,
+        };
+
+        var envelope = MessageEnvelope.Create(
+            BusTopics.KnowledgeChanged,
+            "anima.knowledge.v1.GraphEvent",
+            Encoding.UTF8.GetBytes(payload.ToJsonString()),
+            ContractContentTypes.ProtobufJson,
+            sender: "anima-knowledge");
+
+        if (!_queue.Writer.TryWrite(envelope))
+        {
+            _logger.LogWarning("Knowledge event queue full; dropped {Change}.", change);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async Task PumpAsync()
+    {
+        if (_queue is null || _bus is null)
         {
             return;
         }
 
-        try
+        await foreach (var envelope in _queue.Reader.ReadAllAsync())
         {
-            var payload = new JsonObject
+            try
             {
-                ["change"] = change,
-                ["nodeKind"] = node?.Kind ?? string.Empty,
-                ["nodeId"] = (node?.Id ?? 0).ToString(CultureInfo.InvariantCulture),
-                ["nodeName"] = node?.Name ?? string.Empty,
-                ["edgeId"] = (edge?.Id ?? 0).ToString(CultureInfo.InvariantCulture),
-                ["source"] = (edge?.Source ?? 0).ToString(CultureInfo.InvariantCulture),
-                ["destination"] = (edge?.Destination ?? 0).ToString(CultureInfo.InvariantCulture),
-                ["edgeType"] = edge?.EdgeType ?? string.Empty,
-                ["timestamp"] = DateTimeOffset.UtcNow,
-            };
+                await _bus.PublishAsync(envelope, CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "Failed to publish knowledge event {Topic}.", envelope.Topic);
+            }
+        }
+    }
 
-            await _bus.PublishAsync(
-                MessageEnvelope.Create(
-                    BusTopics.KnowledgeChanged,
-                    "anima.knowledge.v1.GraphEvent",
-                    Encoding.UTF8.GetBytes(payload.ToJsonString()),
-                    ContractContentTypes.ProtobufJson,
-                    sender: "anima-knowledge"),
-                cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+    public async ValueTask DisposeAsync()
+    {
+        if (_queue is null)
         {
-            throw;
+            return;
         }
-        catch (Exception exception)
+
+        _queue.Writer.TryComplete();
+        if (_pump is not null)
         {
-            _logger.LogWarning(exception, "Failed to publish graph event {Change}.", change);
+            await _pump;
         }
     }
 }

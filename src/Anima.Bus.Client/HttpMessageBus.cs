@@ -38,15 +38,26 @@ public sealed class HttpMessageBus : IMessageBus, IAsyncDisposable
         ArgumentNullException.ThrowIfNull(envelope);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        using var content = JsonContent.Create(
-            BusEnvelopeJson.ToJson(envelope),
-            options: new JsonSerializerOptions(JsonSerializerDefaults.Web));
-        using var response = await _http.PostAsync("api/bus/publish", content, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_options.PublishTimeout);
+
+        try
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            throw new InvalidOperationException(
-                $"bus publish failed ({(int)response.StatusCode}): {body}");
+            using var content = JsonContent.Create(
+                BusEnvelopeJson.ToJson(envelope),
+                options: new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            using var response = await _http.PostAsync("api/bus/publish", content, timeout.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(timeout.Token);
+                throw new InvalidOperationException(
+                    $"bus publish failed ({(int)response.StatusCode}): {body}");
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"bus publish to '{_options.BaseUrl}' timed out after {_options.PublishTimeout.TotalSeconds:0.#}s");
         }
     }
 
@@ -77,7 +88,7 @@ public sealed class HttpMessageBus : IMessageBus, IAsyncDisposable
         {
             // Do not return before the SSE stream is registered server-side, or a
             // reply published immediately after Subscribe could be missed.
-            await subscription.WaitForReadyAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            await subscription.WaitForReadyAsync(_options.SubscriptionReadyTimeout, cancellationToken);
         }
         catch
         {

@@ -74,6 +74,29 @@ public sealed class InMemoryKnowledgeGraphTests
     }
 
     [Fact]
+    public async Task Reanchoring_an_existing_goal_is_applied_or_rejected()
+    {
+        var graph = CreateGraph();
+        var repoOne = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "repo-one"));
+        var repoTwo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "repo-two"));
+        var anchored = await graph.CreatePlanAsync(new PlanDraft(
+            "Anchored",
+            Anchor: new PlanAnchor(repoOne.Id, KnowledgeEdgeTypes.BelongsTo)));
+
+        await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.CreatePlanAsync(new PlanDraft(
+                "Re-anchor",
+                GoalId: anchored.Goal!.Id,
+                Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo))));
+
+        var same = await graph.CreatePlanAsync(new PlanDraft(
+            "Same anchor",
+            GoalId: anchored.Goal!.Id,
+            Anchor: new PlanAnchor(repoOne.Id, KnowledgeEdgeTypes.BelongsTo)));
+        Assert.Equal(anchored.Goal!.Id, same.Goal!.Id);
+    }
+
+    [Fact]
     public async Task Task_creation_requires_an_anchored_parent()
     {
         var graph = CreateGraph();

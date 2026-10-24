@@ -38,8 +38,10 @@ Transitions are derived from posted facts, not set blindly:
 - spec posted -> `spec_ready`
 - every task has an implementation result with `success=true` -> `implementing`
   complete (otherwise `failed` or `implementing` if some are outstanding)
-- merge result with `success=true` -> `merge_complete`
-- review result with `success=true` -> `completed`; otherwise `failed`
+- merge result with `success=true` (and all tasks implemented) -> `merge_complete`
+- review result with `success=true`, no error findings, and a successful merge
+  -> `completed`; otherwise `failed`
+- an invalid merge/review is rejected at write time with 422
 
 ## HTTP surface (port 7415)
 

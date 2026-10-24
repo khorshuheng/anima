@@ -186,7 +186,110 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         Assert.Equal(WorkflowStatus.Failed, (await store.GetAsync(workflow.Id))!.Status);
     }
 
-    private KnowledgeWorkflowStore CreateStore()
+    [Fact]
+    public async Task Review_before_implementation_is_rejected()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec", [new SpecTaskInput("one", "One")]));
+
+        var exception = await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddResultAsync(workflow.Id, new ResultInput(
+                string.Empty,
+                WorkflowResultKind.Review,
+                true,
+                "looks good")));
+
+        Assert.Contains("every spec task", exception.Message, StringComparison.Ordinal);
+        Assert.NotEqual(WorkflowStatus.Completed, (await store.GetAsync(workflow.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task Merge_and_review_require_all_implementations_and_clean_review()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec",
+        [
+            new SpecTaskInput("one", "One"),
+            new SpecTaskInput("two", "Two"),
+        ]));
+        await store.AddResultAsync(workflow.Id, new ResultInput("one", WorkflowResultKind.Implementation, true, "one"));
+
+        await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Merge, true, "too early")));
+        await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Review, true, "too early")));
+
+        await store.AddResultAsync(workflow.Id, new ResultInput("two", WorkflowResultKind.Implementation, true, "two"));
+        await store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Merge, true, "merged"));
+
+        var contradictory = await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddResultAsync(workflow.Id, new ResultInput(
+                string.Empty,
+                WorkflowResultKind.Review,
+                true,
+                "passed with errors",
+                Findings: [new FindingInput(FindingSeverity.Error, "missing test")])));
+        Assert.Contains("error findings", contradictory.Message, StringComparison.Ordinal);
+
+        await store.AddResultAsync(workflow.Id, new ResultInput(
+            string.Empty,
+            WorkflowResultKind.Review,
+            true,
+            "clean review"));
+        Assert.Equal(WorkflowStatus.Completed, (await store.GetAsync(workflow.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task Results_beyond_the_page_size_still_complete_the_workflow()
+    {
+        var store = CreateStore(new WorkflowOptions { MaxPageSize = 2 });
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec",
+        [
+            new SpecTaskInput("one", "One"),
+            new SpecTaskInput("two", "Two"),
+            new SpecTaskInput("three", "Three"),
+        ]));
+
+        foreach (var key in new[] { "one", "two", "three" })
+        {
+            await store.AddResultAsync(workflow.Id, new ResultInput(
+                key,
+                WorkflowResultKind.Implementation,
+                true,
+                $"done {key}"));
+        }
+
+        var state = await store.GetAsync(workflow.Id);
+        Assert.Equal(WorkflowStatus.ImplementationComplete, state!.Status);
+        Assert.Equal(3, state.TaskCount);
+        Assert.Equal(3, state.CompletedTaskCount);
+        Assert.Equal(3, (await store.GetResultsAsync(workflow.Id)).Count);
+    }
+
+    [Fact]
+    public async Task Batch_answers_are_atomic()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        var questions = await store.AddQuestionsAsync(workflow.Id, [new("Q1"), new("Q2")]);
+
+        await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddAnswersAsync(workflow.Id,
+            [
+                new AnswerInput(questions[0].Id, "valid"),
+                new AnswerInput(999_999, "missing question"),
+            ]));
+
+        Assert.Empty(await store.GetAnswersAsync(workflow.Id, 0));
+        Assert.All(
+            await store.GetQuestionsAsync(workflow.Id, openOnly: false),
+            question => Assert.False(question.Answered));
+    }
+
+    private KnowledgeWorkflowStore CreateStore(WorkflowOptions? options = null)
     {
         var graph = new InMemoryKnowledgeGraph(
             Options.Create(new KnowledgeOptions()),
@@ -194,7 +297,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         return new KnowledgeWorkflowStore(
             graph,
             new NullWorkflowEventPublisher(),
-            Options.Create(new WorkflowOptions()),
+            Options.Create(options ?? new WorkflowOptions()),
             NullLogger<KnowledgeWorkflowStore>.Instance);
     }
 

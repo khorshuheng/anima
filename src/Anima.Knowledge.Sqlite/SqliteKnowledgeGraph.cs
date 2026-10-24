@@ -52,7 +52,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         {
             DataSource = _databasePath,
             Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
+            Cache = SqliteCacheMode.Default,
             Pooling = true,
             DefaultTimeout = Math.Max(1, _sqliteOptions.BusyTimeoutSeconds),
         }.ToString();
@@ -219,6 +219,11 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                         anchor.EdgeType,
                         token);
                 }
+            }
+
+            if (plan.GoalId is not null && plan.Anchor is { } existingAnchor)
+            {
+                await EnsureAnchorAsync(connection, transaction, goal.Id, existingAnchor, token);
             }
 
             var created = new Dictionary<string, KnowledgeNode>(StringComparer.Ordinal);
@@ -669,6 +674,52 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         }
 
         return ReadNode(reader, includeContent: true);
+    }
+
+    private async Task EnsureAnchorAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long goalId,
+        PlanAnchor anchor,
+        CancellationToken cancellationToken)
+    {
+        var existing = new List<long>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                SELECT e.destination FROM edge e JOIN edge_type t ON t.id = e.edge_type_id
+                WHERE e.source = $goal AND t.name = $type COLLATE NOCASE;
+                """;
+            command.Parameters.AddWithValue("$goal", goalId);
+            command.Parameters.AddWithValue("$type", anchor.EdgeType);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                existing.Add(reader.GetInt64(0));
+            }
+        }
+
+        if (existing.Count == 0)
+        {
+            await AddEdgeCoreAsync(
+                connection,
+                transaction,
+                goalId,
+                anchor.NodeId,
+                anchor.EdgeType,
+                cancellationToken);
+            return;
+        }
+
+        if (existing.Contains(anchor.NodeId))
+        {
+            return;
+        }
+
+        throw new KnowledgeValidationException(
+            $"goal {goalId} is already anchored via '{anchor.EdgeType}' to node {existing[0]}; " +
+            $"it cannot be re-anchored to {anchor.NodeId}");
     }
 
     private async Task<bool> IsAnchoredAsync(

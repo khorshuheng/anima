@@ -69,11 +69,13 @@ deployment target has **no PowerShell assumption** (see Deploy below).
   `%LOCALAPPDATA%\anima\knowledge.db` (Windows). Override with
   `Anima:Knowledge:DatabasePath` or `ANIMA_KNOWLEDGE_DB`.
 - In-memory is test-only; `Provider=InMemory` exists for isolated tests, not
-  production.
-- Graph writes publish `anima.knowledge.v1.GraphEvent` on
-  `anima.knowledge.changed`. Workflow mutations publish
+  production. Unknown provider/transport values fail startup instead of silently
+  falling back.
+- Graph writes enqueue `anima.knowledge.v1.GraphEvent` on
+  `anima.knowledge.changed`; workflow mutations enqueue
   `anima.workflow.v1.WorkflowEvent` on `anima.workflow.events`. Events are
-  wake-ups; readers fetch state from HTTP.
+  best-effort wake-ups; readers fetch state from HTTP. Publication is bounded
+  (`BusClientOptions.PublishTimeout`, default 5s) and runs off the write path.
 - The UI subscribes to both topics live and falls back to polling.
 
 ## Harness workflow
@@ -103,7 +105,9 @@ Facts, not guesses, drive the state:
 4. Harness creates worktrees, spawns implementer agents, registers assignments
    (`anima workflow assign`), and posts results (`anima workflow result`).
 5. Merger and reviewer do the same; review findings are stored.
-6. Status becomes `completed` only when a successful review result exists.
+6. Status becomes `completed` only when every spec task has a successful
+   implementation, a successful merge exists, and a review passes without error
+   findings.
 
 Inspect it at `http://127.0.0.1:7415/ui/` or with `anima workflow show <id>`.
 Knowledge plans can be created in Anima's own graph with
@@ -127,6 +131,10 @@ anima bus watch --topics anima.workflow.events
 anima bus ask --topic anima.agent.analyst.inbox \
   --type anima.workflow.v1.WorkflowRoleTask \
   --payload @role-task.json --timeout 120
+
+`PublishAsync` is bounded by `BusClientOptions.PublishTimeout`; a stalled bus
+cannot hang a graph/workflow mutation. Events are queued with drop-oldest
+backpressure.
 ```
 
 `anima bus ask` subscribes to a private reply topic, publishes `ReplyTo`, and

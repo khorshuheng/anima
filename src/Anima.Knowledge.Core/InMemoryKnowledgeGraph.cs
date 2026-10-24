@@ -431,6 +431,11 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             }
         }
 
+        if (plan.GoalId is not null && plan.Anchor is { } existingAnchor)
+        {
+            EnsureAnchor(goal, existingAnchor);
+        }
+
         var created = new Dictionary<string, NodeState>(StringComparer.Ordinal);
         foreach (var task in tasks)
         {
@@ -594,6 +599,30 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             .Where(edge => resolvingTypes.Contains(edge.EdgeType))
             .Select(edge => edge.Destination)
             .ToHashSet();
+    }
+
+    private void EnsureAnchor(NodeState goal, PlanAnchor anchor)
+    {
+        var existing = _edges.Values
+            .Where(edge => edge.Source == goal.Id &&
+                           string.Equals(edge.EdgeType, anchor.EdgeType, StringComparison.OrdinalIgnoreCase))
+            .Select(edge => edge.Destination)
+            .ToArray();
+
+        if (existing.Length == 0)
+        {
+            AddEdgeCore(goal.Id, anchor.NodeId, anchor.EdgeType);
+            return;
+        }
+
+        if (existing.Contains(anchor.NodeId))
+        {
+            return;
+        }
+
+        throw new KnowledgeValidationException(
+            $"goal {goal.Id} is already anchored via '{anchor.EdgeType}' to node {existing[0]}; " +
+            $"it cannot be re-anchored to {anchor.NodeId}");
     }
 
     private bool IsAnchored(NodeState node)

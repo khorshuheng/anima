@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Data.Sqlite;
 
 namespace Anima.Knowledge.Sqlite;
@@ -59,11 +60,13 @@ public sealed partial class SqliteKnowledgeGraph
         var edges = new List<(long Id, long Source, long Destination, string Type, DateTimeOffset Created)>();
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = """
+            var typeFilter = query.EdgeType is null
+                ? string.Empty
+                : " AND t.name = $type COLLATE NOCASE";
+            command.CommandText = $"""
                 SELECT e.id, e.source, e.destination, t.name, e.created_at
                 FROM edge e JOIN edge_type t ON t.id = e.edge_type_id
-                WHERE (e.source = $id OR e.destination = $id)
-                """ + (query.EdgeType is null ? string.Empty : " AND t.name = $type COLLATE NOCASE") + """
+                WHERE (e.source = $id OR e.destination = $id){typeFilter}
                 ORDER BY e.id;
                 """;
             command.Parameters.AddWithValue("$id", query.NodeId);
@@ -251,23 +254,18 @@ public sealed partial class SqliteKnowledgeGraph
         int offset,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
+        var parameters = new List<(string Name, object Value)>();
         var contentColumn = query.SummaryOnly ? "''" : "n.content";
         var rankColumn = useFts ? ", bm25(node_fts) AS rank" : string.Empty;
         var from = useFts
             ? " FROM node_fts JOIN node n ON n.id = node_fts.rowid JOIN node_kind k ON k.id = n.kind_id"
             : " FROM node n JOIN node_kind k ON k.id = n.kind_id";
 
-        command.CommandText =
-            $"SELECT n.id, k.name, n.name, n.description, {contentColumn} AS content, n.properties, " +
-            $"n.created_at, n.updated_at, CASE WHEN {ResolvedExists} THEN 1 ELSE 0 END AS resolved, " +
-            $"COUNT(*) OVER() AS total{rankColumn}{from}";
-
         var conditions = new List<string>();
         if (useFts)
         {
             conditions.Add("node_fts MATCH $match");
-            command.Parameters.AddWithValue("$match", BuildFtsQuery(searchText!));
+            parameters.Add(("$match", BuildFtsQuery(searchText!)));
         }
         else if (searchText is not null)
         {
@@ -275,7 +273,7 @@ public sealed partial class SqliteKnowledgeGraph
             for (var index = 0; index < searchText.Length; index++)
             {
                 var parameter = $"$like{index}";
-                command.Parameters.AddWithValue(parameter, $"%{searchText[index]}%");
+                parameters.Add((parameter, $"%{searchText[index]}%"));
                 parts.Add($"(n.name LIKE {parameter} OR n.description LIKE {parameter} " +
                           $"OR n.content LIKE {parameter} OR n.properties LIKE {parameter})");
             }
@@ -286,7 +284,7 @@ public sealed partial class SqliteKnowledgeGraph
         if (!string.IsNullOrWhiteSpace(query.Kind))
         {
             conditions.Add("k.name = $kind COLLATE NOCASE");
-            command.Parameters.AddWithValue("$kind", query.Kind.Trim());
+            parameters.Add(("$kind", query.Kind.Trim()));
         }
 
         if (query.Properties is { Count: > 0 } properties)
@@ -300,8 +298,8 @@ public sealed partial class SqliteKnowledgeGraph
                 conditions.Add(
                     $"EXISTS (SELECT 1 FROM json_each(n.properties) AS {alias} " +
                     $"WHERE {alias}.key = {keyParameter} AND {alias}.value = {valueParameter})");
-                command.Parameters.AddWithValue(keyParameter, pair.Key);
-                command.Parameters.AddWithValue(valueParameter, pair.Value);
+                parameters.Add((keyParameter, pair.Key));
+                parameters.Add((valueParameter, pair.Value));
                 index++;
             }
         }
@@ -318,22 +316,47 @@ public sealed partial class SqliteKnowledgeGraph
             conditions.Add("n.id IN (SELECT id FROM reachable)");
         }
 
-        command.CommandText += " WHERE " + string.Join(" AND ", conditions);
-        command.CommandText += useFts ? " ORDER BY rank ASC, n.id ASC" : " ORDER BY n.id ASC";
-        command.CommandText += " LIMIT $limit OFFSET $offset;";
+        var whereSql = " WHERE " + string.Join(" AND ", conditions);
+        var selectSql =
+            $"SELECT n.id, k.name, n.name, n.description, {contentColumn} AS content, n.properties, " +
+            $"n.created_at, n.updated_at, CASE WHEN {ResolvedExists} THEN 1 ELSE 0 END AS resolved" +
+            $"{rankColumn}{from}{whereSql}";
+        selectSql += useFts ? " ORDER BY rank ASC, n.id ASC" : " ORDER BY n.id ASC";
+        selectSql += " LIMIT $limit OFFSET $offset;";
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = selectSql;
+        ApplyParameters(command);
         command.Parameters.AddWithValue("$limit", limit);
         command.Parameters.AddWithValue("$offset", offset);
 
         var items = new List<KnowledgeNode>();
-        var total = 0;
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
-            items.Add(ReadNode(reader, includeContent: !query.SummaryOnly));
-            total = reader.IsDBNull(9) ? 0 : (int)reader.GetInt64(9);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                items.Add(ReadNode(reader, includeContent: !query.SummaryOnly));
+            }
         }
 
+        // COUNT(*) OVER() is lost when the page is empty; run a dedicated count so
+        // total stays correct even when offset >= total.
+        await using var countCommand = connection.CreateCommand();
+        countCommand.CommandText = $"SELECT COUNT(*){from}{whereSql};";
+        ApplyParameters(countCommand);
+        var total = Convert.ToInt32(
+            await countCommand.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture);
+
         return new NodePage(items, total, limit, offset);
+
+        void ApplyParameters(SqliteCommand target)
+        {
+            foreach (var parameter in parameters)
+            {
+                target.Parameters.AddWithValue(parameter.Name, parameter.Value);
+            }
+        }
     }
 
     private static string BuildFtsQuery(string[] terms)

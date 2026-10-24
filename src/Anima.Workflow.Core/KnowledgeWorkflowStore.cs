@@ -182,17 +182,20 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
 
         var existing = await GetQuestionsAsync(workflowId, openOnly: false, cancellationToken);
         var known = existing.Select(question => question.Text).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var added = new List<QuestionView>();
-
+        var toCreate = new List<QuestionInput>();
         foreach (var input in questions)
         {
             Require(input.Text, "question text");
-            var text = input.Text.Trim();
-            if (!known.Add(text))
+            if (known.Add(input.Text.Trim()))
             {
-                continue;
+                toCreate.Add(input);
             }
+        }
 
+        var added = new List<QuestionView>();
+        foreach (var input in toCreate)
+        {
+            var text = input.Text.Trim();
             var node = await _graph.CreateNodeAsync(
                 new NodeDraft(
                     KnowledgeKinds.Question,
@@ -246,7 +249,8 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         ArgumentNullException.ThrowIfNull(answers);
         await RequireWorkflowAsync(workflowId, cancellationToken);
 
-        var created = new List<AnswerView>();
+        var validated = new List<(KnowledgeNode Question, string Text)>();
+        var seen = new HashSet<long>();
         foreach (var input in answers)
         {
             Require(input.Text, "answer text");
@@ -269,12 +273,24 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 throw new WorkflowValidationException($"question {question.Id} is already answered");
             }
 
+            if (!seen.Add(question.Id))
+            {
+                throw new WorkflowValidationException(
+                    $"question {question.Id} appears more than once in the answer batch");
+            }
+
+            validated.Add((question, input.Text.Trim()));
+        }
+
+        var created = new List<AnswerView>();
+        foreach (var (question, text) in validated)
+        {
             var node = await _graph.CreateNodeAsync(
                 new NodeDraft(
                     KnowledgeKinds.Answer,
                     question.Name,
                     string.Empty,
-                    input.Text.Trim(),
+                    text,
                     new Dictionary<string, string>
                     {
                         ["workflowId"] = Id(workflowId),
@@ -285,7 +301,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 new EdgeDraft(node.Id, question.Id, KnowledgeEdgeTypes.Answers),
                 cancellationToken);
 
-            created.Add(new AnswerView(node.Id, question.Id, input.Text.Trim(), node.CreatedAt));
+            created.Add(new AnswerView(node.Id, question.Id, text, node.CreatedAt));
         }
 
         if (created.Count > 0)
@@ -451,10 +467,11 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 await _graph.AddEdgeAsync(
                     new EdgeDraft(taskNode.Id, goalId, KnowledgeEdgeTypes.PartOf),
                     cancellationToken);
-                await _graph.AddEdgeAsync(
-                    new EdgeDraft(taskNode.Id, specNode.Id, KnowledgeEdgeTypes.DerivedFrom),
-                    cancellationToken);
             }
+
+            await _graph.AddEdgeAsync(
+                new EdgeDraft(taskNode.Id, specNode.Id, KnowledgeEdgeTypes.DerivedFrom),
+                cancellationToken);
 
             taskViews.Add(new SpecTaskView(
                 task.Key,
@@ -585,6 +602,18 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         }
 
         var agent = await FindOrCreateAgentAsync(assignment.AgentId, cancellationToken);
+        var previousAgents = await _graph.GetNeighborsAsync(
+            new NeighborQuery(node.Id, EdgeDirection.Outgoing, KnowledgeEdgeTypes.AssignedTo),
+            cancellationToken);
+        foreach (var previous in previousAgents.Where(item => item.Edge.Destination != agent.Id))
+        {
+            await _graph.RemoveEdgeAsync(
+                node.Id,
+                previous.Edge.Destination,
+                KnowledgeEdgeTypes.AssignedTo,
+                cancellationToken);
+        }
+
         await _graph.AddEdgeAsync(
             new EdgeDraft(node.Id, agent.Id, KnowledgeEdgeTypes.AssignedTo),
             cancellationToken);
@@ -646,7 +675,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         CancellationToken cancellationToken = default)
     {
         await RequireWorkflowAsync(workflowId, cancellationToken);
-        var results = await _graph.QueryNodesAsync(
+        var results = await QueryAllAsync(
             new NodeQuery
             {
                 Kind = KnowledgeKinds.Result,
@@ -654,26 +683,24 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 Within = workflowId,
                 Via = KnowledgeEdgeTypes.ResultOf,
                 SummaryOnly = true,
-                Limit = _options.MaxPageSize,
             },
             cancellationToken);
 
-        var findings = await _graph.QueryNodesAsync(
+        var findings = await QueryAllAsync(
             new NodeQuery
             {
                 Kind = KnowledgeKinds.Finding,
                 Scope = KnowledgeScope.All,
                 SummaryOnly = true,
                 Properties = new Dictionary<string, string> { ["workflowId"] = Id(workflowId) },
-                Limit = _options.MaxPageSize,
             },
             cancellationToken);
 
-        var findingsByResult = findings.Items
+        var findingsByResult = findings
             .GroupBy(node => node.Properties.GetValueOrDefault("resultId") ?? string.Empty)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
 
-        return results.Items
+        return results
             .OrderBy(node => node.Id)
             .Select(node => MapResult(node, findingsByResult.GetValueOrDefault(Id(node.Id)) ?? []))
             .ToArray();
@@ -720,6 +747,44 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 $"task '{taskKey}' is not part of workflow {workflowId}");
         }
 
+        foreach (var finding in result.Findings ?? [])
+        {
+            Require(finding.Message, "finding message");
+        }
+
+        var spec = await GetSpecAsync(workflowId, cancellationToken);
+        var existingResults = await GetResultsAsync(workflowId, cancellationToken);
+        var latestByTask = LatestImplementationByTask(existingResults);
+        var allImplemented = spec is not null &&
+                             spec.Tasks.Count > 0 &&
+                             spec.Tasks.All(task =>
+                                 latestByTask.TryGetValue(task.Key, out var item) && item.Success);
+        var latestMerge = Latest(existingResults, WorkflowResultKind.Merge);
+
+        if (result.Kind is WorkflowResultKind.Merge or WorkflowResultKind.Review)
+        {
+            if (!allImplemented)
+            {
+                throw new WorkflowValidationException(
+                    $"{Wire(result.Kind)} requires every spec task to have a successful implementation result");
+            }
+        }
+
+        if (result.Kind == WorkflowResultKind.Review &&
+            (latestMerge is null || !latestMerge.Success))
+        {
+            throw new WorkflowValidationException(
+                "review requires a successful merge result");
+        }
+
+        if (result.Kind == WorkflowResultKind.Review &&
+            result.Success &&
+            (result.Findings ?? []).Any(finding => finding.Severity == FindingSeverity.Error))
+        {
+            throw new WorkflowValidationException(
+                "a review with error findings cannot be marked successful");
+        }
+
         var properties = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["workflowId"] = Id(workflowId),
@@ -758,7 +823,6 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 cancellationToken);
         }
 
-        var spec = await GetSpecAsync(workflowId, cancellationToken);
         if (spec is not null && result.Kind == WorkflowResultKind.Implementation)
         {
             await _graph.AddEdgeAsync(
@@ -768,7 +832,6 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
 
         foreach (var finding in result.Findings ?? [])
         {
-            Require(finding.Message, "finding message");
             var findingNode = await _graph.CreateNodeAsync(
                 new NodeDraft(
                     KnowledgeKinds.Finding,
@@ -876,6 +939,38 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             lastResult);
     }
 
+    private async Task<List<KnowledgeNode>> QueryAllAsync(
+        NodeQuery query,
+        CancellationToken cancellationToken)
+    {
+        var pageSize = Math.Max(1, _options.MaxPageSize);
+        var items = new List<KnowledgeNode>();
+        var offset = 0;
+        while (true)
+        {
+            var page = await _graph.QueryNodesAsync(
+                query with { Limit = pageSize, Offset = offset },
+                cancellationToken);
+            items.AddRange(page.Items);
+            if (page.Items.Count < pageSize)
+            {
+                return items;
+            }
+
+            offset += page.Items.Count;
+        }
+    }
+
+    private static Dictionary<string, ResultView> LatestImplementationByTask(
+        IEnumerable<ResultView> results)
+        => results
+            .Where(result => result.Kind == WorkflowResultKind.Implementation)
+            .GroupBy(result => result.TaskKey, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(result => result.Id).First(),
+                StringComparer.Ordinal);
+
     private async Task<WorkflowState> GetRequiredStateAsync(long workflowId, CancellationToken cancellationToken)
         => await GetAsync(workflowId, cancellationToken)
            ?? throw new WorkflowNotFoundException($"workflow {workflowId} does not exist");
@@ -929,33 +1024,38 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         }
 
         var results = await GetResultsAsync(workflowId, cancellationToken);
+        var latestByTask = LatestImplementationByTask(results);
+        var allImplemented = spec.Tasks.Count > 0 &&
+                             spec.Tasks.All(task =>
+                                 latestByTask.TryGetValue(task.Key, out var item) && item.Success);
         var review = Latest(results, WorkflowResultKind.Review);
         if (review is not null)
         {
-            return review.Success ? WorkflowStatus.Completed : WorkflowStatus.Failed;
+            if (!review.Success || review.Findings.Any(finding => finding.Severity == FindingSeverity.Error))
+            {
+                return WorkflowStatus.Failed;
+            }
+
+            var reviewedMerge = Latest(results, WorkflowResultKind.Merge);
+            return allImplemented && reviewedMerge is { Success: true }
+                ? WorkflowStatus.Completed
+                : WorkflowStatus.Failed;
         }
 
         var merge = Latest(results, WorkflowResultKind.Merge);
         if (merge is not null)
         {
-            return merge.Success ? WorkflowStatus.MergeComplete : WorkflowStatus.Failed;
+            return merge.Success && allImplemented
+                ? WorkflowStatus.MergeComplete
+                : WorkflowStatus.Failed;
         }
-
-        var latestByTask = results
-            .Where(result => result.Kind == WorkflowResultKind.Implementation)
-            .GroupBy(result => result.TaskKey, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.OrderByDescending(result => result.Id).First(),
-                StringComparer.Ordinal);
 
         if (latestByTask.Values.Any(result => !result.Success))
         {
             return WorkflowStatus.Failed;
         }
 
-        if (spec.Tasks.Count > 0 &&
-            spec.Tasks.All(task => latestByTask.TryGetValue(task.Key, out var result) && result.Success))
+        if (allImplemented)
         {
             return WorkflowStatus.ImplementationComplete;
         }

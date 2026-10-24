@@ -48,27 +48,38 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const selectedRef = useRef<number | null>(null);
   const refreshTimer = useRef<number | undefined>(undefined);
+  const listRequest = useRef(0);
+  const detailRequest = useRef(0);
   selectedRef.current = selectedId;
 
   const loadList = useCallback(async () => {
+    const request = ++listRequest.current;
     try {
       const response = await api.workflows();
+      if (request !== listRequest.current) return;
       setWorkflows(response.items);
       setError(null);
       if (selectedRef.current === null && response.items.length > 0) {
         setSelectedId(response.items[0].id);
       }
     } catch (exception) {
-      setError(String(exception));
+      if (request === listRequest.current) {
+        setError(String(exception));
+      }
     }
   }, []);
 
   const loadDetail = useCallback(async (id: number) => {
+    const request = ++detailRequest.current;
     try {
-      setDetail(await api.detail(id));
+      const next = await api.detail(id);
+      if (request !== detailRequest.current) return;
+      setDetail(next);
       setError(null);
     } catch (exception) {
-      setError(String(exception));
+      if (request === detailRequest.current) {
+        setError(String(exception));
+      }
     }
   }, []);
 
@@ -124,6 +135,10 @@ export default function App() {
   }, [loadList, loadDetail]);
 
   useEffect(() => {
+    if (live === 'live') {
+      return;
+    }
+
     const timer = window.setInterval(() => {
       void loadList();
       if (selectedRef.current !== null) {
@@ -131,7 +146,7 @@ export default function App() {
       }
     }, 10_000);
     return () => window.clearInterval(timer);
-  }, [loadList, loadDetail]);
+  }, [live, loadList, loadDetail]);
 
   const answersByQuestion = new Map(detail?.answers.map((answer) => [answer.questionId, answer]) ?? []);
   const openQuestions = detail?.questions.filter((question) => !question.answered) ?? [];

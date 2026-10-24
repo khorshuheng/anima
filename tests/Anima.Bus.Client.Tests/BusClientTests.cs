@@ -111,6 +111,27 @@ public sealed class BusClientTests
     }
 
     [Fact]
+    public async Task Http_bus_publish_times_out_when_the_server_stalls()
+    {
+        var handler = new SlowHandler(TimeSpan.FromMilliseconds(250));
+        using var http = new HttpClient(handler) { BaseAddress = new Uri("http://bus.local/") };
+        await using var bus = new HttpMessageBus(
+            http,
+            Options.Create(new BusClientOptions { PublishTimeout = TimeSpan.FromMilliseconds(25) }),
+            NullLogger<HttpMessageBus>.Instance);
+
+        var exception = await Assert.ThrowsAsync<TimeoutException>(
+            () => bus.PublishAsync(
+                MessageEnvelope.Create(
+                    "anima.test.topic",
+                    "anima.test.v1.Ping",
+                    ReadOnlyMemory<byte>.Empty,
+                    ContractContentTypes.ProtobufJson)).AsTask());
+
+        Assert.Contains("timed out", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Requester_correlates_a_reply_on_a_private_topic()
     {
         await using var bus = new InProcMessageBus(
@@ -162,6 +183,17 @@ public sealed class BusClientTests
                 new BusRequestOptions { Timeout = TimeSpan.FromMilliseconds(100) }));
 
         Assert.Contains("no reply", exception.Message, StringComparison.Ordinal);
+    }
+
+    private sealed class SlowHandler(TimeSpan delay) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            await Task.Delay(delay, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.Accepted);
+        }
     }
 
     private sealed class CapturingHandler : HttpMessageHandler

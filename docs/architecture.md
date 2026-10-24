@@ -69,6 +69,11 @@ analysis -> awaiting_answers -> spec_ready -> implementing
 - Results are facts: implementation, merge, review, verification (`result` node).
 - Review findings are separate `finding` nodes (`found_in` result).
 - Status changes create `phase` nodes with `precedes` ordering.
+- Phase gates are enforced on write and on derivation: merge requires every spec
+  task to have a successful implementation; review requires a successful merge
+  and cannot pass with error findings.
+- Result aggregation paginates through all result pages, so `MaxPageSize` is a
+  view limit, not a status-accuracy limit.
 
 `KnowledgeWorkflowStore` is the only place that derives status. It never infers
 success from an agent's silence; a result must be posted.
@@ -77,7 +82,8 @@ success from an agent's silence; a result must be posted.
 
 The workflow API is the system of record. The bus publishes
 `anima.workflow.v1.WorkflowEvent` on `anima.workflow.events` after each mutation
-so agents can wake up, but they read state from the API.
+so agents can wake up, but they read state from the API. Workflow events are
+queued (drop-oldest) and never block a mutation.
 
 Why not bus-only Q&A: no durability, no replay for a late agent, no state
 transition, no human-gate handling. Why not workflow-calls-bus for Q&A: the
@@ -113,9 +119,10 @@ foreign keys, JSON properties and an FTS5 index kept in sync by triggers. Writes
 are serialized in-process and transactional; reads run on WAL connections.
 In-memory is test-only.
 
-Every successful mutation publishes a compact `GraphEvent` on
-`anima.knowledge.changed`. It carries ids and names, not payloads; consumers
-refetch. `Anima.Knowledge.Client` targets any memgraph-compatible service.
+Every successful mutation enqueues a compact `GraphEvent` on
+`anima.knowledge.changed`. Publishing is bounded and runs on a background queue;
+events carry ids and names, not payloads, and consumers refetch.
+`Anima.Knowledge.Client` targets any memgraph-compatible service.
 
 ## Contracts
 
