@@ -6,6 +6,7 @@ using Anima.Knowledge;
 using Anima.Knowledge.Service;
 using Anima.Knowledge.Service.Contracts;
 using Anima.Knowledge.Sqlite;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -98,7 +99,7 @@ app.MapGet("/api/edge-types", async (IKnowledgeGraph graph, CancellationToken ca
 
 app.MapGet("/api/nodes", async (
     string? kind,
-    long? kindId,
+    [FromQuery(Name = "kind_id")] long? kindId,
     string? scope,
     long? within,
     string? via,
@@ -205,8 +206,8 @@ app.MapDelete("/api/nodes/{id:long}", async (
 app.MapGet("/api/nodes/{id:long}/neighbors", async (
     long id,
     string? direction,
-    string? edgeType,
-    long? edgeTypeId,
+    [FromQuery(Name = "edge_type")] string? edgeType,
+    [FromQuery(Name = "edge_type_id")] long? edgeTypeId,
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
@@ -263,8 +264,8 @@ app.MapPost("/api/edges", async (
 app.MapDelete("/api/edges", async (
     long source,
     long destination,
-    string? edgeType,
-    long? edgeTypeId,
+    [FromQuery(Name = "edge_type")] string? edgeType,
+    [FromQuery(Name = "edge_type_id")] long? edgeTypeId,
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
