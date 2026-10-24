@@ -490,3 +490,6 @@ artifacts/
 # ui
 ui/node_modules/
 ui/dist/
+
+# local CodeGraph index
+.codegraph/

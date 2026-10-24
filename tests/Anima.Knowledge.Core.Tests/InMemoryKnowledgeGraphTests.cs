@@ -20,7 +20,7 @@ public sealed class InMemoryKnowledgeGraphTests
                 new PlanTaskDraft("endpoint", "Add refresh endpoint", DependsOn: ["schema"]),
             ]));
 
-        Assert.NotNull(plan.Goal);
+        Assert.NotNull(plan.Goal!);
         Assert.Equal(2, plan.Tasks.Count);
 
         var endpoint = plan.Tasks.Single(task => task.Key == "endpoint").Node;
@@ -65,10 +65,10 @@ public sealed class InMemoryKnowledgeGraphTests
             "A goal",
             Anchor: new PlanAnchor(firstRepo.Id, KnowledgeEdgeTypes.BelongsTo)));
 
-        Assert.NotNull(plan.Goal);
+        Assert.NotNull(plan.Goal!);
 
         var exception = await Assert.ThrowsAsync<KnowledgeValidationException>(
-            () => graph.AddEdgeAsync(new EdgeDraft(plan.Goal.Id, secondRepo.Id, KnowledgeEdgeTypes.BelongsTo)));
+            () => graph.AddEdgeAsync(new EdgeDraft(plan.Goal!.Id, secondRepo.Id, KnowledgeEdgeTypes.BelongsTo)));
 
         Assert.Contains("one outgoing edge", exception.Message, StringComparison.Ordinal);
     }

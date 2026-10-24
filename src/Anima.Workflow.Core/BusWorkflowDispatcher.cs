@@ -14,8 +14,6 @@ namespace Anima.Workflow;
 /// </summary>
 public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     private readonly IBusRequester _requester;
     private readonly WorkflowOptions _options;
     private readonly ILogger<BusWorkflowDispatcher> _logger;
@@ -93,6 +91,7 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
         catch (BusRequestTimeoutException exception)
         {
             _logger.LogWarning(
+                exception,
                 "Dispatch to {AgentId} for workflow {WorkflowId} timed out.",
                 request.AgentId,
                 workflowId);

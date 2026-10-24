@@ -7,7 +7,7 @@ CLI := $(DOTNET) run --project tools/Anima.Cli -c $(CONFIG) --
 .DEFAULT_GOAL := help
 
 .PHONY: help restore build test fmt fmt-check check contracts dev browser-check \
-        playwright-install hooks-install clean ui-install ui-build ui-dev \
+        playwright-install hooks-install clean ui-install ui-build ui-dev graph-sync graph-status \
         build-contracts test-contracts build-bus test-bus build-knowledge test-knowledge \
         build-automation test-automation build-deploy test-deploy build-workflow test-workflow \
         build-dashboard test-dashboard \
@@ -80,6 +80,12 @@ ui-build:
 
 ui-dev:
 	npm --prefix ui run dev
+
+graph-sync:
+	codegraph sync
+
+graph-status:
+	codegraph status
 
 clean:
 	$(DOTNET) clean $(SOLUTION) -c $(CONFIG)

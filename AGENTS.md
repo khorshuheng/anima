@@ -91,3 +91,13 @@ never stop a service it did not start.
   do not restart or kill shared services.
 - Cleanup must be scoped: `kill "$pid"` / `kill -- -"$pgid"`, never by service
   name.
+
+## Code quality and structural context
+
+- Build gates: SDK analyzers + Roslynator + SonarAnalyzer, warnings-as-errors,
+  `dotnet format --verify-no-changes`. Run `make check`.
+- Analyzer policy is in `docs/code-quality.md`; do not add `NoWarn` or downgrade a
+  correctness/security rule without a comment and a test/fix.
+- CodeGraph is optional structural context for the harness/reviewer:
+  `codegraph sync` after merges, then `codegraph context` / `codegraph impact` /
+  `codegraph callers`. Do not assume a worktree is described by the main index.

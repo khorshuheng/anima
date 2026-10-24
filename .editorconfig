@@ -46,3 +46,22 @@ dotnet_diagnostic.IDE0058.severity = none
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1861.severity = none
 dotnet_diagnostic.CA1515.severity = none
+
+[*.cs]
+# SonarAnalyzer: keep the signal, don't fail the build on style or known false positives.
+dotnet_diagnostic.S6966.severity = suggestion   # prefer async console/IO overloads
+dotnet_diagnostic.S2325.severity = suggestion   # make static
+dotnet_diagnostic.S1075.severity = none         # hardcoded default URLs/paths are intentional
+dotnet_diagnostic.S2077.severity = none         # SQL is assembled from constants and parameters
+dotnet_diagnostic.S8949.severity = suggestion   # background pumps use explicit lifetimes
+dotnet_diagnostic.S3358.severity = suggestion   # nested ternaries
+dotnet_diagnostic.S3267.severity = suggestion   # LINQ simplification
+dotnet_diagnostic.S1751.severity = suggestion   # loop control style
+dotnet_diagnostic.S4456.severity = suggestion   # iterator parameter validation
+dotnet_diagnostic.S3400.severity = suggestion   # constant-returning methods
+dotnet_diagnostic.S3241.severity = suggestion   # unused return values
+dotnet_diagnostic.S2857.severity = suggestion   # SQL keyword casing
+dotnet_diagnostic.S2365.severity = suggestion   # collection-copy properties
+dotnet_diagnostic.S2094.severity = suggestion   # empty marker classes
+dotnet_diagnostic.S1066.severity = suggestion   # merge nested if
+dotnet_diagnostic.S8969.severity = suggestion   # xUnit NotNull is not a flow annotation

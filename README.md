@@ -199,6 +199,17 @@ Inspect runs: `GET /api/runs`, `GET /api/runs/{id}`,
 - `GET /api/workflows/{id}/context?taskKey=` is the agent brief: worktree path,
   branch, acceptance criteria, verify commands and last result summary.
 
+## Code quality
+
+`make check` enforces SDK analyzers, Roslynator and SonarAnalyzer under
+warnings-as-errors, plus `dotnet format --verify-no-changes`. SonarLint can be
+used in the IDE; SonarQube is not wired to a server. `docs/code-quality.md`
+documents the rule policy.
+
+CodeGraph is a local structural index (`codegraph init` once, `make graph-sync`
+after merges). Use `codegraph context`/`impact` in the harness for task packets
+and review blast radius; do not let workers rely on a stale main-worktree index.
+
 ## Verification
 
 ```bash

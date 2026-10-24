@@ -23,6 +23,10 @@ public static class GlobPattern
             .Replace(@"\*", "[^/]*", StringComparison.Ordinal)
             .Replace(@"\?", ".", StringComparison.Ordinal) + "$";
 
-        return Regex.IsMatch(value, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return Regex.IsMatch(
+            value,
+            regex,
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1));
     }
 }

@@ -311,3 +311,16 @@ change --implements--> task, change --modifies--> files
 ```
 
 Then remove worktrees and keep branches if the audit trail matters.
+
+## Structural context and quality gates
+
+- If `.codegraph/` exists on the main checkout, run `codegraph sync` after a
+  merge and use `codegraph context "<task>"`, `codegraph impact <symbol>` and
+  `codegraph callers <symbol>` when building a worker packet or reviewing blast
+  radius. Do not assume a worktree is covered by the main index.
+- Before assigning a worker, use `workflow context` plus CodeGraph impact (when
+  available) and include the spec hash/version.
+- Every worker runs its scoped verification commands. Merge runs the full
+  `make check`; review must record a verdict and findings.
+- `make check` includes Roslynator + SonarAnalyzer under warnings-as-errors.
+  Fix or explicitly configure a rule in `.editorconfig`; never blanket-disable.

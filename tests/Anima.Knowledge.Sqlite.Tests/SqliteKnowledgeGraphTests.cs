@@ -57,7 +57,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
                 new PlanTaskDraft("endpoint", "Add refresh endpoint", DependsOn: ["schema"]),
             ]));
 
-        Assert.NotNull(plan.Goal);
+        Assert.NotNull(plan.Goal!);
         var endpoint = plan.Tasks.Single(task => task.Key == "endpoint").Node;
 
         var search = await graph.SearchAsync(

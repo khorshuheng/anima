@@ -127,8 +127,10 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
         MessageEnvelope envelope,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 1; ; attempt++)
+        var attempt = 0;
+        while (true)
         {
+            attempt++;
             try
             {
                 await subscription.Handler(envelope, cancellationToken);

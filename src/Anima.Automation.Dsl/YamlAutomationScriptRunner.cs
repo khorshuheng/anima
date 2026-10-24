@@ -11,7 +11,8 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
 {
     private static readonly Regex VariablePattern = new(
         @"\$\{([A-Za-z0-9_.-]+)\}",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        RegexOptions.Compiled | RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(1));
 
     private readonly AutomationScriptParser _parser;
 

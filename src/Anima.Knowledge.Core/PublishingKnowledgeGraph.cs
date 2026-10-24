@@ -148,6 +148,7 @@ public sealed class PublishingKnowledgeGraph : IKnowledgeGraph, IAsyncDisposable
         KnowledgeEdge? edge,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_options.PublishEvents || _queue is null)
         {
             return Task.CompletedTask;
