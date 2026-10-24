@@ -13,9 +13,10 @@ Format: `anima-yaml/v1`.
 | `press` | `{ target, key }` | press a key |
 | `select` | `{ target, value }` | select an option |
 | `waitFor` | `{ target, state?, timeout? }` | wait for visible/hidden/attached/detached |
+| `waitForText` | `{ target, text, timeout? }` | wait until an element text contains a value |
 | `expect` | `{ url?, target?, text?, value? }` | assert; fails the step on mismatch |
 | `extract` | `{ name, target, attribute? }` | store text (or an attribute) in variables |
-| `eval` / `script` | expression | run a page expression, string result |
+| `eval` / `evaluate` / `script` | expression | run a page expression, string result |
 | `screenshot` | path | capture a full-page screenshot |
 
 Variables use `${name}` and `${env.NAME}`. Runtime variables override script
