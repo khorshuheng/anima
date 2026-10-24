@@ -243,15 +243,7 @@ app.MapPost("/api/workflows/{id:long}/dispatch", async (
     IWorkflowDispatcher dispatcher,
     CancellationToken cancellationToken) =>
 {
-    if (string.IsNullOrWhiteSpace(request.AgentId))
-    {
-        throw new WorkflowValidationException("agentId is required");
-    }
-
-    if (string.IsNullOrWhiteSpace(request.Role))
-    {
-        throw new WorkflowValidationException("role is required");
-    }
+    WorkflowDispatchValidation.Validate(request);
 
     var messageId = WorkflowMessageId.Normalize(request.MessageId);
     var normalized = request with { MessageId = messageId };
@@ -279,7 +271,12 @@ app.MapPost("/api/workflows/{id:long}/dispatch", async (
             cancellationToken);
     }
 
-    return Results.Ok(await dispatcher.DispatchAsync(id, normalized, cancellationToken));
+    var result = await dispatcher.DispatchAsync(id, normalized, cancellationToken);
+    return Results.Json(
+        result,
+        statusCode: result.Success
+            ? StatusCodes.Status202Accepted
+            : StatusCodes.Status503ServiceUnavailable);
 });
 
 app.Run();

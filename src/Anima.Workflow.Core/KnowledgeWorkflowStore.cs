@@ -568,21 +568,39 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             ?? throw new WorkflowValidationException(
                 $"task '{assignment.TaskKey}' is not part of workflow {workflowId}; post the spec first");
 
-        var properties = new Dictionary<string, string>(StringComparer.Ordinal)
+        var existing = await FindAssignmentNodeAsync(workflowId, assignment.TaskKey, cancellationToken);
+        var sameAgent = existing is not null &&
+                        string.Equals(
+                            existing.Properties.GetValueOrDefault("agentId"),
+                            assignment.AgentId,
+                            StringComparison.Ordinal);
+        var properties = existing is null
+            ? new Dictionary<string, string>(StringComparer.Ordinal)
+            : new Dictionary<string, string>(existing.Properties, StringComparer.Ordinal);
+        properties["workflowId"] = Id(workflowId);
+        properties["taskKey"] = assignment.TaskKey;
+        properties["agentId"] = assignment.AgentId;
+        properties["path"] = assignment.WorktreePath;
+        properties["branch"] = assignment.Branch;
+        properties["status"] = sameAgent &&
+                              ParseNullableDate(existing!.Properties.GetValueOrDefault("acknowledgedAt")) is not null
+            ? "acknowledged"
+            : "assigned";
+        if (!sameAgent)
         {
-            ["workflowId"] = Id(workflowId),
-            ["taskKey"] = assignment.TaskKey,
-            ["agentId"] = assignment.AgentId,
-            ["path"] = assignment.WorktreePath,
-            ["branch"] = assignment.Branch,
-            ["status"] = "assigned",
-        };
-        if (!string.IsNullOrWhiteSpace(assignment.MessageId))
+            properties.Remove("acknowledgedAt");
+            properties.Remove("runId");
+        }
+
+        if (string.IsNullOrWhiteSpace(assignment.MessageId))
+        {
+            properties.Remove("messageId");
+        }
+        else
         {
             properties["messageId"] = assignment.MessageId;
         }
 
-        var existing = await FindAssignmentNodeAsync(workflowId, assignment.TaskKey, cancellationToken);
         var node = existing is null
             ? await _graph.CreateNodeAsync(
                 new NodeDraft(
@@ -628,6 +646,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             new EdgeDraft(node.Id, agent.Id, KnowledgeEdgeTypes.AssignedTo),
             cancellationToken);
 
+        await RefreshStatusAsync(workflowId, "assignment registered", cancellationToken);
         await PublishEventAsync(
             workflowId,
             "assignment.registered",
@@ -635,7 +654,6 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             [node.Id],
             $"{assignment.TaskKey} -> {assignment.AgentId}",
             cancellationToken);
-        await RefreshStatusAsync(workflowId, "assignment registered", cancellationToken);
         return MapAssignment(node);
     }
 
@@ -671,6 +689,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         {
             ["acknowledgedAt"] = (ParseNullableDate(node.Properties.GetValueOrDefault("acknowledgedAt"))
                 ?? DateTimeOffset.UtcNow).ToString("O", CultureInfo.InvariantCulture),
+            ["status"] = "acknowledged",
         };
         if (!string.IsNullOrWhiteSpace(runId))
         {
@@ -681,6 +700,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             node.Id,
             new NodePatch(Properties: properties),
             cancellationToken);
+        await RefreshStatusAsync(workflowId, "assignment acknowledged", cancellationToken);
         await PublishEventAsync(
             workflowId,
             "assignment.acknowledged",
@@ -1199,13 +1219,16 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             return WorkflowStatus.ImplementationComplete;
         }
 
+        var assignments = await GetAssignmentsAsync(workflowId, cancellationToken);
         if (latestByTask.Count > 0 ||
-            (await GetAssignmentsAsync(workflowId, cancellationToken)).Count > 0)
+            assignments.Any(assignment => assignment.AcknowledgedAt is not null))
         {
             return WorkflowStatus.Implementing;
         }
 
-        return WorkflowStatus.SpecReady;
+        return assignments.Count > 0
+            ? WorkflowStatus.Assigned
+            : WorkflowStatus.SpecReady;
     }
 
     private async Task SetStatusAsync(

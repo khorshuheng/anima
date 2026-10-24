@@ -245,7 +245,6 @@ internal static class WorkflowCommands
         var instructions = CliJson.Option(args, "--instructions") ?? throw new WorkflowValidationException("--instructions is required");
         var context = CliJson.Option(args, "--context");
         var contextJson = context is null ? null : await File.ReadAllTextAsync(context);
-        var timeout = int.TryParse(CliJson.Option(args, "--timeout"), out var seconds) ? seconds : 0;
 
         return await PostAsync(
             http,
@@ -255,7 +254,6 @@ internal static class WorkflowCommands
                 role,
                 instructions,
                 contextJson,
-                timeout,
                 CliJson.Option(args, "--task"),
                 CliJson.Option(args, "--path"),
                 CliJson.Option(args, "--branch"),
@@ -335,7 +333,7 @@ internal static class WorkflowCommands
               anima workflow results <id>
               anima workflow result <id> [--task <key>] --kind <implementation|merge|review|verification> [--failure] --summary <text> [--changed-file <p>] [--conflict <p>] [--finding <severity:msg>] [--agent <id>] [--head-sha <sha>] [--branch <ref>] [--base-ref <ref>] [--run-id <id>] [--test <cmd>|--test-command <cmd>] [--artifact <path>|--artifact-path <path>]
               anima workflow timeline <id>
-              anima workflow dispatch <id> --agent <id> --role <role> --instructions <text> [--context <json-file>] [--timeout <s>] [--task <key> --path <worktree> --branch <branch>] [--note <text>] [--message-id <id>]
+              anima workflow dispatch <id> --agent <id> --role <role> --instructions <text> [--context <json-file>] [--task <key> --path <worktree> --branch <branch>] [--note <text>] [--message-id <id>]  (fire-and-forget)
               anima workflow api <METHOD> <path> [json|@file]
             """);
         return 0;

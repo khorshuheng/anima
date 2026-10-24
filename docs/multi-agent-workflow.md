@@ -50,10 +50,12 @@ building the whole repo:
 5. **Implementation.** For each task the harness creates a worktree and branch
    and spawns an implementer with a worker packet (workflow/task ids, spec
    node/version/hash, base ref, branch, worktree, acceptance, verify commands).
-   Send the bus role task with `anima workflow dispatch ... --task <key>
+   Send the bus role task with `anima workflow dispatch <id> --task <key>
    --path <worktree> --branch <branch>`: dispatch registers the assignment with
-   the envelope message id before publishing and returns that `messageId`.
-   The implementer acks the assignment with its run id (`anima workflow ack`,
+   the envelope message id before publishing and returns `202` with that
+   `messageId` immediately. The implementer must already be running/subscribed;
+   the bus does not queue for offline agents. The implementer acks the assignment
+   with its run id (`anima workflow ack`,
    or `POST /api/workflows/{id}/assignments/{taskKey}/ack`), works in its own
    worktree, commits, and posts a result (`anima workflow result --kind
    implementation`) with evidence: head SHA, branch, base ref, run id, test
@@ -83,7 +85,7 @@ building the whole repo:
 - Create from the recorded `baseRef`; branch name includes workflow + task key.
 - One writer per worktree.
 - Register the assignment with the real path, branch and inbox message id
-  before work starts. `workflow dispatch --task --path --branch` does this in
+  before work starts. `workflow dispatch <id> --task --path --branch` does this in
   one step and returns the message id; wait for the worker's ack before treating
   it as started.
 - Give the worker a packet (ids, owned paths, acceptance, verify commands), not
@@ -121,8 +123,9 @@ DLL, private temp DB, PID-scoped `stop`). Never use `pkill -f`, `killall`, or
 - Agent-to-agent request/response: `anima bus ask ...`; the requester subscribes
   to a private reply topic and times out.
 - Workflow dispatch: `anima workflow dispatch <id> --agent <id> --role analyst
-  --instructions ...`; the agent must already be running. Anima does not start it.
-- Treat events as hints; always re-read workflow state.
+  --instructions ...` publishes and returns immediately; the agent must already be
+  running. Anima does not start it. Use `anima workflow ack/result` for durable
+  state, and treat events as hints: always re-read workflow state.
 
 ## Failure handling
 
@@ -130,6 +133,7 @@ DLL, private temp DB, PID-scoped `stop`). Never use `pkill -f`, `killall`, or
 | --- | --- |
 | 422 on answer | question already answered or not in this workflow; re-read questions |
 | 422 on assignment | spec not posted or task key mismatch |
-| Dispatch timeout | agent id/topic wrong or agent not subscribed; check mailbox |
+| Dispatch `202` but no worker | bus delivery is best-effort; start/subscribe the agent, then retry or assign explicitly |
+| Status `assigned` | assignment registered but not acked; worker has not confirmed start |
 | Implementation result rejected | task key not in the current spec |
 | Review failed | read findings, fix, post a new review result |

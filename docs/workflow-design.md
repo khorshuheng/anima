@@ -25,8 +25,8 @@ results; no result is inferred by Anima.
 ## State machine
 
 ```
-analysis -> awaiting_answers -> spec_ready -> implementing -> implementation_complete
-        -> merge_complete -> completed
+analysis -> awaiting_answers -> spec_ready -> assigned -> implementing
+        -> implementation_complete -> merge_complete -> completed
      |             |                |              |            |           |
      +-------------+----------------+--------------+------------+-----------+--> failed
 ```
@@ -36,8 +36,10 @@ Transitions are derived from posted facts, not set blindly:
 - questions exist with no answers -> `awaiting_answers`
 - answers posted for every open question -> analysis resumes
 - spec posted -> `spec_ready`
-- every task has an implementation result with `success=true` -> `implementing`
-  complete (otherwise `failed` or `implementing` if some are outstanding)
+- assignment registered but not acknowledged -> `assigned`
+- any assignment acknowledged, or an implementation result posted -> `implementing`
+- every implementation task has a successful result -> `implementation_complete`
+  (otherwise `failed` or `implementing` if some are outstanding)
 - merge result with `success=true` (and all tasks implemented) -> `merge_complete`
 - review result with `success=true`, no error findings, and a successful merge
   -> `completed`; otherwise `failed`
@@ -59,8 +61,8 @@ GET    /api/workflows/{id}/assignments
 DELETE /api/workflows/{id}/assignments/{taskKey}
 POST   /api/workflows/{id}/results                { taskKey, kind, success, summary, ... }
 GET    /api/workflows/{id}/timeline               phases + result summaries
-POST   /api/workflows/{id}/dispatch               bus role task; optional assignment
-                                                 (--task/--path/--branch) returns messageId
+POST   /api/workflows/{id}/dispatch               fire-and-forget role task; optional
+                                                 assignment fields; returns 202 + messageId
 ```
 
 Start request:
@@ -132,10 +134,13 @@ The workflow API is the system of record for questions and answers:
   it has no durability, replay, or state transition, and the workflow service
   blocking on a human gate would be wrong.
 - `POST /dispatch` is for agent-to-agent role tasks, not for Q&A. It publishes a
-  role task and awaits a reply; the harness owns the agent's lifetime. When
+  role task and returns `202 Accepted` with the envelope `messageId` immediately;
+  it does not await a reply. The harness owns the agent's lifetime. When
   `taskKey`, `worktreePath` and `branch` are supplied, the service registers the
-  assignment with the generated envelope message id before publishing. The
-  response includes `messageId`; the worker acknowledges with its run id.
+  assignment with that same message id before publishing. Registration yields
+  `assigned`; the worker acknowledges with its run id and the workflow becomes
+  `implementing`. Delivery is best-effort: a missing subscriber is not a durable
+  failure, and the worker must read state and post results through this API.
 - Successful implementation, merge and review results require structured
   evidence: a 7-64 character hexadecimal `headSha`, `branch`, `baseRef` and at
   least one `testCommands` entry. Failed results may omit evidence.
@@ -149,8 +154,10 @@ The workflow API is the system of record for questions and answers:
   `GET /api/bus/stream` (SSE), so workflow-service and operator tooling can use
   a remote bus without in-proc coupling.
 - Workflow dispatch publishes `anima.workflow.v1.WorkflowRoleTask` to
-  `anima.agent.<agentId>.inbox` and awaits `WorkflowRoleResult` on `ReplyTo`.
-  External agents can also use `anima bus watch/ask/publish` directly.
+  `anima.agent.<agentId>.inbox` and returns immediately. The bus is ephemeral:
+  it has no replay, offset, ack or offline delivery guarantee. Durable assignment
+  state, acks and results live in the workflow API. External agents can use
+  `anima bus watch/publish` for wake-ups and `anima bus ask` for short RPC.
 - Anima never starts the agent that answers.
 
 ## Worktree ownership

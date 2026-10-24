@@ -1,8 +1,9 @@
 namespace Anima.Workflow;
 
 /// <summary>
-/// Sends a role task to an already-running external agent over the bus and waits
-/// for its reply. It does not create, start or stop the agent.
+/// Publishes a role task to an external agent's bus inbox as a best-effort
+/// wake-up. It does not wait for a reply and does not create, start or stop the
+/// agent. Durable results belong in the workflow API.
 /// </summary>
 public interface IWorkflowDispatcher
 {

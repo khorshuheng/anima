@@ -119,9 +119,10 @@ failed review, not a clean one. Reviewers are read-only.
   each lane a distinct `cwd`, and never reuse a worktree for two lanes.
 - The workflow template does not create worktrees, commit, or merge. The harness
   registers assignments and posts results to Anima. Prefer
-  `anima workflow dispatch --task <key> --path <worktree> --branch <branch>`:
-  it registers the assignment with the message id and returns it; the worker
-  then acks with its run id.
+  `anima workflow dispatch <id> --task <key> --path <worktree> --branch <branch>`:
+  it registers the assignment, publishes the wake-up, and returns `202` with the
+  message id immediately; the worker then acks with its run id and posts its
+  result through the workflow API.
 - Child workers may start private service instances on ports >= 7500 with
   `scripts/private-service.sh`; they must not touch shared services on 7410-7416.
 - A failed or blocked lane does not cancel sibling lanes (`runs.all` returns every

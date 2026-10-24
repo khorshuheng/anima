@@ -58,6 +58,9 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             "/tmp/worktrees/api",
             "anima/feature-api"));
         Assert.Equal("impl-api", assignment.AgentId);
+        Assert.Equal(WorkflowStatus.Assigned, (await store.GetAsync(workflow.Id))!.Status);
+
+        await store.AcknowledgeAssignmentAsync(workflow.Id, "api", "run-api");
         Assert.Equal(WorkflowStatus.Implementing, (await store.GetAsync(workflow.Id))!.Status);
 
         await store.AddResultAsync(workflow.Id, Result(
@@ -373,12 +376,15 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         Assert.Equal("msg-42", assignment.MessageId);
         Assert.Null(assignment.AcknowledgedAt);
         Assert.Null(assignment.RunId);
+        Assert.Equal(WorkflowStatus.Assigned, (await store.GetAsync(workflow.Id))!.Status);
 
         var acknowledged = await store.AcknowledgeAssignmentAsync(workflow.Id, "api", "run-7");
 
         Assert.Equal("msg-42", acknowledged.MessageId);
         Assert.NotNull(acknowledged.AcknowledgedAt);
         Assert.Equal("run-7", acknowledged.RunId);
+        Assert.Equal("acknowledged", acknowledged.Status);
+        Assert.Equal(WorkflowStatus.Implementing, (await store.GetAsync(workflow.Id))!.Status);
         var persisted = Assert.Single(await store.GetAssignmentsAsync(workflow.Id));
         Assert.Equal(acknowledged.AcknowledgedAt, persisted.AcknowledgedAt);
         Assert.Equal("run-7", persisted.RunId);
@@ -389,6 +395,33 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
 
         await Assert.ThrowsAsync<WorkflowNotFoundException>(
             () => store.AcknowledgeAssignmentAsync(workflow.Id, "missing"));
+    }
+
+    [Fact]
+    public async Task Reassigning_the_same_agent_preserves_ack_but_a_new_agent_clears_it()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec", [new SpecTaskInput("api", "API")]));
+
+        await store.RegisterAssignmentAsync(workflow.Id, new AssignmentInput(
+            "api", "impl-api", "/tmp/worktrees/api", "anima/api", MessageId: "msg-1"));
+        await store.AcknowledgeAssignmentAsync(workflow.Id, "api", "run-1");
+
+        var reassigned = await store.RegisterAssignmentAsync(workflow.Id, new AssignmentInput(
+            "api", "impl-api", "/tmp/worktrees/api", "anima/api", MessageId: "msg-2"));
+        Assert.Equal("msg-2", reassigned.MessageId);
+        Assert.NotNull(reassigned.AcknowledgedAt);
+        Assert.Equal("run-1", reassigned.RunId);
+        Assert.Equal("acknowledged", reassigned.Status);
+        Assert.Equal(WorkflowStatus.Implementing, (await store.GetAsync(workflow.Id))!.Status);
+
+        var replaced = await store.RegisterAssignmentAsync(workflow.Id, new AssignmentInput(
+            "api", "impl-other", "/tmp/worktrees/other", "anima/other", MessageId: "msg-3"));
+        Assert.Null(replaced.AcknowledgedAt);
+        Assert.Null(replaced.RunId);
+        Assert.Equal("assigned", replaced.Status);
+        Assert.Equal(WorkflowStatus.Assigned, (await store.GetAsync(workflow.Id))!.Status);
     }
 
     [Fact]

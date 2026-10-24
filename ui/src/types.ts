@@ -2,6 +2,7 @@ export type WorkflowStatus =
   | 'analysis'
   | 'awaitingAnswers'
   | 'specReady'
+  | 'assigned'
   | 'implementing'
   | 'implementationComplete'
   | 'mergeComplete'

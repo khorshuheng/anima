@@ -59,7 +59,7 @@ There is no `Anima.Agent.*`. External agents live in the harness.
 Facts posted by the harness and its agents drive the status:
 
 ```
-analysis -> awaiting_answers -> spec_ready -> implementing
+analysis -> awaiting_answers -> spec_ready -> assigned -> implementing
         -> implementation_complete -> merge_complete -> completed
         -> failed (failed implementation/merge/review)
 ```
@@ -98,9 +98,10 @@ human interaction.
   subscribe, reconnect, bounded queues.
 - `MessageEnvelope.ReplyTo` plus `IBusRequester` gives request/response with a
   private reply topic and a timeout.
-- Workflow `POST /dispatch` sends `anima.workflow.v1.WorkflowRoleTask` to
-  `anima.agent.<id>.inbox` and awaits `WorkflowRoleResult`; it does not create the
-  agent.
+- Workflow `POST /dispatch` publishes `anima.workflow.v1.WorkflowRoleTask` to
+  `anima.agent.<id>.inbox` and returns `202` immediately; it does not create or
+  await the agent. The bus is a best-effort wake-up channel; assignments, acks
+  and results are durable workflow API facts.
 
 ## Knowledge graph
 

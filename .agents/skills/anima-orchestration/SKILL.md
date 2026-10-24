@@ -127,8 +127,12 @@ For each task you want in parallel:
 
 1. Create a worktree and branch yourself:
    `git worktree add -b anima/<wf>-<task> .anima/worktrees/<wf>-<task> <baseRef>`
-2. Register the assignment and its inbox message:
-   `anima workflow assign <id> --task <key> --agent <agentId> --path <path> --branch <branch> --message-id <messageId>`
+2. Register the assignment and publish the wake-up in one call:
+   `anima workflow dispatch <id> --agent <agentId> --role implementer --instructions "..." --task <key> --path <path> --branch <branch>`
+   This returns `202` with `messageId` immediately. It does not wait for a reply;
+   the bus is best-effort, so the worker must already be running/subscribed.
+   (`workflow assign --message-id` remains available when you already published
+   the role task yourself.)
 3. Spawn the implementer subagent with the worker packet, not the spec.
 4. The implementer acks after reading the packet and before editing:
 
@@ -138,7 +142,8 @@ anima workflow ack <id> --task <key>
 ```
 
 `AssignmentView.messageId`, `acknowledgedAt` and `runId` show which packet was
-delivered and whether the worker started. An ack is a liveness signal, not
+published and whether the worker started. Registration sets workflow status
+`assigned`; an ack moves it to `implementing`. An ack is a liveness signal, not
 permission: the orchestrator still posts the result.
 
 5. The implementer works only in its worktree, runs the verify commands, and you
@@ -235,15 +240,17 @@ anima bus ask --topic anima.agent.analyst.inbox \
   --payload @role-task.json --timeout 120
 ```
 
-- Workflow dispatch does the same and waits:
+- Workflow dispatch is fire-and-forget and returns `202` with a message id:
 
 ```bash
 anima workflow dispatch <id> --agent analyst --role analyst \
   --instructions "Ask only blocking questions" --context context.json
 ```
 
-Anima will never start that agent. If dispatch times out, the agent is not
-subscribed.
+Anima will never start that agent. A `202` means the message was published to
+an ephemeral bus, not delivered; if no worker is subscribed it is lost. Use
+`anima bus ask` only for short request/response RPC, and use the workflow API
+for durable assignments, acks and results.
 
 ## 9. Private service instances
 
@@ -317,10 +324,11 @@ for you.
 | 422 `already answered` | re-read questions; answer only open ones |
 | 422 `post the spec first` | writer spec/tasks before assigning |
 | 422 `not part of workflow` | task key mismatch; read `workflow spec` |
-| ack 404/422 | no assignment for that task key, or assignment not registered with `--message-id` |
+| ack 404/422 | no assignment for that task key; register it with `workflow assign` or `workflow dispatch <id> --task` |
 | result rejected | task key not in the current spec, or check the evidence fields |
 | merge gate blocked | an implementation result is missing, failed, or has no head SHA/test commands |
-| dispatch timeout | agent id/topic wrong or agent not running; Anima will not start it |
+| dispatch `202` but no worker | bus delivery is best-effort; start/subscribe the agent, then retry or assign explicitly |
+| status `assigned` | assignment registered but not acked; worker has not confirmed start |
 | status `failed` after review | read `anima workflow timeline` and findings, fix, post a new review |
 | empty context | task key not in the current spec |
 

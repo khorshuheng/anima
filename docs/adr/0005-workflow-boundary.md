@@ -18,8 +18,9 @@ agent lifetime.
   assignment metadata, results, findings and phases.
 - Status is derived from posted facts; Anima never infers an agent's result.
 - The harness creates worktrees and agents, registers assignments, and posts
-  results. The bus carries events and role tasks, including request/response with
-  `ReplyTo`.
+  results. The bus carries ephemeral events and role-task wake-ups; workflow
+  dispatch does not wait for a reply. `ReplyTo` remains available for explicit,
+  short request/response RPC such as `anima bus ask`.
 - Q&A uses the workflow API as the system of record; bus events are wake-ups.
 
 ## Consequences

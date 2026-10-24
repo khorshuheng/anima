@@ -5,6 +5,7 @@ public enum WorkflowStatus
     Analysis,
     AwaitingAnswers,
     SpecReady,
+    Assigned,
     Implementing,
     ImplementationComplete,
     MergeComplete,
@@ -210,7 +211,6 @@ public sealed record DispatchRequest(
     string Role,
     string Instructions,
     string? ContextJson = null,
-    int TimeoutSeconds = 0,
     string? TaskKey = null,
     string? WorktreePath = null,
     string? Branch = null,
@@ -222,7 +222,8 @@ public sealed record DispatchResult(
     string Summary,
     string? DataJson,
     string? Error,
-    string? MessageId = null);
+    string? MessageId = null,
+    string? Topic = null);
 
 public sealed record WorkflowEvent(
     long WorkflowId,

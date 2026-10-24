@@ -11,6 +11,7 @@ const statusLabels: Record<WorkflowStatus, string> = {
   analysis: 'Analysis',
   awaitingAnswers: 'Awaiting answers',
   specReady: 'Spec ready',
+  assigned: 'Assigned',
   implementing: 'Implementing',
   implementationComplete: 'Implementation complete',
   mergeComplete: 'Merged',
@@ -28,7 +29,7 @@ function statusClass(status: WorkflowStatus): string {
   if (status === 'failed') return 'chip chip-failed';
   if (status === 'completed') return 'chip chip-done';
   if (status === 'awaitingAnswers') return 'chip chip-warn';
-  if (status.startsWith('implementation') || status === 'specReady') return 'chip chip-active';
+  if (status.startsWith('implementation') || status === 'specReady' || status === 'assigned') return 'chip chip-active';
   return 'chip';
 }
 
