@@ -48,15 +48,24 @@ building the whole repo:
    (`anima workflow spec-write`). Anima creates task nodes and moves to
    `spec_ready`.
 5. **Implementation.** For each task the harness creates a worktree and branch,
-   spawns an implementer, and registers the assignment (`anima workflow assign`).
-   The implementer works in its own worktree and posts a result
-   (`anima workflow result --kind implementation`). Implementations can run in
-   parallel; Anima only records their paths and outcomes.
-6. **Merge.** The harness creates a merge worktree, runs the merger agent, and
-   posts `--kind merge` with conflicts/changed files.
-7. **Review.** A reviewer agent works in the merged worktree, runs verify
-   commands, and posts `--kind review` plus findings. A failed review marks the
-   workflow `failed`; a retry can post another result.
+   registers the assignment with its inbox `--message-id`, and spawns an
+   implementer with a worker packet (workflow/task ids, spec node/version/hash,
+   base ref, branch, worktree, acceptance, verify commands). The implementer
+   acks the assignment (`anima workflow ack`, or
+   `POST /api/workflows/{id}/assignments/{taskKey}/ack`), works in its own
+   worktree, commits, and posts a result (`anima workflow result --kind
+   implementation`) with evidence: head SHA, branch, base ref, run id, test
+   commands and artifact paths. Implementations can run in parallel; Anima only
+   records their paths and outcomes.
+6. **Merge gate.** Merge only after every implementation task has a successful
+   result with head SHA, branch and test commands. The harness creates a merge
+   worktree, runs the merger agent, and posts `--kind merge` with the same
+   evidence plus conflicts/changed files.
+7. **Review gate.** A reviewer agent works in the merged worktree, runs the
+   spec's verify commands, inspects the diff from base ref to head SHA, and posts
+   `--kind review` plus findings with severity and path/line. P0/P1 findings must
+   be fixed and re-reviewed; a failed review marks the workflow `failed` and a
+   retry posts another result.
 8. **Close.** A successful review sets `completed`. The harness records the
    change in memgraph/knowledge as needed.
 
@@ -64,10 +73,26 @@ building the whole repo:
 
 - Create from the recorded `baseRef`; branch name includes workflow + task key.
 - One writer per worktree.
-- Register the assignment with the real path and branch before work starts.
-- Keep logs out of agent context; post an output tail or a path.
+- Register the assignment with the real path, branch and inbox `--message-id`
+  before work starts; wait for the worker's ack before treating it as started.
+- Give the worker a packet (ids, owned paths, acceptance, verify commands), not
+  the full workflow history.
+- Keep logs out of agent context; post an output tail or an artifact path.
 - Do not reuse a worktree for two tasks.
 - Remove the worktree after merge; branches can remain for audit.
+
+## Repo workflow template
+
+Use `workflows/feature-delivery.js` for parallel lanes instead of ad-hoc
+`/tmp` scripts. It validates `args.lanes` before dispatch, uses `runs.all`, and
+returns an ordered board with each lane's output. See `workflows/README.md`.
+
+## Private service instances
+
+Shared services on 7410-7416 belong to the main checkout. A worker that needs a
+service starts its own with `scripts/private-service.sh` (ports >= 7500, compiled
+DLL, private temp DB, PID-scoped `stop`). Never use `pkill -f`, `killall`, or
+`fuser -k`, and never stop a service you did not start.
 
 ## Context economy
 

@@ -85,55 +85,123 @@ anima workflow show <id>       # status -> specReady
 ]
 ```
 
-## 4. Parallel implementation (harness-created worktrees)
+## 4. Task roles and worker packets
+
+| Role | Runs where | Owns |
+| --- | --- | --- |
+| analyst | harness session | questions and the spec text; never code |
+| implementer | one worktree per task | the assigned task, its tests, a commit, and result evidence |
+| merger | merge worktree | branch integration and conflict reporting |
+| reviewer | merged worktree (read-only unless fixing) | verify commands, diff inspection, findings |
+| orchestrator | main session | packets, assignments/acks, gates, results; never edits a worker's worktree |
+
+Give each implementer a **worker packet**, not the whole workflow. The spec
+identity ties the work to an exact revision:
+
+```json
+{
+  "workflowId": 56,
+  "taskKey": "orchestration-tooling",
+  "specNodeId": 60,
+  "specVersion": 2,
+  "specHash": "sha256:9f2c...",
+  "baseRef": "main",
+  "branch": "hardening/tooling",
+  "worktree": "/abs/path/.anima/worktrees/56-orchestration-tooling",
+  "messageId": "<inbox envelope message id>",
+  "acceptanceCriteria": ["private-service start/stop works"],
+  "verifyCommands": ["make check"],
+  "ownedPaths": ["scripts/", "workflows/"]
+}
+```
+
+`anima workflow spec <id>` exposes `version` and `hash`; each task carries its
+spec `nodeId`. Include both in the packet so a later result can be matched to
+the spec the worker actually read. Keep the packet to ids, owned paths,
+acceptance and verify commands; read the spec body only when the packet is not
+enough.
+
+## 5. Parallel implementation (harness-created worktrees)
 
 For each task you want in parallel:
 
 1. Create a worktree and branch yourself:
    `git worktree add -b anima/<wf>-<task> .anima/worktrees/<wf>-<task> <baseRef>`
-2. Register the assignment:
-   `anima workflow assign <id> --task <key> --agent <agentId> --path <path> --branch <branch>`
-3. Spawn the implementer subagent with a brief, not the whole spec:
-   `anima workflow context <id> --task <key>`
-4. The implementer works only in its worktree, runs the verify commands, and you
-   post the result:
+2. Register the assignment and its inbox message:
+   `anima workflow assign <id> --task <key> --agent <agentId> --path <path> --branch <branch> --message-id <messageId>`
+3. Spawn the implementer subagent with the worker packet, not the spec.
+4. The implementer acks after reading the packet and before editing:
+
+```bash
+anima workflow ack <id> --task <key>
+# equivalent: POST /api/workflows/{id}/assignments/{taskKey}/ack
+```
+
+`AssignmentView.messageId`, `acknowledgedAt` and `runId` show which packet was
+delivered and whether the worker started. An ack is a liveness signal, not
+permission: the orchestrator still posts the result.
+
+5. The implementer works only in its worktree, runs the verify commands, and you
+   post the result with evidence:
 
 ```bash
 anima workflow result <id> --task api --kind implementation \
   --summary "added POST /x and tests" \
   --changed-file src/Api.cs --changed-file tests/Api.Tests.cs \
+  --head-sha "$(git rev-parse HEAD)" --branch anima/<wf>-api \
+  --base-ref main --run-id <agent-run-id> \
+  --test-command "dotnet test tests/Api.Tests" \
+  --artifact-path reports/api-tests.log \
   --agent impl-api --worktree .anima/worktrees/<wf>-api
 ```
 
-One writer per worktree. Do not reuse a worktree. When all tasks have successful
-results, status becomes `implementation_complete`.
+Result evidence fields: `HeadSha`, `Branch`, `BaseRef`, `RunId`, `TestCommands`,
+`ArtifactPaths`. Post what actually ran; a green summary without commands and a
+head SHA is not evidence. One writer per worktree. Do not reuse a worktree. When
+all tasks have successful results, status becomes `implementation_complete`.
 
-## 5. Merge
+Prefer the repo-owned `workflows/feature-delivery.js` template over ad-hoc
+scripts: it fans one child per lane out with `runs.all`, validates the lane list
+before dispatch, and returns an ordered board with each child's output. See
+`workflows/README.md` for the lane fields and isolation rules.
+
+## 6. Merge gate
+
+Merge only when every implementation task has a successful result carrying a
+head SHA, branch and at least one test command. A missing or failing result
+blocks the merge instead of being summarized away.
 
 Create a merge worktree from the base ref and run the merger agent there.
 
 ```bash
 anima workflow result <id> --kind merge --summary "merged 3 branches" \
+  --head-sha "$(git rev-parse HEAD)" --branch merge/<wf> --base-ref main \
+  --test-command "make check" --artifact-path reports/merge-check.log \
   --agent merger --worktree .anima/worktrees/<wf>-merge
 ```
 
 On conflicts, post `--failure --conflict path`. Anima marks the workflow failed;
 resolve and post a new merge result to recover.
 
-## 6. Review
+## 7. Review gate
 
-Run the reviewer in the merged worktree. It should run the verify commands and
-inspect the diff. Post findings, including file/line when known:
+Run the reviewer in the merged worktree. It must run the spec's verify commands,
+inspect the diff from `BaseRef` to `HeadSha`, and inspect the changed files. Post
+findings with severity and file/line when known:
 
 ```bash
 anima workflow result <id> --kind review --summary "2 issues" --failure \
-  --finding error:"missing auth check" --finding warning:"no retry test" \
+  --finding "error:missing auth check src/Api.cs:42" \
+  --finding "warning:no retry test" \
+  --head-sha "$(git rev-parse HEAD)" --test-command "make check" \
   --agent reviewer --worktree .anima/worktrees/<wf>-merge
 ```
 
-A successful review sets `completed`; a failed one sets `failed`.
+P0/P1 findings block completion and must be fixed and re-reviewed. A successful
+review with no blocking findings sets `completed`; a failed review sets `failed`.
+Do not mark a review successful from prose alone: cite the command and head SHA.
 
-## 7. Bus usage
+## 8. Bus usage
 
 - Events: `anima bus watch --topics anima.workflow.events`.
 - Knowledge changes: `anima.knowledge.changed` (question/spec/task/result nodes).
@@ -155,6 +223,61 @@ anima workflow dispatch <id> --agent analyst --role analyst \
 Anima will never start that agent. If dispatch times out, the agent is not
 subscribed.
 
+## 9. Private service instances
+
+Shared services run on **7410-7416** and belong to the main checkout. A worktree
+worker that needs its own service must use `scripts/private-service.sh`, which
+refuses the reserved range, requires ports 7500+, and only signals the PID it
+recorded for that port.
+
+```bash
+# compiled DLL (not `dotnet run`), private port, private temp DB
+scripts/private-service.sh start \
+  --dll src/Anima.Knowledge.Service/bin/Debug/net10.0/Anima.Knowledge.Service.dll \
+  --port 7655 --env ANIMA_KNOWLEDGE_DB=/tmp/anima-smoke/knowledge.db
+scripts/private-service.sh status --port 7655
+scripts/private-service.sh stop --port 7655
+```
+
+- `start` writes `~/.cache/anima/private-services/<port>.pid` and `<port>.log`
+  and prints the PID. `stop` verifies `/proc/<pid>/cmdline` contains the port
+  before sending `SIGTERM`, so a reused or stale PID is never killed.
+- Pass configuration with `--env KEY=VALUE`; use a temp database path per
+  instance so the shared SQLite file is never touched.
+- Never use `pkill -f`, `killall`, or `fuser -k`, and never stop a service you
+  did not start. If a shared service is down, report it and continue privately.
+- Clean up your own PID: `stop --port <port>`, then confirm the port is free.
+
+## 10. Repo workflow template
+
+`workflows/feature-delivery.js` is the checked-in pi-subagents template for
+parallel lanes; do not paste `/tmp` scripts into a run. It validates `args.lanes`
+before launching and returns an ordered board with each lane's `ok`, `runId` and
+`output`.
+
+```js
+subagent({
+  cwd: "/path/to/repo",
+  workflow: "./workflows/feature-delivery.js",
+  args: {
+    lanes: [
+      {
+        key: "api",
+        agent: "worker",
+        cwd: "/abs/path/.anima/worktrees/56-api",
+        task: "<worker packet and task brief>",
+        label: "Implement API task",
+        acceptance: ["POST /x returns 201"]
+      }
+    ]
+  }
+});
+```
+
+Lane fields, result shape and isolation rules are in `workflows/README.md`. One
+writer per lane/worktree; the template never creates worktrees or posts results
+for you.
+
 ## Context discipline (important)
 
 - Use `anima workflow context <id> --task <key>` for implementer briefs; it
@@ -172,6 +295,9 @@ subscribed.
 | 422 `already answered` | re-read questions; answer only open ones |
 | 422 `post the spec first` | writer spec/tasks before assigning |
 | 422 `not part of workflow` | task key mismatch; read `workflow spec` |
+| ack 404/422 | no assignment for that task key, or assignment not registered with `--message-id` |
+| result rejected | task key not in the current spec, or check the evidence fields |
+| merge gate blocked | an implementation result is missing, failed, or has no head SHA/test commands |
 | dispatch timeout | agent id/topic wrong or agent not running; Anima will not start it |
 | status `failed` after review | read `anima workflow timeline` and findings, fix, post a new review |
 | empty context | task key not in the current spec |

@@ -48,6 +48,8 @@ worktrees; it uses Anima through HTTP, the bus and `anima` CLI.
 | Browser executable | `make browser-check` |
 | Workflow | `anima workflow ...` |
 | Bus | `anima bus publish|ask|watch` |
+| Private smoke service | `scripts/private-service.sh start --dll <dll> --port <7500+>` |
+| Parallel lane workflow | `workflows/feature-delivery.js` (see `workflows/README.md`) |
 
 ## Where to make a change
 
@@ -80,7 +82,11 @@ never stop a service it did not start.
   process-name matches kill every checkout of that service.
 - Start private smoke instances on ports **7500+** with a private temp DB, using
   the compiled DLL (`dotnet path/to/X.Service.dll --urls ...`), not `dotnet run`.
-  Capture `$!`, set a trap, and kill only that PID (or its process group).
+  `scripts/private-service.sh` enforces this: it refuses 7410-7416, writes a PID
+  file under `~/.cache/anima/private-services`, and stops only the recorded PID
+  after checking `/proc/<pid>/cmdline`.
+- Do not use ad-hoc `/tmp` orchestration scripts; use
+  `workflows/feature-delivery.js`.
 - If a shared service is down, report it and continue with a private instance;
   do not restart or kill shared services.
 - Cleanup must be scoped: `kill "$pid"` / `kill -- -"$pgid"`, never by service
