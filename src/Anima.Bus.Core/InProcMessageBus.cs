@@ -10,12 +10,17 @@ namespace Anima.Bus;
 /// dead-letter topic. Swap for a broker-backed implementation without touching
 /// callers; <see cref="IMessageBus"/> is the seam.
 /// </summary>
-public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
+public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDisposable
 {
     private readonly BusOptions _options;
     private readonly ILogger<InProcMessageBus> _logger;
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TopicStatistics> _topics = new(StringComparer.Ordinal);
     private int _subscriptionCounter;
+    private long _totalPublishedCount;
+    private long _totalDeliveredCount;
+    private long _totalDroppedCount;
+    private long _totalFailedCount;
     private bool _disposed;
 
     public InProcMessageBus(IOptions<BusOptions> options, ILogger<InProcMessageBus> logger)
@@ -30,6 +35,10 @@ public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(envelope);
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var topic = _topics.GetOrAdd(envelope.Topic, static name => new TopicStatistics(name));
+        topic.RecordPublish(envelope.TypeName, envelope.Sender);
+        Interlocked.Increment(ref _totalPublishedCount);
 
         foreach (var subscription in _subscriptions.Values)
         {
@@ -50,6 +59,7 @@ public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
                 continue;
             }
 
+            subscription.RecordDropped();
             _logger.LogWarning(
                 "Subscription {Subscription} ({Pattern}) is full; dropping message {MessageId} on {Topic}.",
                 subscription.Id,
@@ -80,6 +90,7 @@ public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
         });
 
         var subscription = new Subscription(
+            this,
             id,
             options?.Name ?? topicPattern,
             topicPattern,
@@ -120,6 +131,7 @@ public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
             try
             {
                 await subscription.Handler(envelope, cancellationToken);
+                subscription.RecordDelivered();
                 return;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -143,6 +155,7 @@ public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
                         await DeadLetterAsync(envelope, ex, cancellationToken);
                     }
 
+                    subscription.RecordFailed();
                     return;
                 }
 
@@ -201,6 +214,26 @@ public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
         }
     }
 
+    public BusSnapshot GetSnapshot()
+    {
+        var topics = _topics.Values
+            .Select(static statistics => statistics.ToSnapshot())
+            .OrderBy(static snapshot => snapshot.Topic, StringComparer.Ordinal)
+            .ToArray();
+        var subscriptions = _subscriptions.Values
+            .Select(static subscription => subscription.ToSnapshot())
+            .OrderBy(static snapshot => snapshot.Id, StringComparer.Ordinal)
+            .ToArray();
+
+        return new BusSnapshot(
+            topics,
+            subscriptions,
+            Interlocked.Read(ref _totalPublishedCount),
+            Interlocked.Read(ref _totalDeliveredCount),
+            Interlocked.Read(ref _totalDroppedCount),
+            Interlocked.Read(ref _totalFailedCount));
+    }
+
     private async Task UnsubscribeAsync(Subscription subscription)
     {
         if (_subscriptions.TryRemove(subscription.Id, out _))
@@ -230,19 +263,59 @@ public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
         public ValueTask DisposeAsync() => new(bus.UnsubscribeAsync(subscription));
     }
 
+    private sealed class TopicStatistics(string topic)
+    {
+        private readonly ConcurrentDictionary<string, byte> _typeNames = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, byte> _senders = new(StringComparer.Ordinal);
+        private long _publishedCount;
+        private long _lastTimestampMilliseconds;
+
+        public void RecordPublish(string typeName, string? sender)
+        {
+            Interlocked.Increment(ref _publishedCount);
+            _typeNames.TryAdd(typeName, 0);
+            if (!string.IsNullOrWhiteSpace(sender))
+            {
+                _senders.TryAdd(sender, 0);
+            }
+
+            Interlocked.Exchange(
+                ref _lastTimestampMilliseconds,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        }
+
+        public BusTopicSnapshot ToSnapshot()
+        {
+            var lastTimestamp = Interlocked.Read(ref _lastTimestampMilliseconds);
+            return new BusTopicSnapshot(
+                topic,
+                Interlocked.Read(ref _publishedCount),
+                lastTimestamp == 0 ? null : DateTimeOffset.FromUnixTimeMilliseconds(lastTimestamp),
+                _typeNames.Keys.Order(StringComparer.Ordinal).ToArray(),
+                _senders.Keys.Order(StringComparer.Ordinal).ToArray());
+        }
+    }
+
     private sealed class Subscription : IAsyncDisposable
     {
+        private readonly InProcMessageBus _bus;
         private readonly Channel<MessageEnvelope> _channel;
         private readonly CancellationTokenSource _cts = new();
         private Task? _pump;
+        private long _deliveredCount;
+        private long _droppedCount;
+        private long _failedCount;
+        private long _lastActivityMilliseconds;
 
         public Subscription(
+            InProcMessageBus bus,
             string id,
             string name,
             string pattern,
             Func<MessageEnvelope, CancellationToken, Task> handler,
             Channel<MessageEnvelope> channel)
         {
+            _bus = bus;
             Id = id;
             Name = name;
             Pattern = pattern;
@@ -265,6 +338,45 @@ public sealed class InProcMessageBus : IMessageBus, IAsyncDisposable
         public void Start(Func<CancellationToken, Task> pump)
         {
             _pump = Task.Run(() => pump(_cts.Token));
+        }
+
+        public void RecordDelivered()
+        {
+            Interlocked.Increment(ref _bus._totalDeliveredCount);
+            RecordActivity(ref _deliveredCount);
+        }
+
+        public void RecordDropped()
+        {
+            Interlocked.Increment(ref _bus._totalDroppedCount);
+            RecordActivity(ref _droppedCount);
+        }
+
+        public void RecordFailed()
+        {
+            Interlocked.Increment(ref _bus._totalFailedCount);
+            RecordActivity(ref _failedCount);
+        }
+
+        public BusSubscriptionSnapshot ToSnapshot()
+        {
+            var lastActivity = Interlocked.Read(ref _lastActivityMilliseconds);
+            return new BusSubscriptionSnapshot(
+                Id,
+                Name,
+                Pattern,
+                Interlocked.Read(ref _deliveredCount),
+                Interlocked.Read(ref _droppedCount),
+                Interlocked.Read(ref _failedCount),
+                lastActivity == 0 ? null : DateTimeOffset.FromUnixTimeMilliseconds(lastActivity));
+        }
+
+        private void RecordActivity(ref long counter)
+        {
+            Interlocked.Increment(ref counter);
+            Interlocked.Exchange(
+                ref _lastActivityMilliseconds,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         }
 
         public async ValueTask DisposeAsync()
