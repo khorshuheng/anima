@@ -86,7 +86,7 @@ internal static class KnowledgeCommands
             throw new InvalidOperationException("usage: anima knowledge edge <source> <destination> <edgeType>");
         }
 
-        return await PostAsync(http, "api/edges", new { source, destination, edgeType = args[3] });
+        return await PostAsync(http, "api/edges", new { source, destination, edge_type = args[3] });
     }
 
     private static async Task<int> PlanAsync(HttpClient http, string[] args)
