@@ -15,4 +15,7 @@ steps:
   - waitFor: { target: "[data-testid=graph-results-ready]" }
   - eval: "document.querySelector('[data-testid=graph-results-ready]').textContent"
   - eval: "document.querySelector('[data-testid=graph-kinds]').textContent.includes('goal')"
+  - click: "[data-testid^=graph-result-]"
+  - waitFor: { target: ".inspector-heading" }
+  - eval: "document.querySelector('.inspector-heading').textContent"
   - screenshot: /tmp/anima-dashboard-explore.png

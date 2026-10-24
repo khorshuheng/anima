@@ -94,6 +94,7 @@ export function GraphTab({ revision }: GraphTabProps) {
   const [resultError, setResultError] = useState<string | null>(null);
   const [showFilteredGraph, setShowFilteredGraph] = useState(true);
   const [workflowStatuses, setWorkflowStatuses] = useState<Record<number, string>>({});
+  const [workflowStatusesReady, setWorkflowStatusesReady] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const networkRef = useRef<Network | null>(null);
   const requestRef = useRef(0);
@@ -118,6 +119,7 @@ export function GraphTab({ revision }: GraphTabProps) {
   }, [workflowStatuses]);
 
   const loadResults = useCallback(async () => {
+    if (!workflowStatusesReady) return;
     const request = ++resultRequestRef.current;
     setResultBusy(true);
     try {
@@ -141,7 +143,7 @@ export function GraphTab({ revision }: GraphTabProps) {
         setResultBusy(false);
       }
     }
-  }, [kind, query, resolvedFor, scope]);
+  }, [kind, query, resolvedFor, scope, workflowStatusesReady]);
 
   useEffect(() => {
     void load();
@@ -149,15 +151,20 @@ export function GraphTab({ revision }: GraphTabProps) {
 
   useEffect(() => {
     let active = true;
+    setWorkflowStatusesReady(false);
     api.workflows()
       .then((response) => {
         if (!active) return;
         setWorkflowStatuses(Object.fromEntries(
           response.items.map((workflow) => [workflow.goalId, workflow.status]),
         ));
+        setWorkflowStatusesReady(true);
       })
       .catch((exception) => {
-        if (active) setResultError(String(exception));
+        if (active) {
+          setResultError(String(exception));
+          setWorkflowStatusesReady(true);
+        }
       });
     return () => {
       active = false;
@@ -242,6 +249,8 @@ export function GraphTab({ revision }: GraphTabProps) {
       title: edge.edgeType,
     }));
 
+    // Clear first so filtered views cannot leave stale physics nodes behind.
+    networkRef.current.setData({ nodes: [], edges: [] });
     networkRef.current.setData({ nodes, edges });
   }, [displayEdges, displayNodes, resolvedFor]);
 
