@@ -17,6 +17,7 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, TopicStatistics> _topics = new(StringComparer.Ordinal);
     private int _subscriptionCounter;
+    private int _topicSlots;
     private long _totalPublishedCount;
     private long _totalDeliveredCount;
     private long _totalDroppedCount;
@@ -36,8 +37,8 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
         ArgumentNullException.ThrowIfNull(envelope);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var topic = _topics.GetOrAdd(envelope.Topic, static name => new TopicStatistics(name));
-        topic.RecordPublish(envelope.TypeName, envelope.Sender);
+        var topic = ResolveTopic(envelope.Topic);
+        topic?.RecordPublish(envelope.TypeName, envelope.Sender);
         Interlocked.Increment(ref _totalPublishedCount);
 
         foreach (var subscription in _subscriptions.Values)
@@ -214,11 +215,43 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
         }
     }
 
+    /// <summary>
+    /// Returns the existing statistics for <paramref name="name"/>, or reserves one of
+    /// <see cref="BusOptions.MaxTrackedTopics"/> topic slots for it. Returns null once every
+    /// slot is taken, so unique topics beyond the cap cost nothing but the publish totals.
+    /// </summary>
+    private TopicStatistics? ResolveTopic(string name)
+    {
+        if (_topics.TryGetValue(name, out var tracked))
+        {
+            return tracked;
+        }
+
+        var reserved = Interlocked.Increment(ref _topicSlots);
+        if (reserved > _options.MaxTrackedTopics)
+        {
+            Interlocked.Decrement(ref _topicSlots);
+            return null;
+        }
+
+        var created = new TopicStatistics(name, _options);
+        if (_topics.TryAdd(name, created))
+        {
+            return created;
+        }
+
+        // Another publisher tracked this topic first; release the slot it already owns.
+        Interlocked.Decrement(ref _topicSlots);
+        return _topics[name];
+    }
+
     public BusSnapshot GetSnapshot()
     {
-        var topics = _topics.Values
-            .Select(static statistics => statistics.ToSnapshot())
-            .OrderBy(static snapshot => snapshot.Topic, StringComparer.Ordinal)
+        var trackedTopics = _topics.Values.Select(static statistics => statistics.ToSnapshot()).ToArray();
+        var topics = trackedTopics
+            .OrderByDescending(static snapshot => snapshot.PublishedCount)
+            .ThenBy(static snapshot => snapshot.Topic, StringComparer.Ordinal)
+            .Take(Math.Max(1, _options.MaxSnapshotTopics))
             .ToArray();
         var subscriptions = _subscriptions.Values
             .Select(static subscription => subscription.ToSnapshot())
@@ -231,7 +264,9 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
             Interlocked.Read(ref _totalPublishedCount),
             Interlocked.Read(ref _totalDeliveredCount),
             Interlocked.Read(ref _totalDroppedCount),
-            Interlocked.Read(ref _totalFailedCount));
+            Interlocked.Read(ref _totalFailedCount),
+            trackedTopics.Length,
+            TopicsTruncated: topics.Length < trackedTopics.Length);
     }
 
     private async Task UnsubscribeAsync(Subscription subscription)
@@ -263,25 +298,61 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
         public ValueTask DisposeAsync() => new(bus.UnsubscribeAsync(subscription));
     }
 
-    private sealed class TopicStatistics(string topic)
+    /// <summary>
+    /// Per-topic counters with distinct type and sender sets capped at
+    /// <see cref="BusOptions.MaxTypesPerTopic"/>/<see cref="BusOptions.MaxSendersPerTopic"/>.
+    /// </summary>
+    private sealed class TopicStatistics(string topic, BusOptions options)
     {
         private readonly ConcurrentDictionary<string, byte> _typeNames = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, byte> _senders = new(StringComparer.Ordinal);
+        private readonly int _maxTypeNames = Math.Max(0, options.MaxTypesPerTopic);
+        private readonly int _maxSenders = Math.Max(0, options.MaxSendersPerTopic);
+        private int _typeNameCount;
+        private int _senderCount;
         private long _publishedCount;
         private long _lastTimestampMilliseconds;
 
         public void RecordPublish(string typeName, string? sender)
         {
             Interlocked.Increment(ref _publishedCount);
-            _typeNames.TryAdd(typeName, 0);
+            RecordDistinct(_typeNames, ref _typeNameCount, _maxTypeNames, typeName);
             if (!string.IsNullOrWhiteSpace(sender))
             {
-                _senders.TryAdd(sender, 0);
+                RecordDistinct(_senders, ref _senderCount, _maxSenders, sender);
             }
 
             Interlocked.Exchange(
                 ref _lastTimestampMilliseconds,
                 DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        }
+
+        /// <summary>
+        /// Adds <paramref name="value"/> while a slot is free. The counter is reserved
+        /// before the insert so concurrent publishers cannot exceed the cap.
+        /// </summary>
+        private static void RecordDistinct(
+            ConcurrentDictionary<string, byte> values,
+            ref int count,
+            int maximum,
+            string value)
+        {
+            if (values.ContainsKey(value))
+            {
+                return;
+            }
+
+            var reserved = Interlocked.Increment(ref count);
+            if (reserved > maximum)
+            {
+                Interlocked.Decrement(ref count);
+                return;
+            }
+
+            if (!values.TryAdd(value, 0))
+            {
+                Interlocked.Decrement(ref count);
+            }
         }
 
         public BusTopicSnapshot ToSnapshot()

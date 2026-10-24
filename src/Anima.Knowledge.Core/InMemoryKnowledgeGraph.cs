@@ -311,8 +311,14 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         lock (_gate)
         {
             var resolved = ResolvedIds();
-            var nodes = _nodes.Values
-                .OrderBy(node => node.Id)
+            var candidates = query.SinceId is { } sinceId
+                ? _nodes.Values.Where(node => node.Id > sinceId)
+                : _nodes.Values;
+            var window = query.Newest
+                ? candidates.OrderByDescending(node => node.Id)
+                : candidates.OrderBy(node => node.Id);
+
+            var nodes = window
                 .Take(query.EffectiveMaxNodes)
                 .Select(node => new GraphSnapshotNode(
                     node.Id,
@@ -323,9 +329,13 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
                 .ToArray();
 
             var included = nodes.Select(node => node.Id).ToHashSet();
-            var edges = _edges.Values
-                .Where(edge => included.Contains(edge.Source) && included.Contains(edge.Destination))
-                .OrderBy(edge => edge.Id)
+            var internalEdges = _edges.Values
+                .Where(edge => included.Contains(edge.Source) && included.Contains(edge.Destination));
+            var edgeWindow = query.Newest
+                ? internalEdges.OrderByDescending(edge => edge.Id)
+                : internalEdges.OrderBy(edge => edge.Id);
+
+            var edges = edgeWindow
                 .Take(query.EffectiveMaxEdges)
                 .Select(edge => new GraphSnapshotEdge(edge.Id, edge.Source, edge.Destination, edge.EdgeType))
                 .ToArray();

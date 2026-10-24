@@ -170,6 +170,79 @@ public sealed class BusDiagnosticsTests
         Assert.Equal(4, topic.Senders.Count);
     }
 
+    [Fact]
+    public async Task Snapshot_stops_tracking_topics_beyond_the_tracked_topic_cap()
+    {
+        await using var bus = CreateBus(new BusOptions { MaxTrackedTopics = 2, RetryDelay = TimeSpan.Zero });
+
+        for (var index = 0; index < 5; index++)
+        {
+            await bus.PublishAsync(CreateEnvelope($"anima.test.topic{index}", "anima.test.v1.Ping", "alice"));
+        }
+
+        var capped = bus.GetSnapshot();
+
+        Assert.Equal(5, capped.TotalPublished);
+        Assert.Equal(2, capped.TrackedTopics);
+        Assert.Equal(["anima.test.topic0", "anima.test.topic1"], capped.Topics.Select(topic => topic.Topic));
+        Assert.False(capped.TopicsTruncated);
+
+        // Topics already tracked keep counting; new ones only reach the totals.
+        await bus.PublishAsync(CreateEnvelope("anima.test.topic0", "anima.test.v1.Ping", "alice"));
+        await bus.PublishAsync(CreateEnvelope("anima.test.topic9", "anima.test.v1.Ping", "alice"));
+
+        var snapshot = bus.GetSnapshot();
+        Assert.Equal(7, snapshot.TotalPublished);
+        Assert.Equal(2, snapshot.TrackedTopics);
+        Assert.Equal(2, snapshot.Topics.Single(topic => topic.Topic == "anima.test.topic0").PublishedCount);
+    }
+
+    [Fact]
+    public async Task Snapshot_caps_type_names_and_senders_per_topic()
+    {
+        await using var bus = CreateBus(new BusOptions
+        {
+            MaxTypesPerTopic = 2,
+            MaxSendersPerTopic = 3,
+            RetryDelay = TimeSpan.Zero,
+        });
+
+        for (var index = 0; index < 5; index++)
+        {
+            await bus.PublishAsync(CreateEnvelope(
+                "anima.test.topic",
+                $"anima.test.v1.Type{index}",
+                $"sender-{index}"));
+        }
+
+        var topic = Assert.Single(bus.GetSnapshot().Topics);
+
+        Assert.Equal(5, topic.PublishedCount);
+        Assert.Equal(["anima.test.v1.Type0", "anima.test.v1.Type1"], topic.TypeNames);
+        Assert.Equal(["sender-0", "sender-1", "sender-2"], topic.Senders);
+    }
+
+    [Fact]
+    public async Task Snapshot_returns_the_busiest_topics_and_flags_the_truncation()
+    {
+        await using var bus = CreateBus(new BusOptions { MaxSnapshotTopics = 2, RetryDelay = TimeSpan.Zero });
+
+        await bus.PublishAsync(CreateEnvelope("anima.test.quiet", "anima.test.v1.Ping", "alice"));
+        for (var index = 0; index < 3; index++)
+        {
+            await bus.PublishAsync(CreateEnvelope("anima.test.busy", "anima.test.v1.Ping", "alice"));
+        }
+
+        await bus.PublishAsync(CreateEnvelope("anima.test.steady", "anima.test.v1.Ping", "alice"));
+        await bus.PublishAsync(CreateEnvelope("anima.test.steady", "anima.test.v1.Ping", "alice"));
+
+        var snapshot = bus.GetSnapshot();
+
+        Assert.Equal(3, snapshot.TrackedTopics);
+        Assert.True(snapshot.TopicsTruncated);
+        Assert.Equal(["anima.test.busy", "anima.test.steady"], snapshot.Topics.Select(topic => topic.Topic));
+    }
+
     private static InProcMessageBus CreateBus(BusOptions? options = null) => new(
         Options.Create(options ?? new BusOptions { RetryDelay = TimeSpan.Zero }),
         NullLogger<InProcMessageBus>.Instance);

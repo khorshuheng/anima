@@ -337,6 +337,69 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
         Assert.True(clamped.Truncated);
     }
 
+    [Fact]
+    public async Task Graph_snapshot_newest_uses_one_descending_window_for_nodes_and_edges()
+    {
+        using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var plan = await graph.CreatePlanAsync(new PlanDraft(
+            "Goal",
+            Anchor: new PlanAnchor(repo.Id, KnowledgeEdgeTypes.BelongsTo),
+            Tasks:
+            [
+                new PlanTaskDraft("api", "Graph API"),
+                new PlanTaskDraft("ui", "Graph tab", DependsOn: ["api"]),
+            ]));
+        var api = plan.Tasks.Single(task => task.Key == "api").Node;
+        var ui = plan.Tasks.Single(task => task.Key == "ui").Node;
+        var change = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Change, "Ship it"));
+        await graph.AddEdgeAsync(new EdgeDraft(change.Id, api.Id, KnowledgeEdgeTypes.Implements));
+
+        var all = await graph.GetGraphAsync(new GraphSnapshotQuery { Newest = true });
+
+        Assert.Equal(new[] { change.Id, ui.Id, api.Id, plan.Goal!.Id, repo.Id }, all.Nodes.Select(node => node.Id));
+        Assert.Equal(
+            all.Edges.Select(edge => edge.Id).OrderDescending(),
+            all.Edges.Select(edge => edge.Id));
+
+        // The window holds the three newest nodes; edges that reach the older nodes
+        // (ui -> goal) stay out even though they exist in the graph.
+        var window = await graph.GetGraphAsync(new GraphSnapshotQuery { Newest = true, MaxNodes = 3 });
+
+        Assert.True(window.Truncated);
+        Assert.Equal(new[] { change.Id, ui.Id, api.Id }, window.Nodes.Select(node => node.Id));
+        Assert.Equal(5, window.NodeCount);
+        Assert.All(window.Edges, edge =>
+        {
+            Assert.Contains(edge.Source, window.Nodes.Select(node => node.Id));
+            Assert.Contains(edge.Destination, window.Nodes.Select(node => node.Id));
+        });
+        Assert.Equal(
+            new[] { KnowledgeEdgeTypes.Implements, KnowledgeEdgeTypes.DependsOn },
+            window.Edges.Select(edge => edge.EdgeType));
+    }
+
+    [Fact]
+    public async Task Graph_snapshot_since_id_filters_to_newer_nodes()
+    {
+        using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var goal = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Goal, "Goal"));
+        await graph.AddEdgeAsync(new EdgeDraft(goal.Id, repo.Id, KnowledgeEdgeTypes.BelongsTo));
+        var task = await graph.CreateTaskAsync(new TaskDraft("Graph API", Parent: goal.Id));
+        var change = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Change, "Ship it"));
+        await graph.AddEdgeAsync(new EdgeDraft(change.Id, task.Id, KnowledgeEdgeTypes.Implements));
+
+        var delta = await graph.GetGraphAsync(new GraphSnapshotQuery { SinceId = goal.Id });
+
+        Assert.Equal(new[] { task.Id, change.Id }, delta.Nodes.Select(node => node.Id));
+        Assert.Equal(4, delta.NodeCount);
+        Assert.True(delta.Truncated);
+        var edge = Assert.Single(delta.Edges);
+        Assert.Equal((change.Id, task.Id, KnowledgeEdgeTypes.Implements),
+            (edge.Source, edge.Destination, edge.EdgeType));
+    }
+
     private static SqliteKnowledgeGraph CreateGraph(string path) => new(
         Options.Create(new SqliteKnowledgeOptions
         {

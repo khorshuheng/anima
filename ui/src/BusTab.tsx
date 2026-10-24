@@ -89,6 +89,13 @@ export function BusTab({ events, status, revision }: BusTabProps) {
 
       <section className="panel">
         <h2>Topics and producers</h2>
+        {snapshot?.topicsTruncated && (
+          <div className="banner">
+            <strong>Topics truncated.</strong> Showing the {snapshot.topics.length} busiest of{' '}
+            {snapshot.trackedTopics} tracked topics. The bus stops tracking new topics at its configured cap,
+            so their publishes only reach the totals above.
+          </div>
+        )}
         {snapshot && snapshot.topics.length === 0 && <p className="muted">No bus traffic recorded yet.</p>}
         {snapshot && snapshot.topics.length > 0 && (
           <div className="table-wrap">

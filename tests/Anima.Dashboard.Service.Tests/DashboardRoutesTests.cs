@@ -33,6 +33,23 @@ public sealed class DashboardRoutesTests
     }
 
     [Fact]
+    public void Graph_forwards_the_newest_window()
+    {
+        Assert.Equal(
+            "api/graph?maxNodes=500&maxEdges=1000&newest=true",
+            DashboardRoutes.Graph(500, 1000, newest: true));
+        Assert.Equal("api/graph?newest=false", DashboardRoutes.Graph(newest: false));
+    }
+
+    [Fact]
+    public void Graph_forwards_the_since_id_cursor()
+    {
+        Assert.Equal(
+            "api/graph?maxNodes=500&newest=true&sinceId=58",
+            DashboardRoutes.Graph(maxNodes: 500, newest: true, sinceId: 58));
+    }
+
+    [Fact]
     public void Bus_snapshot_targets_the_bus_diagnostics_endpoint()
     {
         Assert.Equal("api/bus/snapshot", DashboardRoutes.BusSnapshot());

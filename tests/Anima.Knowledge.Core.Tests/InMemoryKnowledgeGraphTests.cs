@@ -187,6 +187,68 @@ public sealed class InMemoryKnowledgeGraphTests
         Assert.All(capped.Edges, edge => Assert.Contains(edge.Destination, capped.Nodes.Select(node => node.Id)));
     }
 
+    [Fact]
+    public async Task Graph_snapshot_newest_windows_the_graph_from_the_highest_ids()
+    {
+        var graph = CreateGraph();
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var plan = await graph.CreatePlanAsync(new PlanDraft(
+            "Goal",
+            Anchor: new PlanAnchor(repo.Id, KnowledgeEdgeTypes.BelongsTo),
+            Tasks:
+            [
+                new PlanTaskDraft("api", "Graph API"),
+                new PlanTaskDraft("ui", "Graph tab", DependsOn: ["api"]),
+            ]));
+        var api = plan.Tasks.Single(task => task.Key == "api").Node;
+        var ui = plan.Tasks.Single(task => task.Key == "ui").Node;
+
+        var all = await graph.GetGraphAsync(new GraphSnapshotQuery { Newest = true });
+
+        Assert.Equal(new[] { ui.Id, api.Id, plan.Goal!.Id, repo.Id }, all.Nodes.Select(node => node.Id));
+        Assert.Equal(
+            all.Edges.Select(edge => edge.Id).OrderDescending(),
+            all.Edges.Select(edge => edge.Id));
+
+        var window = await graph.GetGraphAsync(new GraphSnapshotQuery { Newest = true, MaxNodes = 2 });
+
+        Assert.True(window.Truncated);
+        Assert.Equal(new[] { ui.Id, api.Id }, window.Nodes.Select(node => node.Id));
+        Assert.Equal(4, window.NodeCount);
+        var edge = Assert.Single(window.Edges);
+        Assert.Equal((ui.Id, api.Id, KnowledgeEdgeTypes.DependsOn), (edge.Source, edge.Destination, edge.EdgeType));
+    }
+
+    [Fact]
+    public async Task Graph_snapshot_since_id_filters_to_newer_nodes()
+    {
+        var graph = CreateGraph();
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var plan = await graph.CreatePlanAsync(new PlanDraft(
+            "Goal",
+            Anchor: new PlanAnchor(repo.Id, KnowledgeEdgeTypes.BelongsTo),
+            Tasks:
+            [
+                new PlanTaskDraft("api", "Graph API"),
+                new PlanTaskDraft("ui", "Graph tab", DependsOn: ["api"]),
+            ]));
+        var goal = plan.Goal!;
+
+        var delta = await graph.GetGraphAsync(new GraphSnapshotQuery { SinceId = goal.Id });
+
+        Assert.Equal(
+            new[] { plan.Tasks[0].Node.Id, plan.Tasks[1].Node.Id },
+            delta.Nodes.Select(node => node.Id));
+        Assert.Equal(4, delta.NodeCount);
+        Assert.True(delta.Truncated);
+        Assert.Contains(
+            delta.Edges,
+            edge => edge.Source == plan.Tasks[1].Node.Id &&
+                    edge.Destination == plan.Tasks[0].Node.Id &&
+                    edge.EdgeType == KnowledgeEdgeTypes.DependsOn);
+        Assert.DoesNotContain(delta.Edges, edge => edge.Source == goal.Id || edge.Destination == goal.Id);
+    }
+
     private static InMemoryKnowledgeGraph CreateGraph() => new(
         Options.Create(new KnowledgeOptions()),
         NullLogger<InMemoryKnowledgeGraph>.Instance);

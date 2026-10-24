@@ -24,4 +24,19 @@ public sealed class BusOptions
 
     /// <summary>Publish failed messages to <see cref="BusTopics.DeadLetter"/>.</summary>
     public bool EnableDeadLetter { get; set; } = true;
+
+    /// <summary>
+    /// Diagnostics bound: topics seen after this many are counted in the totals but
+    /// not tracked individually, so a fan-out of unique topics cannot grow memory.
+    /// </summary>
+    public int MaxTrackedTopics { get; set; } = 4096;
+
+    /// <summary>Diagnostics bound: distinct type names remembered per topic.</summary>
+    public int MaxTypesPerTopic { get; set; } = 64;
+
+    /// <summary>Diagnostics bound: distinct senders remembered per topic.</summary>
+    public int MaxSendersPerTopic { get; set; } = 64;
+
+    /// <summary>Diagnostics bound: topics returned per snapshot, busiest first.</summary>
+    public int MaxSnapshotTopics { get; set; } = 100;
 }

@@ -200,6 +200,9 @@ public sealed partial class SqliteKnowledgeGraph
         ArgumentNullException.ThrowIfNull(query);
         var maxNodes = query.EffectiveMaxNodes;
         var maxEdges = query.EffectiveMaxEdges;
+        var direction = query.Newest ? "DESC" : "ASC";
+        var sinceFilter = query.SinceId is null ? string.Empty : " WHERE id > $sinceId";
+        var nodeFilter = query.SinceId is null ? string.Empty : " WHERE n.id > $sinceId";
         await using var connection = await OpenConnectionAsync(cancellationToken);
         using var transaction = connection.BeginTransaction();
 
@@ -211,10 +214,16 @@ public sealed partial class SqliteKnowledgeGraph
                 SELECT n.id, k.name, n.name, n.description,
                        CASE WHEN {ResolvedExists} THEN 1 ELSE 0 END AS resolved
                 FROM node n JOIN node_kind k ON k.id = n.kind_id
-                ORDER BY n.id
+                {nodeFilter}
+                ORDER BY n.id {direction}
                 LIMIT $maxNodes;
                 """;
             command.Parameters.AddWithValue("$maxNodes", maxNodes);
+            if (query.SinceId is { } sinceId)
+            {
+                command.Parameters.AddWithValue("$sinceId", sinceId);
+            }
+
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
@@ -228,21 +237,26 @@ public sealed partial class SqliteKnowledgeGraph
         }
 
         // Both endpoints must be inside the node window, so the subqueries repeat the
-        // node ordering and cap instead of materializing an id list client-side.
+        // node filter, ordering and cap instead of materializing an id list client-side.
         var edges = new List<GraphSnapshotEdge>();
         await using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
-            command.CommandText = """
+            command.CommandText = $"""
                 SELECT e.id, e.source, e.destination, t.name
                 FROM edge e JOIN edge_type t ON t.id = e.edge_type_id
-                WHERE e.source IN (SELECT id FROM node ORDER BY id LIMIT $maxNodes)
-                  AND e.destination IN (SELECT id FROM node ORDER BY id LIMIT $maxNodes)
-                ORDER BY e.id
+                WHERE e.source IN (SELECT id FROM node{sinceFilter} ORDER BY id {direction} LIMIT $maxNodes)
+                  AND e.destination IN (SELECT id FROM node{sinceFilter} ORDER BY id {direction} LIMIT $maxNodes)
+                ORDER BY e.id {direction}
                 LIMIT $maxEdges;
                 """;
             command.Parameters.AddWithValue("$maxNodes", maxNodes);
             command.Parameters.AddWithValue("$maxEdges", maxEdges);
+            if (query.SinceId is { } sinceId)
+            {
+                command.Parameters.AddWithValue("$sinceId", sinceId);
+            }
+
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {

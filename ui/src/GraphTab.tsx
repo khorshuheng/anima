@@ -6,6 +6,8 @@ import type { GraphNode, GraphSnapshot } from './types';
 /** Mirrors the knowledge snapshot defaults (Anima.Knowledge.GraphSnapshotQuery). */
 const maxNodes = 500;
 const maxEdges = 1000;
+/** Walk the graph newest first so the active workflow is inside the cap. */
+const newestWindow = true;
 
 const kindPalette = ['#58a6ff', '#3fb950', '#bc8cff', '#d29922', '#f85149', '#39c5cf', '#db6d28', '#8b949e'];
 
@@ -86,7 +88,7 @@ export function GraphTab({ revision }: GraphTabProps) {
   const load = useCallback(async () => {
     const request = ++requestRef.current;
     try {
-      const snapshot = await api.graph(maxNodes, maxEdges);
+      const snapshot = await api.graph(maxNodes, maxEdges, newestWindow);
       if (request !== requestRef.current) return;
       setGraph(snapshot);
       setError(null);
@@ -164,9 +166,10 @@ export function GraphTab({ revision }: GraphTabProps) {
 
       {graph?.truncated && (
         <div className="banner">
-          <strong>Graph truncated.</strong> The snapshot is a prefix of the graph: caps are {maxNodes} nodes and{' '}
-          {maxEdges} edges, and edges are only included when both endpoints are. Showing {graph.nodes.length}/{graph.nodeCount}{' '}
-          nodes and {graph.edges.length}/{graph.edgeCount} edges.
+          <strong>Graph truncated.</strong> The snapshot windows the graph from the newest ids: caps are{' '}
+          {maxNodes} nodes and {maxEdges} edges, and edges are only included when both endpoints are in the
+          window. Showing the newest {graph.nodes.length} of {graph.nodeCount} nodes ({graph.edges.length} of{' '}
+          {graph.edgeCount} edges), so older nodes are hidden.
         </div>
       )}
 
