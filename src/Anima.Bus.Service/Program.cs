@@ -181,4 +181,6 @@ app.MapPost("/api/bus/validate", (ValidateRequest request, IMessageCodec codec) 
 
 app.MapGet("/api/bus/info", (Microsoft.Extensions.Options.IOptions<BusOptions> options) => Results.Ok(options.Value));
 
+app.MapGet("/api/bus/snapshot", (IBusDiagnostics diagnostics) => Results.Ok(diagnostics.GetSnapshot()));
+
 app.Run();

@@ -24,6 +24,7 @@ public static class BusServiceCollectionExtensions
         services.TryAddSingleton<IMessageBus>(provider => provider.GetRequiredService<InProcMessageBus>());
         services.TryAddSingleton<IBusPublisher>(provider => provider.GetRequiredService<InProcMessageBus>());
         services.TryAddSingleton<IBusSubscriber>(provider => provider.GetRequiredService<InProcMessageBus>());
+        services.TryAddSingleton<IBusDiagnostics>(provider => provider.GetRequiredService<InProcMessageBus>());
         services.TryAddSingleton<IAgentMailboxFactory, InProcAgentMailboxFactory>();
         services.TryAddSingleton<IBusRequester, BusRequester>();
         return services;
