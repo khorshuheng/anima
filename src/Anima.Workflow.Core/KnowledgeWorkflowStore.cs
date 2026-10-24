@@ -372,6 +372,19 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         Require(spec.Markdown, "spec markdown");
         var workflow = await RequireWorkflowAsync(workflowId, cancellationToken);
         var tasks = spec.Tasks ?? [];
+        if (tasks.Count == 0 &&
+            workflow.Properties.TryGetValue("plannedTasks", out var plannedTasks))
+        {
+            try
+            {
+                tasks = JsonSerializer.Deserialize<List<SpecTaskInput>>(plannedTasks, JsonOptions) ?? [];
+            }
+            catch (JsonException)
+            {
+                tasks = [];
+            }
+        }
+
         var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var task in tasks)
         {

@@ -80,9 +80,11 @@ app.Use(async (context, next) =>
 app.MapPost("/api/workflows", async (
     WorkflowStart start,
     IWorkflowStore store,
-    CancellationToken cancellationToken) => Results.Created(
-    "/api/workflows",
-    await store.CreateAsync(start, cancellationToken)));
+    CancellationToken cancellationToken) =>
+{
+    var state = await store.CreateAsync(start, cancellationToken);
+    return Results.Created($"/api/workflows/{state.Id}", state);
+});
 
 app.MapGet("/api/workflows", async (IWorkflowStore store, CancellationToken cancellationToken) =>
     Results.Ok(new { items = await store.ListAsync(cancellationToken) }));

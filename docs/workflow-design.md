@@ -80,7 +80,8 @@ Start request:
 }
 ```
 
-`tasks` is optional; the analyst can post them with the spec.
+`tasks` is optional. If the spec is posted with an empty task list, the start
+request's tasks are used; otherwise the analyst can post them with the spec.
 
 ## Knowledge model additions
 

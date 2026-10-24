@@ -153,6 +153,22 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Planned_tasks_are_used_when_the_spec_posts_none()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart(
+            "W",
+            "R",
+            _repoPath,
+            Tasks: [new SpecTaskInput("one", "One")]));
+
+        var spec = await store.WriteSpecAsync(workflow.Id, new SpecInput("spec", []));
+
+        Assert.Single(spec.Tasks);
+        Assert.Equal("one", spec.Tasks[0].Key);
+    }
+
+    [Fact]
     public async Task Failed_review_marks_the_workflow_failed()
     {
         var store = CreateStore();

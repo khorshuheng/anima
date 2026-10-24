@@ -7,9 +7,7 @@ public enum WorkflowStatus
     SpecReady,
     Implementing,
     ImplementationComplete,
-    Merging,
     MergeComplete,
-    Reviewing,
     Completed,
     Failed,
 }
