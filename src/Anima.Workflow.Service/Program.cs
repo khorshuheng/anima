@@ -243,13 +243,30 @@ app.MapPost("/api/workflows/{id:long}/dispatch", async (
     IWorkflowDispatcher dispatcher,
     CancellationToken cancellationToken) =>
 {
-    var messageId = string.IsNullOrWhiteSpace(request.MessageId)
-        ? Guid.NewGuid().ToString("n")
-        : request.MessageId.Trim();
-    var normalized = request with { MessageId = messageId };
-
-    if (!string.IsNullOrWhiteSpace(request.TaskKey))
+    if (string.IsNullOrWhiteSpace(request.AgentId))
     {
+        throw new WorkflowValidationException("agentId is required");
+    }
+
+    if (string.IsNullOrWhiteSpace(request.Role))
+    {
+        throw new WorkflowValidationException("role is required");
+    }
+
+    var messageId = WorkflowMessageId.Normalize(request.MessageId);
+    var normalized = request with { MessageId = messageId };
+    var hasTask = !string.IsNullOrWhiteSpace(request.TaskKey);
+    var hasWorktree = !string.IsNullOrWhiteSpace(request.WorktreePath);
+    var hasBranch = !string.IsNullOrWhiteSpace(request.Branch);
+
+    if (hasTask || hasWorktree || hasBranch)
+    {
+        if (!hasTask || !hasWorktree || !hasBranch)
+        {
+            throw new WorkflowValidationException(
+                "taskKey, worktreePath and branch must be supplied together");
+        }
+
         await store.RegisterAssignmentAsync(
             id,
             new AssignmentInput(

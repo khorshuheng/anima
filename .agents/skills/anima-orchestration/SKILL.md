@@ -150,8 +150,8 @@ anima workflow result <id> --task api --kind implementation \
   --changed-file src/Api.cs --changed-file tests/Api.Tests.cs \
   --head-sha "$(git rev-parse HEAD)" --branch anima/<wf>-api \
   --base-ref main --run-id <agent-run-id> \
-  --test-command "dotnet test tests/Api.Tests" \
-  --artifact-path reports/api-tests.log \
+  --test "dotnet test tests/Api.Tests" \
+  --artifact reports/api-tests.log \
   --agent impl-api --worktree .anima/worktrees/<wf>-api
 ```
 
@@ -176,7 +176,7 @@ Create a merge worktree from the base ref and run the merger agent there.
 ```bash
 anima workflow result <id> --kind merge --summary "merged 3 branches" \
   --head-sha "$(git rev-parse HEAD)" --branch merge/<wf> --base-ref main \
-  --test-command "make check" --artifact-path reports/merge-check.log \
+  --test "make check" --artifact reports/merge-check.log \
   --agent merger --worktree .anima/worktrees/<wf>-merge
 ```
 
@@ -193,7 +193,7 @@ findings with severity and file/line when known:
 anima workflow result <id> --kind review --summary "2 issues" --failure \
   --finding "error:missing auth check src/Api.cs:42" \
   --finding "warning:no retry test" \
-  --head-sha "$(git rev-parse HEAD)" --test-command "make check" \
+  --head-sha "$(git rev-parse HEAD)" --test "make check" \
   --agent reviewer --worktree .anima/worktrees/<wf>-merge
 ```
 

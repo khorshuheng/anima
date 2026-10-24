@@ -230,8 +230,12 @@ internal static class WorkflowCommands
                 CliJson.Option(args, "--branch"),
                 CliJson.Option(args, "--base-ref"),
                 CliJson.Option(args, "--run-id"),
-                CliJson.OptionValues(args, "--test"),
-                CliJson.OptionValues(args, "--artifact")));
+                CliJson.OptionValues(args, "--test")
+                    .Concat(CliJson.OptionValues(args, "--test-command"))
+                    .ToArray(),
+                CliJson.OptionValues(args, "--artifact")
+                    .Concat(CliJson.OptionValues(args, "--artifact-path"))
+                    .ToArray()));
     }
 
     private static async Task<int> DispatchAsync(HttpClient http, string[] args)
@@ -329,7 +333,7 @@ internal static class WorkflowCommands
               anima workflow ack <id> --task <key> [--run <id>]
               anima workflow unassign <id> --task <key>
               anima workflow results <id>
-              anima workflow result <id> [--task <key>] --kind <implementation|merge|review|verification> [--failure] --summary <text> [--changed-file <p>] [--conflict <p>] [--finding <severity:msg>] [--agent <id>] [--head-sha <sha>] [--branch <ref>] [--base-ref <ref>] [--run-id <id>] [--test <cmd>] [--artifact <path>]
+              anima workflow result <id> [--task <key>] --kind <implementation|merge|review|verification> [--failure] --summary <text> [--changed-file <p>] [--conflict <p>] [--finding <severity:msg>] [--agent <id>] [--head-sha <sha>] [--branch <ref>] [--base-ref <ref>] [--run-id <id>] [--test <cmd>|--test-command <cmd>] [--artifact <path>|--artifact-path <path>]
               anima workflow timeline <id>
               anima workflow dispatch <id> --agent <id> --role <role> --instructions <text> [--context <json-file>] [--timeout <s>] [--task <key> --path <worktree> --branch <branch>] [--note <text>] [--message-id <id>]
               anima workflow api <METHOD> <path> [json|@file]

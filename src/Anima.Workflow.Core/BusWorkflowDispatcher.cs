@@ -68,9 +68,7 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
             ["context"] = context.DeepClone(),
         };
 
-        var messageId = string.IsNullOrWhiteSpace(request.MessageId)
-            ? Guid.NewGuid().ToString("n")
-            : request.MessageId.Trim();
+        var messageId = WorkflowMessageId.Normalize(request.MessageId);
         var envelope = MessageEnvelope.Create(
             BusTopics.AgentInbox(request.AgentId),
             "anima.workflow.v1.WorkflowRoleTask",
@@ -90,7 +88,11 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
         {
             var reply = await _requester.AskAsync(
                 envelope,
-                new BusRequestOptions { Timeout = timeout },
+                new BusRequestOptions
+                {
+                    Timeout = timeout,
+                    ReplyTopic = $"{BusTopics.ReplyPrefix}.{Guid.NewGuid():n}",
+                },
                 cancellationToken);
             return ParseReply(reply, envelope.MessageId);
         }

@@ -37,6 +37,22 @@ public sealed class BusWorkflowDispatcherTests
         Assert.Equal("msg-42", requester.Request!.MessageId);
         Assert.Equal("msg-42", result.MessageId);
         Assert.Equal("msg-42", requester.Request.CorrelationId);
+        Assert.NotNull(requester.Options?.ReplyTopic);
+        Assert.NotEqual("anima.reply.msg-42", requester.Options.ReplyTopic);
+    }
+
+    [Fact]
+    public async Task Dispatch_rejects_an_unsafe_message_id()
+    {
+        var requester = new CapturingRequester();
+        var dispatcher = CreateDispatcher(requester);
+
+        await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => dispatcher.DispatchAsync(
+                7,
+                new DispatchRequest("worker", "implementation", "do the task", MessageId: "**")));
+
+        Assert.Null(requester.Request);
     }
 
     private static BusWorkflowDispatcher CreateDispatcher(IBusRequester requester)
@@ -49,12 +65,15 @@ public sealed class BusWorkflowDispatcherTests
     {
         public MessageEnvelope? Request { get; private set; }
 
+        public BusRequestOptions? Options { get; private set; }
+
         public Task<MessageEnvelope> AskAsync(
             MessageEnvelope request,
             BusRequestOptions? options = null,
             CancellationToken cancellationToken = default)
         {
             Request = request;
+            Options = options;
             var reply = MessageEnvelope.Create(
                 "anima.reply",
                 "anima.workflow.v1.WorkflowRoleResult",
