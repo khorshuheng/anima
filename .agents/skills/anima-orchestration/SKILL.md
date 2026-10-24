@@ -147,8 +147,10 @@ published and whether the worker started. Registration sets workflow status
 `assigned`; an ack moves it to `implementing`. An ack is a liveness signal, not
 permission: the orchestrator still posts the result.
 
-5. The implementer works only in its worktree, runs the verify commands, and you
-   post the result with evidence:
+5. The implementer works only in its worktree, uses the named files and
+   CodeGraph callers instead of scanning the whole repository, batches shell
+   commands, runs the verify commands once it has a candidate, and you post the
+   result with evidence:
 
 ```bash
 anima workflow result <id> --task api --kind implementation \
@@ -203,10 +205,14 @@ scripts/review-packet.sh "$BASE_SHA" "$HEAD_SHA" \
 ```
 
 Pass the resulting `packet.md`, `diff.patch` and `changed-files.txt` paths plus
-`baseRef`, `headRef`, `verifyCommands` and `docs` to `workflows/code-review.js`.
-Use separate reviewer lanes for correctness and contract drift when the diff is
-non-trivial. Each lane must return JSON with `verdict`, `diffReviewed`,
-`findings`, `notExamined` and `testsRun`.
+`baseRef`, `headRef`, `verifyCommands`, `docs` and `focusFiles` to
+`workflows/code-review.js`. Use **one reviewer lane by default**; add a second
+only for security, persistence, concurrency or public-protocol changes. Set
+`budget: { maxToolCalls, maxFiles }` and tell the reviewer to read changed files
+and direct callers first. Each lane must return JSON with `verdict`,
+`diffReviewed`, `findings`, `notExamined` and `testsRun`. For a re-review, use
+the previously reviewed SHA as `baseRef`, set `incremental: true`, and pass the
+previous findings; review the delta, not the whole repository.
 
 Map the result to Anima:
 

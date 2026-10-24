@@ -44,6 +44,8 @@ subagent({
 | `lanes[].task` | yes | Child brief; keep ids and file paths, not whole specs |
 | `lanes[].label` | no | Display label; defaults to `<agent> <key>` |
 | `lanes[].acceptance` | no | Up to 20 strings appended to the task as an acceptance list |
+| `lanes[].budget` | no | Per-lane execution guidance; defaults to the workflow budget |
+| `args.budget` | no | Shared execution guidance appended to every lane |
 
 Validation failures throw before dispatch: non-object args, empty/oversized lane
 lists, duplicate keys, unknown fields with invalid types, relative `cwd`, and
@@ -99,9 +101,11 @@ subagent({
     changedFiles: "/abs/path/to/repo/artifacts/review/.../changed-files.txt",
     verifyCommands: ["make check"],
     docs: ["docs/code-quality.md"],
+    focusFiles: ["src/Anima.Workflow.Core/KnowledgeWorkflowStore.cs"],
+    budget: { maxToolCalls: 18, maxFiles: 12 },
+    incremental: false,
     reviewers: [
-      { key: "correctness", agent: "reviewer", focus: "async, state, concurrency" },
-      { key: "contract", agent: "reviewer", focus: "CLI, docs, API, protocol" }
+      { key: "review", agent: "reviewer", focus: "correctness and contract drift" }
     ]
   }
 });
@@ -112,6 +116,12 @@ commands, the contract paths, and the required JSON verdict schema (`ok`,
 `changes_required`, `blocked`). The parent merges the reviewer boards and maps
 P0/P1 to Anima `error` findings, P2 to `warning`. A `blocked` verdict is a
 failed review, not a clean one. Reviewers are read-only.
+
+Use **one reviewer by default**. Add a second lane only for a high-risk change
+(security, persistence, concurrency, public protocol). `budget` caps advisory
+read/grep calls and source files. For a re-review, pass the previous reviewed SHA
+as `baseRef`, `incremental: true`, and optionally `priorFindings`; do not ask the
+reviewer to re-read the whole repository.
 
 ## Isolation rules
 

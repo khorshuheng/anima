@@ -28,6 +28,11 @@ const MAX_LANES = 16;
 const MAX_FIELD_LENGTH = 16 * 1024;
 const MAX_ACCEPTANCE_ITEMS = 20;
 const WORKFLOW_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const DEFAULT_BUDGET = [
+  "Work economically: read only files named in the task/spec, use CodeGraph",
+  "for callers and impact instead of scanning the repository, batch shell",
+  "commands, run the full test suite once at the end, and stop/report if blocked."
+].join(" ");
 
 function fail(message) {
   throw new Error("feature-delivery: " + message);
@@ -72,6 +77,9 @@ function normalizeLane(lane, index, seenKeys) {
   const agent = requireString(lane.agent, "agent", index);
   const cwd = requireAbsolutePath(lane.cwd, "cwd", index);
   const task = requireString(lane.task, "task", index);
+  const budget = lane.budget === undefined
+    ? ""
+    : requireString(lane.budget, "budget", index);
 
   let label = agent + " " + key;
   if (lane.label !== undefined) {
@@ -91,19 +99,17 @@ function normalizeLane(lane, index, seenKeys) {
     }
   }
 
-  return { key, agent, cwd, task, label, acceptance };
+  return { key, agent, cwd, task, label, acceptance, budget };
 }
 
-function laneTask(lane) {
-  if (lane.acceptance.length === 0) {
-    return lane.task;
-  }
+function laneTask(lane, workflowBudget) {
   return [
     lane.task,
-    "",
-    "Acceptance criteria:",
-    ...lane.acceptance.map((item) => "- " + item)
-  ].join("\n");
+    lane.acceptance.length === 0
+      ? ""
+      : "\nAcceptance criteria:\n" + lane.acceptance.map((item) => "- " + item).join("\n"),
+    "\nExecution guidance:\n" + (lane.budget || workflowBudget || DEFAULT_BUDGET)
+  ].filter(Boolean).join("\n");
 }
 
 if (!isObject(args)) {
@@ -116,6 +122,10 @@ if (args.lanes.length > MAX_LANES) {
   fail("args.lanes has more than " + MAX_LANES + " lanes");
 }
 
+const workflowBudget = args.budget === undefined
+  ? DEFAULT_BUDGET
+  : requireString(args.budget, "budget");
+
 const seenKeys = new Set();
 const lanes = args.lanes.map((lane, index) => normalizeLane(lane, index, seenKeys));
 
@@ -125,7 +135,7 @@ const results = await runs.all(
     label: lane.label,
     agent: lane.agent,
     cwd: lane.cwd,
-    task: laneTask(lane)
+    task: laneTask(lane, workflowBudget)
   }))
 );
 

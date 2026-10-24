@@ -67,6 +67,26 @@ function stringArray(value, field, maxItems) {
   return value.map((item, index) => requireString(item, field + "[" + index + "]"));
 }
 
+function normalizeBudget(value) {
+  if (value === undefined) {
+    return { maxToolCalls: 18, maxFiles: 12 };
+  }
+  if (!isObject(value)) {
+    fail("budget must be an object");
+  }
+
+  const maxToolCalls = value.maxToolCalls === undefined ? 18 : value.maxToolCalls;
+  const maxFiles = value.maxFiles === undefined ? 12 : value.maxFiles;
+  if (!Number.isInteger(maxToolCalls) || maxToolCalls < 1 || maxToolCalls > 100) {
+    fail("budget.maxToolCalls must be an integer from 1 to 100");
+  }
+  if (!Number.isInteger(maxFiles) || maxFiles < 1 || maxFiles > 100) {
+    fail("budget.maxFiles must be an integer from 1 to 100");
+  }
+
+  return { maxToolCalls, maxFiles };
+}
+
 function normalizeReviewer(reviewer, index, seenKeys) {
   if (!isObject(reviewer)) {
     fail("reviewers[" + index + "] must be an object");
@@ -112,6 +132,12 @@ const changedFiles = args.changedFiles === undefined
   : requireAbsolutePath(args.changedFiles, "changedFiles");
 const verifyCommands = stringArray(args.verifyCommands, "verifyCommands", 20);
 const docs = stringArray(args.docs, "docs", 40);
+const budget = normalizeBudget(args.budget);
+const focusFiles = stringArray(args.focusFiles, "focusFiles", 40);
+const priorFindings = args.priorFindings === undefined
+  ? ""
+  : requireAbsolutePath(args.priorFindings, "priorFindings");
+const incremental = args.incremental === true;
 
 const rawReviewers = args.reviewers === undefined
   ? [{ key: "review", agent: "reviewer" }]
@@ -167,9 +193,21 @@ function reviewerTask(reviewer) {
     ? "_None supplied._"
     : docs.map((doc) => "- `" + doc + "`").join("\n");
 
+  const focusList = focusFiles.length === 0
+    ? "_Use the changed-files list first._"
+    : focusFiles.map((file) => "- `" + file + "`").join("\n");
+
   return [
     "Act as an independent, read-only reviewer for a committed change.",
     "Apply the code-review skill. Do not trust the author's summary or a green test suite.",
+    "",
+    "Review in bounded mode:",
+    "- Use at most " + budget.maxToolCalls + " read/grep/find tool calls.",
+    "- Read at most " + budget.maxFiles + " source files.",
+    "- Start with the diff and changed files; read only direct callers or the",
+    "  smallest surrounding context needed to validate a finding.",
+    "- Do not inventory the whole repository. If the budget runs out, stop and",
+    "  list unexamined surfaces instead of guessing.",
     "",
     "Repository: `" + repo + "`",
     "Base ref: `" + baseRef + "`",
@@ -177,6 +215,11 @@ function reviewerTask(reviewer) {
     "Review packet: `" + packet + "`",
     "Diff: `" + diff + "`",
     changedFiles ? "Changed files: `" + changedFiles + "`" : "",
+    "",
+    "Focus files:",
+    focusList,
+    priorFindings ? "Prior findings: `" + priorFindings + "` (do not repeat closed findings)." : "",
+    incremental ? "This is a re-review; review only the delta and changed behavior." : "",
     "",
     "Read the packet, diff and surrounding code before forming findings.",
     "Check the mandatory wiring/contract surfaces: documented CLI flags, help",

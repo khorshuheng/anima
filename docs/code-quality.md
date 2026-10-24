@@ -93,3 +93,19 @@ must return:
 A blocked verdict, or a reviewer that could not read the diff, is a failed
 review. P0/P1 findings block completion; P2 findings are recorded. The CLI and
 docs are part of the contract: a documented command that does not run is a P1.
+
+## Review cost controls
+
+Reviewers cache prompt reads, but each review is a fresh session and long,
+broad exploration still accumulates millions of tokens. Defaults:
+
+- one reviewer lane; add a second only for high-risk diffs;
+- `budget: { maxToolCalls: 18, maxFiles: 12 }` on the review workflow;
+- read the diff, changed files and direct callers first; do not inventory the
+  whole repository;
+- on re-review use the previous reviewed SHA as the base, set `incremental`,
+  and include prior findings;
+- keep `make check`/analyzer/test gates separate from the reviewer.
+
+Worker lanes should follow the same discipline: named files and CodeGraph
+callers, batched shell commands, one full verify run, then stop and report.
