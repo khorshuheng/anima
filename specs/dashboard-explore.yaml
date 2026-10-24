@@ -4,12 +4,15 @@ steps:
   - goto: /
   - click: "button.tab:has-text('Graph')"
   - waitFor: { target: "h2:has-text('Knowledge graph')" }
-  - fill: { target: "[data-testid=graph-search]", value: "goal" }
-  - click: "[data-testid=graph-search-submit]"
-  - waitFor: { target: "[data-testid=graph-search-results]" }
-  - eval: "document.querySelector('[data-testid=graph-result-count]').textContent"
-  - eval: "document.querySelectorAll('[data-testid^=graph-result-]').length"
-  - eval: "document.querySelector('[data-testid=graph-kinds]').textContent.includes('goal')"
+  - waitFor: { target: "[data-testid=graph-results-ready]" }
+  - eval: "document.querySelector('[data-testid=graph-results-ready]').textContent"
   - select: { target: "[data-testid=graph-scope]", value: "resolved" }
-  - eval: "document.querySelector('[data-testid=graph-result-count]').textContent"
+  - waitFor: { target: "[data-testid=graph-results-ready]" }
+  - waitForText: { target: "[data-testid=graph-results-ready]", text: "of" }
+  - eval: "document.querySelector('[data-testid=graph-results-ready]').textContent"
+  - fill: { target: "[data-testid=graph-search]", value: "orchestration" }
+  - click: "[data-testid=graph-search-submit]"
+  - waitFor: { target: "[data-testid=graph-results-ready]" }
+  - eval: "document.querySelector('[data-testid=graph-results-ready]').textContent"
+  - eval: "document.querySelector('[data-testid=graph-kinds]').textContent.includes('goal')"
   - screenshot: /tmp/anima-dashboard-explore.png

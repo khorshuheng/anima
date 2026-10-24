@@ -47,6 +47,19 @@ public sealed class ScriptTests
     }
 
     [Fact]
+    public void Parser_supports_wait_for_text()
+    {
+        var result = new AutomationScriptParser().Parse("""
+            name: wait-text
+            steps:
+              - waitForText: { target: "#count", text: "of" }
+            """);
+
+        Assert.True(result.IsValid);
+        Assert.IsType<WaitForTextStep>(result.Script!.Steps.Single());
+    }
+
+    [Fact]
     public void Evaluate_is_an_alias_for_eval()
     {
         var result = new AutomationScriptParser().Parse("""

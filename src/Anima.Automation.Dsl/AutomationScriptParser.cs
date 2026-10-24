@@ -181,6 +181,17 @@ public sealed class AutomationScriptParser
                     : null;
                 return new WaitStep(wait["target"], state, timeout);
 
+            case "waitfortext":
+                if (RequireFields(value, index, diagnostics, "target", "text") is not { } waitText)
+                {
+                    return null;
+                }
+
+                int? textTimeout = int.TryParse(Field(value, "timeout"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTextTimeout)
+                    ? parsedTextTimeout
+                    : null;
+                return new WaitForTextStep(waitText["target"], waitText["text"], textTimeout);
+
             case "expect":
                 var expect = new ExpectStep(
                     Url: Field(value, "url"),

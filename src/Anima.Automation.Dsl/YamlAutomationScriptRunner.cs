@@ -151,6 +151,15 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 await session.WaitForAsync(resolve(wait.Target), wait.State, cancellationToken);
                 return null;
 
+            case WaitForTextStep waitText:
+                await WaitForTextAsync(
+                    resolve(waitText.Target),
+                    resolve(waitText.Text),
+                    waitText.TimeoutMs ?? 10_000,
+                    session,
+                    cancellationToken);
+                return null;
+
             case ExpectStep expect:
                 await ExpectAsync(expect, session, resolve, cancellationToken);
                 return null;
@@ -175,6 +184,30 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
             default:
                 throw new InvalidOperationException($"unsupported step '{step.GetType().Name}'");
         }
+    }
+
+    private static async Task WaitForTextAsync(
+        string target,
+        string expected,
+        int timeoutMs,
+        IBrowserSession session,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddMilliseconds(Math.Max(1, timeoutMs));
+        string? actual = null;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            actual = await session.GetTextAsync(target, cancellationToken);
+            if (actual?.Contains(expected, StringComparison.Ordinal) == true)
+            {
+                return;
+            }
+
+            await Task.Delay(100, cancellationToken);
+        }
+
+        throw new InvalidOperationException(
+            $"timed out waiting for '{target}' to contain '{expected}', last text was '{actual}'");
     }
 
     private static async Task ExpectAsync(
@@ -295,6 +328,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
         PressStep => "press",
         SelectStep => "select",
         WaitStep => "waitFor",
+        WaitForTextStep => "waitForText",
         ExpectStep => "expect",
         ExtractStep => "extract",
         EvaluateStep => "eval",

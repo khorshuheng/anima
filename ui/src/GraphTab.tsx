@@ -85,7 +85,7 @@ export function GraphTab({ revision }: GraphTabProps) {
   const [selectedResult, setSelectedResult] = useState<GraphNode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [kind, setKind] = useState('');
+  const [kind, setKind] = useState('goal');
   const [scope, setScope] = useState('all');
   const [nodeKinds, setNodeKinds] = useState<NodeKind[]>([]);
   const [results, setResults] = useState<GraphNode[]>([]);
@@ -93,6 +93,7 @@ export function GraphTab({ revision }: GraphTabProps) {
   const [resultBusy, setResultBusy] = useState(false);
   const [resultError, setResultError] = useState<string | null>(null);
   const [showFilteredGraph, setShowFilteredGraph] = useState(true);
+  const [workflowStatuses, setWorkflowStatuses] = useState<Record<number, string>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const networkRef = useRef<Network | null>(null);
   const requestRef = useRef(0);
@@ -112,16 +113,24 @@ export function GraphTab({ revision }: GraphTabProps) {
     }
   }, []);
 
+  const resolvedFor = useCallback((node: GraphNode) => {
+    return node.resolved || (node.kind === 'goal' && workflowStatuses[node.id] === 'completed');
+  }, [workflowStatuses]);
+
   const loadResults = useCallback(async () => {
     const request = ++resultRequestRef.current;
     setResultBusy(true);
     try {
+      const serverScope = kind === 'goal' && scope !== 'all' ? 'all' : scope;
       const response = query.trim()
-        ? await api.search({ q: query.trim(), kind, scope, limit: resultLimit })
-        : await api.nodes({ kind, scope, limit: resultLimit });
+        ? await api.search({ q: query.trim(), kind, scope: serverScope, limit: resultLimit })
+        : await api.nodes({ kind, scope: serverScope, limit: resultLimit });
       if (request !== resultRequestRef.current) return;
-      setResults(response.items);
-      setResultTotal(response.total);
+      const filtered = kind === 'goal' && scope !== 'all'
+        ? response.items.filter((node) => scope === 'resolved' ? resolvedFor(node) : !resolvedFor(node))
+        : response.items;
+      setResults(filtered);
+      setResultTotal(kind === 'goal' && scope !== 'all' ? filtered.length : response.total);
       setResultError(null);
     } catch (exception) {
       if (request === resultRequestRef.current) {
@@ -132,11 +141,28 @@ export function GraphTab({ revision }: GraphTabProps) {
         setResultBusy(false);
       }
     }
-  }, [kind, query, scope]);
+  }, [kind, query, resolvedFor, scope]);
 
   useEffect(() => {
     void load();
   }, [load, revision]);
+
+  useEffect(() => {
+    let active = true;
+    api.workflows()
+      .then((response) => {
+        if (!active) return;
+        setWorkflowStatuses(Object.fromEntries(
+          response.items.map((workflow) => [workflow.goalId, workflow.status]),
+        ));
+      })
+      .catch((exception) => {
+        if (active) setResultError(String(exception));
+      });
+    return () => {
+      active = false;
+    };
+  }, [revision]);
 
   useEffect(() => {
     void loadResults();
@@ -205,7 +231,7 @@ export function GraphTab({ revision }: GraphTabProps) {
         label: node.name,
         title: `${node.kind} · #${node.id}\n${node.description}`,
         color: { background: color, border: color, highlight: { background: color, border: '#ffffff' } },
-        borderWidth: node.resolved ? 1 : 3,
+        borderWidth: resolvedFor(node) ? 1 : 3,
       };
     });
 
@@ -217,7 +243,7 @@ export function GraphTab({ revision }: GraphTabProps) {
     }));
 
     networkRef.current.setData({ nodes, edges });
-  }, [displayEdges, displayNodes]);
+  }, [displayEdges, displayNodes, resolvedFor]);
 
   const selectedNode: GraphNode | null =
     selectedResult ??
@@ -275,7 +301,11 @@ export function GraphTab({ revision }: GraphTabProps) {
               Search all facts or filter goals by whether they are open or resolved.
             </p>
           </div>
-          <span className="muted small" data-testid="graph-result-count">
+          <span
+            className="muted small"
+            data-testid={resultBusy ? 'graph-results-busy' : 'graph-results-ready'}
+            data-result-count={`${results.length} of ${resultTotal}`}
+          >
             {resultBusy ? 'searching…' : `${results.length} of ${resultTotal}`}
           </span>
         </div>
@@ -337,8 +367,8 @@ export function GraphTab({ revision }: GraphTabProps) {
               onClick={() => selectResult(node)}
             >
               <span className="search-result-heading">
-                <span className={`chip ${node.resolved ? 'chip-done' : 'chip-active'}`}>
-                  {node.resolved ? 'resolved' : 'open'}
+                <span className={`chip ${resolvedFor(node) ? 'chip-done' : 'chip-active'}`}>
+                  {resolvedFor(node) ? 'resolved' : 'open'}
                 </span>
                 <strong>{node.name}</strong>
               </span>
@@ -417,7 +447,7 @@ export function GraphTab({ revision }: GraphTabProps) {
               </div>
               <div className="stats">
                 <div className="stat"><strong>#{selectedNode.id}</strong><span>node id</span></div>
-                <div className="stat"><strong>{selectedNode.resolved ? 'resolved' : 'open'}</strong><span>state</span></div>
+                <div className="stat"><strong>{resolvedFor(selectedNode) ? 'resolved' : 'open'}</strong><span>state</span></div>
               </div>
               <p className="inspector-description">{selectedNode.description || 'No description recorded.'}</p>
               {displayNodeIds.has(selectedNode.id) && (

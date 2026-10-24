@@ -15,6 +15,8 @@ public sealed record SelectStep(string Target, string Value) : AutomationStep;
 
 public sealed record WaitStep(string Target, WaitState State, int? TimeoutMs = null) : AutomationStep;
 
+public sealed record WaitForTextStep(string Target, string Text, int? TimeoutMs = null) : AutomationStep;
+
 public sealed record ExpectStep(
     string? Url = null,
     string? Target = null,
