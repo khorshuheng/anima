@@ -11,7 +11,8 @@ UI automation and deploy scripts. It never spawns an agent and never creates a
 worktree; do not wait for it to.
 
 Read `docs/workflow-design.md` for the full contract. Services and ports:
-knowledge 7411, bus 7412, automation 7413, deploy 7414, workflow 7415.
+knowledge 7411, bus 7412, automation 7413, deploy 7414, workflow 7415,
+dashboard 7416.
 
 ## 0. Preconditions
 
@@ -55,7 +56,7 @@ Repeat until the analyst has no more questions. Stop when the analyst says the
 spec is ready; do not invent questions for Anima.
 
 Watch for wake-ups if useful, but always re-read state (the visualizer at
-`http://127.0.0.1:7415/ui/` does the same):
+`http://127.0.0.1:7416/` does the same):
 
 ```bash
 anima bus watch --topics anima.workflow.events

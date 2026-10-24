@@ -8,4 +8,5 @@ public static class AnimaPorts
     public const int Automation = 7413;
     public const int Deploy = 7414;
     public const int Workflow = 7415;
+    public const int Dashboard = 7416;
 }

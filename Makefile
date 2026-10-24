@@ -10,7 +10,8 @@ CLI := $(DOTNET) run --project tools/Anima.Cli -c $(CONFIG) --
         playwright-install hooks-install clean ui-install ui-build ui-dev \
         build-contracts test-contracts build-bus test-bus build-knowledge test-knowledge \
         build-automation test-automation build-deploy test-deploy build-workflow test-workflow \
-        run-knowledge run-bus run-automation run-deploy run-workflow
+        build-dashboard test-dashboard \
+        run-knowledge run-bus run-automation run-deploy run-workflow run-dashboard
 
 help:
 	@echo "Anima monorepo"
@@ -20,16 +21,16 @@ help:
 	@echo "  make check             format check + build + test"
 	@echo "  make fmt               apply dotnet format"
 	@echo "  make contracts         recompile .proto -> contracts/descriptors/anima.pb"
-	@echo "  make dev               run all five services locally"
+	@echo "  make dev               run all six services locally"
 	@echo "  make browser-check     show the Chrome executable Playwright will use"
 	@echo "  make ui-install        install React UI dependencies"
-	@echo "  make ui-build          build ui/dist served at /ui"
-	@echo "  make ui-dev            run the Vite dev server (proxy to :7415)"
+	@echo "  make ui-build          build ui/dist, served by the dashboard at /"
+	@echo "  make ui-dev            run the Vite dev server (proxy to :7416)"
 	@echo ""
 	@echo "  per component: make build-<name> / test-<name>"
-	@echo "    contracts bus knowledge automation deploy workflow"
+	@echo "    contracts bus knowledge automation deploy workflow dashboard"
 	@echo ""
-	@echo "  run: make run-<name>   (knowledge, bus, automation, deploy, workflow)"
+	@echo "  run: make run-<name>   (knowledge, bus, automation, deploy, workflow, dashboard)"
 	@echo "  optional: make playwright-install BROWSERS='firefox webkit'"
 	@echo "  hooks: make hooks-install REPO=/path/to/repo"
 
@@ -123,3 +124,11 @@ run-deploy:
 	$(DOTNET) run --project src/Anima.Deploy.Service -c $(CONFIG)
 run-workflow:
 	$(DOTNET) run --project src/Anima.Workflow.Service -c $(CONFIG)
+
+build-dashboard:
+	$(DOTNET) build Anima.Dashboard.slnf -c $(CONFIG) --nologo
+test-dashboard:
+	$(DOTNET) test Anima.Dashboard.slnf -c $(CONFIG) --nologo
+
+run-dashboard:
+	$(DOTNET) run --project src/Anima.Dashboard.Service -c $(CONFIG)

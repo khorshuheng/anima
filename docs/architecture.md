@@ -14,7 +14,7 @@
 | Anima (infrastructure only)                                 |
 |                                                             |
 |  Workflow 7415   Knowledge 7411   Bus 7412                  |
-|  Automation 7413                  Deploy 7414               |
+|  Automation 7413  Deploy 7414  Dashboard 7416               |
 +-------------------------------------------------------------+
 ```
 
@@ -31,6 +31,7 @@ transports messages, drives browsers and runs deploy scripts.
 | Bus | publish, SSE subscribe, request/response, contract validation |
 | Automation | browser sessions, CDP, YAML script execution |
 | Deploy | push normalization, rule matching, script execution |
+| Dashboard | read-only UI host and BFF: proxies workflow, graph and bus reads |
 
 ## Component graph
 
@@ -133,10 +134,12 @@ type.
 
 ## UI
 
-`ui/` is a React/Vite read-only visualizer. `Anima.Workflow.Service` serves
-`ui/dist` at `/ui/`; the browser fetches the workflow API same-origin and
-subscribes to `anima.**` on the bus (CORS restricted to local UI origins). A
-10-second poll is the fallback. No mutations are exposed.
+`ui/` is a React/Vite read-only dashboard. `Anima.Dashboard.Service` (7416)
+serves `ui/dist` at `/` and proxies reads under `/api/dashboard/*` to the
+knowledge, bus and workflow services, so the browser has one origin and no
+mutations are exposed. `Anima.Workflow.Service` is API-only. SSE from
+`/api/dashboard/bus/stream` carries `anima.**` traffic; a 10-second poll is the
+fallback.
 
 ## Automation and deploy
 
