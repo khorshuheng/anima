@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package anima.agent.v1;
+
+import "google/protobuf/struct.proto";
+
+option csharp_namespace = "Anima.Contracts.Agent.V1";
+
+message AgentTurnRequest {
+  string agent_id = 1;
+  string input = 2;
+  map<string, string> variables = 3;
+}
+
+message AgentTurnResult {
+  string turn_id = 1;
+  string agent_id = 2;
+  string kind = 3;
+  string summary = 4;
+  string recipient = 5;
+  string tool = 6;
+  google.protobuf.Struct payload = 7;
+}
+
+message Delegation {
+  string from_agent = 1;
+  string to_agent = 2;
+  string task_id = 3;
+  string instructions = 4;
+  repeated string capabilities = 5;
+}

@@ -1,0 +1,12 @@
+{
+  "solution": {
+    "path": "Anima.sln",
+    "projects": [
+      "src/Anima.Automation.Abstractions/Anima.Automation.Abstractions.csproj",
+      "src/Anima.Automation.Dsl/Anima.Automation.Dsl.csproj",
+      "src/Anima.Automation.Playwright/Anima.Automation.Playwright.csproj",
+      "src/Anima.Automation.Service/Anima.Automation.Service.csproj",
+      "tests/Anima.Automation.Dsl.Tests/Anima.Automation.Dsl.Tests.csproj"
+    ]
+  }
+}

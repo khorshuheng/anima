@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package anima.common.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Anima.Contracts.Common.V1";
+
+// Transport-neutral message wrapper used by the agent bus.
+message Envelope {
+  string message_id = 1;
+  string topic = 2;
+  string type_name = 3;
+  string content_type = 4;
+  bytes payload = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  string correlation_id = 7;
+  string causation_id = 8;
+  string sender = 9;
+  string recipient = 10;
+  map<string, string> headers = 11;
+}

@@ -1,0 +1,12 @@
+{
+  "solution": {
+    "path": "Anima.sln",
+    "projects": [
+      "src/Anima.Knowledge.Abstractions/Anima.Knowledge.Abstractions.csproj",
+      "src/Anima.Knowledge.Client/Anima.Knowledge.Client.csproj",
+      "src/Anima.Knowledge.Core/Anima.Knowledge.Core.csproj",
+      "src/Anima.Knowledge.Service/Anima.Knowledge.Service.csproj",
+      "tests/Anima.Knowledge.Core.Tests/Anima.Knowledge.Core.Tests.csproj"
+    ]
+  }
+}

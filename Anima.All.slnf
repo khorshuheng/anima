@@ -1,0 +1,33 @@
+{
+  "solution": {
+    "path": "Anima.sln",
+    "projects": [
+      "src/Anima.Agent.Abstractions/Anima.Agent.Abstractions.csproj",
+      "src/Anima.Agent.Core/Anima.Agent.Core.csproj",
+      "src/Anima.Agent.Service/Anima.Agent.Service.csproj",
+      "src/Anima.Automation.Abstractions/Anima.Automation.Abstractions.csproj",
+      "src/Anima.Automation.Dsl/Anima.Automation.Dsl.csproj",
+      "src/Anima.Automation.Playwright/Anima.Automation.Playwright.csproj",
+      "src/Anima.Automation.Service/Anima.Automation.Service.csproj",
+      "src/Anima.Bus.Abstractions/Anima.Bus.Abstractions.csproj",
+      "src/Anima.Bus.Core/Anima.Bus.Core.csproj",
+      "src/Anima.Bus.Service/Anima.Bus.Service.csproj",
+      "src/Anima.Contracts/Anima.Contracts.csproj",
+      "src/Anima.Deploy.Abstractions/Anima.Deploy.Abstractions.csproj",
+      "src/Anima.Deploy.Core/Anima.Deploy.Core.csproj",
+      "src/Anima.Deploy.Service/Anima.Deploy.Service.csproj",
+      "src/Anima.Hosting/Anima.Hosting.csproj",
+      "src/Anima.Knowledge.Abstractions/Anima.Knowledge.Abstractions.csproj",
+      "src/Anima.Knowledge.Client/Anima.Knowledge.Client.csproj",
+      "src/Anima.Knowledge.Core/Anima.Knowledge.Core.csproj",
+      "src/Anima.Knowledge.Service/Anima.Knowledge.Service.csproj",
+      "tools/Anima.Cli/Anima.Cli.csproj",
+      "tests/Anima.Agent.Core.Tests/Anima.Agent.Core.Tests.csproj",
+      "tests/Anima.Automation.Dsl.Tests/Anima.Automation.Dsl.Tests.csproj",
+      "tests/Anima.Bus.Core.Tests/Anima.Bus.Core.Tests.csproj",
+      "tests/Anima.Contracts.Tests/Anima.Contracts.Tests.csproj",
+      "tests/Anima.Deploy.Core.Tests/Anima.Deploy.Core.Tests.csproj",
+      "tests/Anima.Knowledge.Core.Tests/Anima.Knowledge.Core.Tests.csproj"
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Anima.Deploy.Service</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Anima.Deploy.Abstractions/Anima.Deploy.Abstractions.csproj" />
+    <ProjectReference Include="../Anima.Deploy.Core/Anima.Deploy.Core.csproj" />
+    <ProjectReference Include="../Anima.Hosting/Anima.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>

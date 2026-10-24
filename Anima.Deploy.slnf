@@ -1,0 +1,11 @@
+{
+  "solution": {
+    "path": "Anima.sln",
+    "projects": [
+      "src/Anima.Deploy.Abstractions/Anima.Deploy.Abstractions.csproj",
+      "src/Anima.Deploy.Core/Anima.Deploy.Core.csproj",
+      "src/Anima.Deploy.Service/Anima.Deploy.Service.csproj",
+      "tests/Anima.Deploy.Core.Tests/Anima.Deploy.Core.Tests.csproj"
+    ]
+  }
+}

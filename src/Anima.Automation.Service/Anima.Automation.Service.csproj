@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Anima.Automation.Service</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Anima.Automation.Abstractions/Anima.Automation.Abstractions.csproj" />
+    <ProjectReference Include="../Anima.Automation.Dsl/Anima.Automation.Dsl.csproj" />
+    <ProjectReference Include="../Anima.Automation.Playwright/Anima.Automation.Playwright.csproj" />
+    <ProjectReference Include="../Anima.Hosting/Anima.Hosting.csproj" />
+  </ItemGroup>
+
+</Project>

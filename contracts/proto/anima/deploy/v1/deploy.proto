@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package anima.deploy.v1;
+
+option csharp_namespace = "Anima.Contracts.Deploy.V1";
+
+// Normalized push event received from a local git hook.
+message GitPush {
+  string provider = 1;
+  string repository = 2;
+  string ref = 3;
+  string before = 4;
+  string after = 5;
+  string pusher = 6;
+  repeated string commits = 7;
+  bool deleted = 8;
+  bool created = 9;
+}
+
+message DeployRequested {
+  string run_id = 1;
+  string rule = 2;
+  GitPush push = 3;
+  string environment = 4;
+  string script = 5;
+}
+
+message DeployFinished {
+  string run_id = 1;
+  string rule = 2;
+  string status = 3;
+  int32 exit_code = 4;
+  string log_tail = 5;
+}

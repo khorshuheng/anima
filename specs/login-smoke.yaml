@@ -1,0 +1,13 @@
+name: login-smoke
+description: Sign in to a dev/UAT environment and verify the dashboard renders.
+variables:
+  user: "${env.UAT_USER}"
+steps:
+  - goto: /login
+  - fill: { target: "#username", value: "${user}" }
+  - fill: { target: "#password", value: "${env.UAT_PASSWORD}" }
+  - click: "button[type=submit]"
+  - waitFor: { target: "#dashboard" }
+  - expect: { target: "#dashboard", text: "Welcome" }
+  - extract: { name: sessionToken, target: "#session-token" }
+  - screenshot: artifacts/login-smoke.png

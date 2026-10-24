@@ -1,0 +1,10 @@
+[
+  {
+    "name": "uat-main",
+    "repositoryPattern": "*",
+    "refPattern": "refs/heads/main",
+    "script": "example-deploy.sh",
+    "environment": "uat",
+    "enabled": true
+  }
+]

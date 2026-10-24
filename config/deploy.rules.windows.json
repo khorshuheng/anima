@@ -1,0 +1,10 @@
+[
+  {
+    "name": "uat-main-windows",
+    "repositoryPattern": "*",
+    "refPattern": "refs/heads/main",
+    "script": "example-deploy.cmd",
+    "environment": "uat",
+    "enabled": true
+  }
+]
