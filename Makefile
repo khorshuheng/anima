@@ -9,7 +9,7 @@ HEAD ?= HEAD
 .DEFAULT_GOAL := help
 
 .PHONY: help restore build test fmt fmt-check check contracts dev browser-check \
-        playwright-install hooks-install clean ui-install ui-build ui-dev graph-sync graph-status review-packet \
+        playwright-install hooks-install clean ui-install ui-build ui-dev graph-sync graph-status review-packet docker-build docker-up docker-down docker-logs \
         build-contracts test-contracts build-bus test-bus build-knowledge test-knowledge \
         build-automation test-automation build-deploy test-deploy build-workflow test-workflow \
         build-dashboard test-dashboard \
@@ -92,6 +92,18 @@ graph-status:
 
 review-packet:
 	./scripts/review-packet.sh "$(BASE)" "$(HEAD)"
+
+docker-build:
+	docker compose -f docker/compose.yml build
+
+docker-up:
+	docker compose -f docker/compose.yml up -d
+
+docker-down:
+	docker compose -f docker/compose.yml down
+
+docker-logs:
+	docker compose -f docker/compose.yml logs -f dashboard
 
 clean:
 	$(DOTNET) clean $(SOLUTION) -c $(CONFIG)

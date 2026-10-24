@@ -493,3 +493,31 @@ ui/dist/
 
 # local CodeGraph index
 .codegraph/
+
+# local deployment config/scripts; committed examples live under examples/deploy
+/deploy/
+docker/compose.override.yml
+docker/compose.override.yaml
+docker/*.local.yml
+secrets/
+
+# local runtime databases
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.db3
+*.db-journal
+
+# local env variants and host keys
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Vite/TypeScript local state
+ui/.vite/
+ui/*.tsbuildinfo

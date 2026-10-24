@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Reject staged SQLite/database files. `.gitignore` prevents accidental adds;
+# this catches `git add -f` and generated files that slip through.
+set -euo pipefail
+
+blocked=$(git diff --cached --name-only --diff-filter=ACMR |
+  grep -Ei '\.(db|db3|db-wal|db-shm|db-journal|sqlite|sqlite3|sqlite-wal|sqlite-shm)$' || true)
+
+if [ -n "$blocked" ]; then
+  echo "refusing to commit SQLite/database files:" >&2
+  printf '  %s\n' $blocked >&2
+  echo "remove them from the index (git reset -- <path>) and keep them outside the repo" >&2
+  exit 1
+fi

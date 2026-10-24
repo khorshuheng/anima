@@ -1,0 +1,50 @@
+# VCS and local agent/tool state
+.git
+.gitignore
+.agents
+.codegraph
+.github
+.idea
+.vscode
+
+# Build/test output and local artifacts
+**/bin
+**/obj
+**/TestResults
+**/coverage
+coverage
+artifacts
+**/*.user
+**/*.suo
+**/*.log
+**/*.tmp
+**/*.tsbuildinfo
+
+# Node/UI dependencies and generated output
+ui/node_modules
+ui/dist
+ui/.vite
+
+# Local runtime state and databases
+**/*.db
+**/*.db-*
+**/*.db3
+**/*.db-journal
+**/*.sqlite
+**/*.sqlite3
+**/*.sqlite-*
+
+# Secrets and host-local config
+.env
+.env.*
+**/*.pem
+**/*.key
+
+# Not used by the image build; keep the context small
+.dockerignore
+docs
+examples
+tests
+tools
+contracts/proto
+contracts/README.md

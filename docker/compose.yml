@@ -1,0 +1,87 @@
+name: anima
+
+x-anima-image: &anima-image
+  image: ${ANIMA_IMAGE:-anima:local}
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  init: true
+  restart: unless-stopped
+
+services:
+  knowledge:
+    <<: *anima-image
+    command: ["services/knowledge/Anima.Knowledge.Service.dll"]
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:7411
+      Anima__Knowledge__Provider: Sqlite
+      Anima__Knowledge__DatabasePath: /data/knowledge.db
+      Anima__Bus__BaseUrl: http://bus:7412
+    volumes:
+      - anima-knowledge:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7411/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  bus:
+    <<: *anima-image
+    command: ["services/bus/Anima.Bus.Service.dll"]
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:7412
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7412/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  workflow:
+    <<: *anima-image
+    command: ["services/workflow/Anima.Workflow.Service.dll"]
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:7415
+      Anima__Knowledge__Transport: Http
+      Anima__Knowledge__BaseUrl: http://knowledge:7411
+      Anima__Bus__Transport: Http
+      Anima__Bus__BaseUrl: http://bus:7412
+    depends_on:
+      knowledge:
+        condition: service_healthy
+      bus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7415/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  dashboard:
+    <<: *anima-image
+    command: ["services/dashboard/Anima.Dashboard.Service.dll"]
+    environment:
+      ASPNETCORE_URLS: http://0.0.0.0:7416
+      Anima__Dashboard__WorkflowBaseUrl: http://workflow:7415
+      Anima__Dashboard__KnowledgeBaseUrl: http://knowledge:7411
+      Anima__Dashboard__BusBaseUrl: http://bus:7412
+    depends_on:
+      workflow:
+        condition: service_healthy
+      knowledge:
+        condition: service_healthy
+      bus:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:7416:7416"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7416/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  anima-knowledge:

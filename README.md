@@ -13,7 +13,7 @@ creates a worktree.
 | `Anima.Knowledge.Service` | 7411 | Task planning and long-term memory over one **SQLite** node/edge graph, memgraph-compatible HTTP |
 | `Anima.Bus.Service` | 7412 | Agent message transport: publish, SSE subscribe, contract validation |
 | `Anima.Automation.Service` | 7413 | CDP-capable UI automation sessions and YAML script execution |
-| `Anima.Deploy.Service` | 7414 | Git-push sink that runs repo-owned deploy scripts |
+| `Anima.Deploy.Service` | 7414 | Git-push sink that matches external rules and runs trusted deploy scripts |
 | `Anima.Workflow.Service` | 7415 | Durable workflow state: questions, spec, assignments, results, timeline |
 | `Anima.Dashboard.Service` | 7416 | Read-only dashboard: serves `ui/dist` at `/` and proxies workflow, graph and bus reads |
 
@@ -26,8 +26,9 @@ services; agent harnesses are not started by Anima.
 contracts/proto/            user-editable .proto contracts (incl. workflow roles/events)
 contracts/descriptors/      compiled descriptor set (runtime schema)
 specs/                      agent-derived UI scripts (anima-yaml/v1)
-scripts/                    runbook scripts, git hooks, deploy samples
-config/                     deploy rule examples
+scripts/                    runbook scripts, git hooks, deploy hook installer
+examples/deploy/            deploy rule/script examples (keep real scripts outside the repo)
+docker/                     multistage image + local compose demo
 src/
   Anima.Contracts           descriptor catalog + descriptor-driven JSON codec
   Anima.Bus.*               abstractions, in-proc bus, HTTP client, host
@@ -56,6 +57,8 @@ make test
 make ui-build       # React UI -> ui/dist (make dev does this too)
 make dev            # knowledge, bus, automation, deploy, workflow, dashboard
 make browser-check  # Chrome executable Playwright will launch
+make docker-build   # local demo image (knowledge/bus/workflow/dashboard)
+make docker-up      # dashboard only, on 127.0.0.1:7416
 ```
 
 Dashboard UI: `http://127.0.0.1:7416/`. Vite dev server: `make ui-dev`.
@@ -179,17 +182,19 @@ anima scripts run specs/login-smoke.yaml --base-url http://uat.local
 ## Deploy sink
 
 Push hooks post to `POST /hooks/git/{provider}`; rules match repository/ref and
-run a repo-owned script. Runs are queued and logged.
+run a trusted script from an external `ScriptRoot`. Rules and scripts do not
+need to be committed to the pushed repository. Runs are queued and logged.
 
 - Linux/macOS: `.sh` runs with `bash`.
 - Windows deployment: `.cmd`/`.bat` run with `cmd.exe`, `.exe` directly.
   **PowerShell is not assumed**; `.ps1` requires `Deploy:PowerShellExecutable`.
   `Deploy:Shell` overrides inference.
-- Hook install: `make hooks-install REPO=/path/to/repo` (or copy
-  `scripts/git-hooks/post-receive`); it needs only `curl`.
-
-Inspect runs: `GET /api/runs`, `GET /api/runs/{id}`,
-`GET /api/runs/{id}/log`.
+- Bare deployment repo: `scripts/install-deploy-hook.sh /srv/anima-deploy.git`;
+  edit `hooks/anima-deploy.env`, then push. The hook needs only `curl`.
+- Rules live in `Anima:Deploy:RulesPath`; scripts live under
+  `Anima:Deploy:ScriptRoot`. Both can be outside the repository.
+- Inspect runs: `GET /api/runs`, `GET /api/runs/{id}`, `GET /api/runs/{id}/log`.
+- Full setup, Compose demo and GitHub Actions pattern: `docs/deployment.md`.
 
 ## Context discipline
 

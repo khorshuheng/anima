@@ -4,8 +4,19 @@
 # required is curl (bundled with Git for Windows). No jq needed.
 set -euo pipefail
 
+# Optional per-repo settings. The installer creates this file with mode 600 so
+# the shared secret is not embedded in the hook itself.
+hook_dir=$(cd "$(dirname "$0")" && pwd)
+if [ -f "$hook_dir/anima-deploy.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$hook_dir/anima-deploy.env"
+  set +a
+fi
+
 sink="${ANIMA_DEPLOY_HOOK_URL:-http://127.0.0.1:7414/hooks/git/generic}"
 repo="${ANIMA_DEPLOY_REPO:-$(basename "$(pwd)")}"
+repo="${repo%.git}"
 
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
@@ -30,4 +41,5 @@ while read -r oldrev newrev refname; do
   fi
 
   curl "${args[@]}" >/dev/null
+  printf 'anima deploy: queued %s %s\n' "$repo" "$refname" >&2
 done
