@@ -68,13 +68,19 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
             ["context"] = context.DeepClone(),
         };
 
+        var messageId = string.IsNullOrWhiteSpace(request.MessageId)
+            ? Guid.NewGuid().ToString("n")
+            : request.MessageId.Trim();
         var envelope = MessageEnvelope.Create(
             BusTopics.AgentInbox(request.AgentId),
             "anima.workflow.v1.WorkflowRoleTask",
             Encoding.UTF8.GetBytes(payload.ToJsonString()),
             ContractContentTypes.ProtobufJson,
             sender: "anima-workflow",
-            correlationId: Guid.NewGuid().ToString("n"));
+            correlationId: messageId) with
+        {
+            MessageId = messageId,
+        };
 
         var timeout = request.TimeoutSeconds > 0
             ? TimeSpan.FromSeconds(request.TimeoutSeconds)
@@ -86,7 +92,7 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
                 envelope,
                 new BusRequestOptions { Timeout = timeout },
                 cancellationToken);
-            return ParseReply(reply);
+            return ParseReply(reply, envelope.MessageId);
         }
         catch (BusRequestTimeoutException exception)
         {
@@ -95,7 +101,7 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
                 "Dispatch to {AgentId} for workflow {WorkflowId} timed out.",
                 request.AgentId,
                 workflowId);
-            return new DispatchResult(false, exception.Message, null, exception.Message);
+            return new DispatchResult(false, exception.Message, null, exception.Message, envelope.MessageId);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -108,11 +114,11 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
                 "Dispatch to {AgentId} for workflow {WorkflowId} failed.",
                 request.AgentId,
                 workflowId);
-            return new DispatchResult(false, exception.Message, null, exception.Message);
+            return new DispatchResult(false, exception.Message, null, exception.Message, envelope.MessageId);
         }
     }
 
-    private static DispatchResult ParseReply(MessageEnvelope reply)
+    private static DispatchResult ParseReply(MessageEnvelope reply, string messageId)
     {
         var text = Encoding.UTF8.GetString(reply.Payload.Span);
         try
@@ -129,11 +135,11 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
                 ? dataElement.GetRawText()
                 : null;
 
-            return new DispatchResult(success, summary, data, success ? null : summary);
+            return new DispatchResult(success, summary, data, success ? null : summary, messageId);
         }
         catch (JsonException exception)
         {
-            return new DispatchResult(false, "agent reply was not valid JSON", null, exception.Message);
+            return new DispatchResult(false, "agent reply was not valid JSON", null, exception.Message, messageId);
         }
     }
 }

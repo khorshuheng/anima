@@ -59,7 +59,8 @@ GET    /api/workflows/{id}/assignments
 DELETE /api/workflows/{id}/assignments/{taskKey}
 POST   /api/workflows/{id}/results                { taskKey, kind, success, summary, ... }
 GET    /api/workflows/{id}/timeline               phases + result summaries
-POST   /api/workflows/{id}/dispatch               bus role task to a named agent
+POST   /api/workflows/{id}/dispatch               bus role task; optional assignment
+                                                 (--task/--path/--branch) returns messageId
 ```
 
 Start request:
@@ -131,7 +132,13 @@ The workflow API is the system of record for questions and answers:
   it has no durability, replay, or state transition, and the workflow service
   blocking on a human gate would be wrong.
 - `POST /dispatch` is for agent-to-agent role tasks, not for Q&A. It publishes a
-  role task and awaits a reply; the harness owns the agent's lifetime.
+  role task and awaits a reply; the harness owns the agent's lifetime. When
+  `taskKey`, `worktreePath` and `branch` are supplied, the service registers the
+  assignment with the generated envelope message id before publishing. The
+  response includes `messageId`; the worker acknowledges with its run id.
+- Successful implementation, merge and review results require structured
+  evidence: a 7-64 character hexadecimal `headSha`, `branch`, `baseRef` and at
+  least one `testCommands` entry. Failed results may omit evidence.
 
 ## Bus protocol
 

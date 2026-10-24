@@ -47,16 +47,20 @@ building the whole repo:
 4. **Spec.** The analyst writes a markdown spec plus a task list and posts both
    (`anima workflow spec-write`). Anima creates task nodes and moves to
    `spec_ready`.
-5. **Implementation.** For each task the harness creates a worktree and branch,
-   registers the assignment with its inbox `--message-id`, and spawns an
-   implementer with a worker packet (workflow/task ids, spec node/version/hash,
-   base ref, branch, worktree, acceptance, verify commands). The implementer
-   acks the assignment (`anima workflow ack`, or
-   `POST /api/workflows/{id}/assignments/{taskKey}/ack`), works in its own
+5. **Implementation.** For each task the harness creates a worktree and branch
+   and spawns an implementer with a worker packet (workflow/task ids, spec
+   node/version/hash, base ref, branch, worktree, acceptance, verify commands).
+   Send the bus role task with `anima workflow dispatch ... --task <key>
+   --path <worktree> --branch <branch>`: dispatch registers the assignment with
+   the envelope message id before publishing and returns that `messageId`.
+   The implementer acks the assignment with its run id (`anima workflow ack`,
+   or `POST /api/workflows/{id}/assignments/{taskKey}/ack`), works in its own
    worktree, commits, and posts a result (`anima workflow result --kind
    implementation`) with evidence: head SHA, branch, base ref, run id, test
    commands and artifact paths. Implementations can run in parallel; Anima only
-   records their paths and outcomes.
+   records their paths and outcomes. A successful implementation, merge or
+   review without head SHA, branch, base ref and at least one test command is
+   rejected with 422.
 6. **Merge gate.** Merge only after every implementation task has a successful
    result with head SHA, branch and test commands. The harness creates a merge
    worktree, runs the merger agent, and posts `--kind merge` with the same
@@ -65,7 +69,8 @@ building the whole repo:
    spec's verify commands, inspects the diff from base ref to head SHA, and posts
    `--kind review` plus findings with severity and path/line. P0/P1 findings must
    be fixed and re-reviewed; a failed review marks the workflow `failed` and a
-   retry posts another result.
+   retry posts another result. A review result also carries head SHA, branch,
+   base ref and the commands it ran.
 8. **Close.** A successful review sets `completed`. The harness records the
    change in memgraph/knowledge as needed.
 
@@ -73,8 +78,10 @@ building the whole repo:
 
 - Create from the recorded `baseRef`; branch name includes workflow + task key.
 - One writer per worktree.
-- Register the assignment with the real path, branch and inbox `--message-id`
-  before work starts; wait for the worker's ack before treating it as started.
+- Register the assignment with the real path, branch and inbox message id
+  before work starts. `workflow dispatch --task --path --branch` does this in
+  one step and returns the message id; wait for the worker's ack before treating
+  it as started.
 - Give the worker a packet (ids, owned paths, acceptance, verify commands), not
   the full workflow history.
 - Keep logs out of agent context; post an output tail or an artifact path.

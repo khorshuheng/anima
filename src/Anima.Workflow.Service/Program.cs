@@ -239,8 +239,30 @@ app.MapGet("/api/workflows/{id:long}/timeline", async (
 app.MapPost("/api/workflows/{id:long}/dispatch", async (
     long id,
     DispatchRequest request,
+    IWorkflowStore store,
     IWorkflowDispatcher dispatcher,
     CancellationToken cancellationToken) =>
-    Results.Ok(await dispatcher.DispatchAsync(id, request, cancellationToken)));
+{
+    var messageId = string.IsNullOrWhiteSpace(request.MessageId)
+        ? Guid.NewGuid().ToString("n")
+        : request.MessageId.Trim();
+    var normalized = request with { MessageId = messageId };
+
+    if (!string.IsNullOrWhiteSpace(request.TaskKey))
+    {
+        await store.RegisterAssignmentAsync(
+            id,
+            new AssignmentInput(
+                request.TaskKey,
+                request.AgentId,
+                request.WorktreePath ?? string.Empty,
+                request.Branch ?? string.Empty,
+                request.Note,
+                messageId),
+            cancellationToken);
+    }
+
+    return Results.Ok(await dispatcher.DispatchAsync(id, normalized, cancellationToken));
+});
 
 app.Run();

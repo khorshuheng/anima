@@ -60,7 +60,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         Assert.Equal("impl-api", assignment.AgentId);
         Assert.Equal(WorkflowStatus.Implementing, (await store.GetAsync(workflow.Id))!.Status);
 
-        await store.AddResultAsync(workflow.Id, new ResultInput(
+        await store.AddResultAsync(workflow.Id, Result(
             "api",
             WorkflowResultKind.Implementation,
             true,
@@ -69,7 +69,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             AgentId: "impl-api"));
         Assert.Equal(WorkflowStatus.Implementing, (await store.GetAsync(workflow.Id))!.Status);
 
-        await store.AddResultAsync(workflow.Id, new ResultInput(
+        await store.AddResultAsync(workflow.Id, Result(
             "docs",
             WorkflowResultKind.Implementation,
             true,
@@ -77,7 +77,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             AgentId: "impl-docs"));
         Assert.Equal(WorkflowStatus.ImplementationComplete, (await store.GetAsync(workflow.Id))!.Status);
 
-        await store.AddResultAsync(workflow.Id, new ResultInput(
+        await store.AddResultAsync(workflow.Id, Result(
             string.Empty,
             WorkflowResultKind.Merge,
             true,
@@ -85,7 +85,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             AgentId: "merger"));
         Assert.Equal(WorkflowStatus.MergeComplete, (await store.GetAsync(workflow.Id))!.Status);
 
-        await store.AddResultAsync(workflow.Id, new ResultInput(
+        await store.AddResultAsync(workflow.Id, Result(
             string.Empty,
             WorkflowResultKind.Review,
             true,
@@ -174,9 +174,9 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         var store = CreateStore();
         var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
         await store.WriteSpecAsync(workflow.Id, new SpecInput("spec", [new SpecTaskInput("one", "One")]));
-        await store.AddResultAsync(workflow.Id, new ResultInput("one", WorkflowResultKind.Implementation, true, "ok"));
-        await store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Merge, true, "merged"));
-        await store.AddResultAsync(workflow.Id, new ResultInput(
+        await store.AddResultAsync(workflow.Id, Result("one", WorkflowResultKind.Implementation, true, "ok"));
+        await store.AddResultAsync(workflow.Id, Result("", WorkflowResultKind.Merge, true, "merged"));
+        await store.AddResultAsync(workflow.Id, Result(
             "",
             WorkflowResultKind.Review,
             false,
@@ -199,16 +199,16 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             new SpecTaskInput("verify", "Verify", Role: WorkflowTaskRole.Verification),
         ]));
 
-        await store.AddResultAsync(workflow.Id, new ResultInput("one", WorkflowResultKind.Implementation, true, "one"));
+        await store.AddResultAsync(workflow.Id, Result("one", WorkflowResultKind.Implementation, true, "one"));
         var implemented = await store.GetAsync(workflow.Id);
         Assert.Equal(WorkflowStatus.ImplementationComplete, implemented!.Status);
         Assert.Equal(1, implemented.TaskCount);
         Assert.Equal(1, implemented.CompletedTaskCount);
 
-        await store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Merge, true, "merged"));
+        await store.AddResultAsync(workflow.Id, Result("", WorkflowResultKind.Merge, true, "merged"));
         Assert.Equal(WorkflowStatus.MergeComplete, (await store.GetAsync(workflow.Id))!.Status);
 
-        await store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Review, true, "reviewed"));
+        await store.AddResultAsync(workflow.Id, Result("", WorkflowResultKind.Review, true, "reviewed"));
         Assert.Equal(WorkflowStatus.Completed, (await store.GetAsync(workflow.Id))!.Status);
     }
 
@@ -220,7 +220,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         await store.WriteSpecAsync(workflow.Id, new SpecInput("spec", [new SpecTaskInput("one", "One")]));
 
         var exception = await Assert.ThrowsAsync<WorkflowValidationException>(
-            () => store.AddResultAsync(workflow.Id, new ResultInput(
+            () => store.AddResultAsync(workflow.Id, Result(
                 string.Empty,
                 WorkflowResultKind.Review,
                 true,
@@ -240,18 +240,18 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             new SpecTaskInput("one", "One"),
             new SpecTaskInput("two", "Two"),
         ]));
-        await store.AddResultAsync(workflow.Id, new ResultInput("one", WorkflowResultKind.Implementation, true, "one"));
+        await store.AddResultAsync(workflow.Id, Result("one", WorkflowResultKind.Implementation, true, "one"));
 
         await Assert.ThrowsAsync<WorkflowValidationException>(
-            () => store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Merge, true, "too early")));
+            () => store.AddResultAsync(workflow.Id, Result("", WorkflowResultKind.Merge, true, "too early")));
         await Assert.ThrowsAsync<WorkflowValidationException>(
-            () => store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Review, true, "too early")));
+            () => store.AddResultAsync(workflow.Id, Result("", WorkflowResultKind.Review, true, "too early")));
 
-        await store.AddResultAsync(workflow.Id, new ResultInput("two", WorkflowResultKind.Implementation, true, "two"));
-        await store.AddResultAsync(workflow.Id, new ResultInput("", WorkflowResultKind.Merge, true, "merged"));
+        await store.AddResultAsync(workflow.Id, Result("two", WorkflowResultKind.Implementation, true, "two"));
+        await store.AddResultAsync(workflow.Id, Result("", WorkflowResultKind.Merge, true, "merged"));
 
         var contradictory = await Assert.ThrowsAsync<WorkflowValidationException>(
-            () => store.AddResultAsync(workflow.Id, new ResultInput(
+            () => store.AddResultAsync(workflow.Id, Result(
                 string.Empty,
                 WorkflowResultKind.Review,
                 true,
@@ -259,7 +259,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
                 Findings: [new FindingInput(FindingSeverity.Error, "missing test")])));
         Assert.Contains("error findings", contradictory.Message, StringComparison.Ordinal);
 
-        await store.AddResultAsync(workflow.Id, new ResultInput(
+        await store.AddResultAsync(workflow.Id, Result(
             string.Empty,
             WorkflowResultKind.Review,
             true,
@@ -281,7 +281,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
 
         foreach (var key in new[] { "one", "two", "three" })
         {
-            await store.AddResultAsync(workflow.Id, new ResultInput(
+            await store.AddResultAsync(workflow.Id, Result(
                 key,
                 WorkflowResultKind.Implementation,
                 true,
@@ -402,14 +402,14 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             new SpecTaskInput("docs", "Docs"),
         ]));
 
-        await store.AddResultAsync(workflow.Id, new ResultInput(
+        await store.AddResultAsync(workflow.Id, Result(
             "api",
             WorkflowResultKind.Implementation,
             true,
             "implemented",
             ChangedFiles: ["src/Api.cs"],
             AgentId: "impl-api",
-            HeadSha: "abc123",
+            HeadSha: "abc1234",
             Branch: "anima/api",
             BaseRef: "main",
             RunId: "run-7",
@@ -417,7 +417,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             ArtifactPaths: ["artifacts/api.trx"]));
 
         var evidence = (await store.GetResultsAsync(workflow.Id)).Single();
-        Assert.Equal("abc123", evidence.HeadSha);
+        Assert.Equal("abc1234", evidence.HeadSha);
         Assert.Equal("anima/api", evidence.Branch);
         Assert.Equal("main", evidence.BaseRef);
         Assert.Equal("run-7", evidence.RunId);
@@ -425,10 +425,14 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         Assert.Equal(["artifacts/api.trx"], evidence.ArtifactPaths.ToArray());
 
         var context = await store.GetContextAsync(workflow.Id, "api");
-        Assert.Equal("abc123", context.LastResult!.HeadSha);
+        Assert.Equal("abc1234", context.LastResult!.HeadSha);
         Assert.Equal(["artifacts/api.trx"], context.LastResult.ArtifactPaths.ToArray());
 
-        await store.AddResultAsync(workflow.Id, new ResultInput("docs", WorkflowResultKind.Implementation, true, "docs"));
+        await store.AddResultAsync(workflow.Id, new ResultInput(
+            "docs",
+            WorkflowResultKind.Verification,
+            true,
+            "docs"));
         var defaults = (await store.GetResultsAsync(workflow.Id)).Single(result => result.TaskKey == "docs");
         Assert.Null(defaults.HeadSha);
         Assert.Null(defaults.Branch);
@@ -437,6 +441,96 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         Assert.Empty(defaults.TestCommands);
         Assert.Empty(defaults.ArtifactPaths);
     }
+
+    [Fact]
+    public async Task Successful_gated_results_require_structured_evidence()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec", [new SpecTaskInput("one", "One")]));
+
+        var implementation = await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddResultAsync(
+                workflow.Id,
+                new ResultInput("one", WorkflowResultKind.Implementation, true, "done")));
+        Assert.Contains("headSha", implementation.Message, StringComparison.Ordinal);
+
+        var malformed = await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddResultAsync(
+                workflow.Id,
+                Result("one", WorkflowResultKind.Implementation, true, "done", HeadSha: "not-a-sha")));
+        Assert.Contains("hexadecimal", malformed.Message, StringComparison.Ordinal);
+
+        await store.AddResultAsync(
+            workflow.Id,
+            Result("one", WorkflowResultKind.Implementation, true, "done"));
+
+        var merge = await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddResultAsync(
+                workflow.Id,
+                new ResultInput(string.Empty, WorkflowResultKind.Merge, true, "merged")));
+        Assert.Contains("headSha", merge.Message, StringComparison.Ordinal);
+
+        await store.AddResultAsync(
+            workflow.Id,
+            Result(string.Empty, WorkflowResultKind.Merge, true, "merged"));
+
+        var review = await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => store.AddResultAsync(
+                workflow.Id,
+                new ResultInput(string.Empty, WorkflowResultKind.Review, true, "reviewed")));
+        Assert.Contains("headSha", review.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Failed_results_may_omit_evidence()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec", [new SpecTaskInput("one", "One")]));
+
+        var failed = await store.AddResultAsync(
+            workflow.Id,
+            new ResultInput("one", WorkflowResultKind.Implementation, false, "build failed"));
+
+        Assert.False(failed.Success);
+        Assert.Null(failed.HeadSha);
+    }
+
+    private static ResultInput Result(
+        string taskKey,
+        WorkflowResultKind kind,
+        bool success,
+        string summary,
+        IReadOnlyList<string>? ChangedFiles = null,
+        IReadOnlyList<string>? Conflicts = null,
+        IReadOnlyList<FindingInput>? Findings = null,
+        string? AgentId = null,
+        string? WorktreePath = null,
+        string? OutputTail = null,
+        string? HeadSha = null,
+        string? Branch = null,
+        string? BaseRef = null,
+        string? RunId = null,
+        IReadOnlyList<string>? TestCommands = null,
+        IReadOnlyList<string>? ArtifactPaths = null)
+        => new(
+            taskKey,
+            kind,
+            success,
+            summary,
+            ChangedFiles,
+            Conflicts,
+            Findings,
+            AgentId,
+            WorktreePath,
+            OutputTail,
+            HeadSha ?? (success ? "abc1234" : null),
+            Branch ?? (success ? "test-branch" : null),
+            BaseRef ?? (success ? "main" : null),
+            RunId,
+            TestCommands ?? (success ? ["dotnet test"] : []),
+            ArtifactPaths);
 
     private KnowledgeWorkflowStore CreateStore(WorkflowOptions? options = null)
     {

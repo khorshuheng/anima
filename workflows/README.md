@@ -79,7 +79,10 @@ lane; the board intentionally does not copy child transcripts.
 - One writer per worktree. Create the worktree and branch in the harness, give
   each lane a distinct `cwd`, and never reuse a worktree for two lanes.
 - The workflow template does not create worktrees, commit, or merge. The harness
-  registers assignments and posts results to Anima.
+  registers assignments and posts results to Anima. Prefer
+  `anima workflow dispatch --task <key> --path <worktree> --branch <branch>`:
+  it registers the assignment with the message id and returns it; the worker
+  then acks with its run id.
 - Child workers may start private service instances on ports >= 7500 with
   `scripts/private-service.sh`; they must not touch shared services on 7410-7416.
 - A failed or blocked lane does not cancel sibling lanes (`runs.all` returns every

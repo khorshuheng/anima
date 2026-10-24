@@ -246,7 +246,17 @@ internal static class WorkflowCommands
         return await PostAsync(
             http,
             $"api/workflows/{RequireId(args)}/dispatch",
-            new DispatchRequest(agent, role, instructions, contextJson, timeout));
+            new DispatchRequest(
+                agent,
+                role,
+                instructions,
+                contextJson,
+                timeout,
+                CliJson.Option(args, "--task"),
+                CliJson.Option(args, "--path"),
+                CliJson.Option(args, "--branch"),
+                CliJson.Option(args, "--note"),
+                CliJson.Option(args, "--message-id")));
     }
 
     private static async Task<int> RawAsync(HttpClient http, string[] args)
@@ -321,7 +331,7 @@ internal static class WorkflowCommands
               anima workflow results <id>
               anima workflow result <id> [--task <key>] --kind <implementation|merge|review|verification> [--failure] --summary <text> [--changed-file <p>] [--conflict <p>] [--finding <severity:msg>] [--agent <id>] [--head-sha <sha>] [--branch <ref>] [--base-ref <ref>] [--run-id <id>] [--test <cmd>] [--artifact <path>]
               anima workflow timeline <id>
-              anima workflow dispatch <id> --agent <id> --role <role> --instructions <text> [--context <json-file>] [--timeout <s>]
+              anima workflow dispatch <id> --agent <id> --role <role> --instructions <text> [--context <json-file>] [--timeout <s>] [--task <key> --path <worktree> --branch <branch>] [--note <text>] [--message-id <id>]
               anima workflow api <METHOD> <path> [json|@file]
             """);
         return 0;

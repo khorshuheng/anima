@@ -210,13 +210,19 @@ public sealed record DispatchRequest(
     string Role,
     string Instructions,
     string? ContextJson = null,
-    int TimeoutSeconds = 0);
+    int TimeoutSeconds = 0,
+    string? TaskKey = null,
+    string? WorktreePath = null,
+    string? Branch = null,
+    string? Note = null,
+    string? MessageId = null);
 
 public sealed record DispatchResult(
     bool Success,
     string Summary,
     string? DataJson,
-    string? Error);
+    string? Error,
+    string? MessageId = null);
 
 public sealed record WorkflowEvent(
     long WorkflowId,

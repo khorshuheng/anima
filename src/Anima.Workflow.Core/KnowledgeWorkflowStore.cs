@@ -849,6 +849,8 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 "a review with error findings cannot be marked successful");
         }
 
+        RequireResultEvidence(result);
+
         var properties = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["workflowId"] = Id(workflowId),
@@ -1047,6 +1049,49 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             }
 
             offset += page.Items.Count;
+        }
+    }
+
+    private static void RequireResultEvidence(ResultInput result)
+    {
+        if (!result.Success ||
+            result.Kind is not (WorkflowResultKind.Implementation or WorkflowResultKind.Merge or WorkflowResultKind.Review))
+        {
+            return;
+        }
+
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(result.HeadSha))
+        {
+            missing.Add("headSha");
+        }
+        else if (result.HeadSha.Length is < 7 or > 64 ||
+                 !result.HeadSha.All(char.IsAsciiHexDigit))
+        {
+            throw new WorkflowValidationException(
+                "headSha must be a 7-64 character hexadecimal git commit id");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.Branch))
+        {
+            missing.Add("branch");
+        }
+
+        if (string.IsNullOrWhiteSpace(result.BaseRef))
+        {
+            missing.Add("baseRef");
+        }
+
+        if (result.TestCommands is null ||
+            !result.TestCommands.Any(command => !string.IsNullOrWhiteSpace(command)))
+        {
+            missing.Add("testCommands");
+        }
+
+        if (missing.Count > 0)
+        {
+            throw new WorkflowValidationException(
+                $"successful {Wire(result.Kind)} result requires {string.Join(", ", missing)}");
         }
     }
 
