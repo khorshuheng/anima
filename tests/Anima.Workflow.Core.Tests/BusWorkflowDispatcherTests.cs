@@ -53,6 +53,36 @@ public sealed class BusWorkflowDispatcherTests
         Assert.Null(publisher.Envelope);
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("not-json")]
+    public async Task Dispatch_rejects_non_object_context_json(string contextJson)
+    {
+        var publisher = new CapturingPublisher();
+        var dispatcher = CreateDispatcher(publisher);
+
+        await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => dispatcher.DispatchAsync(
+                7,
+                new DispatchRequest("worker", "implementation", "do the task", ContextJson: contextJson)));
+
+        Assert.Null(publisher.Envelope);
+    }
+
+    [Fact]
+    public async Task Dispatch_rejects_a_blank_agent_or_role()
+    {
+        var publisher = new CapturingPublisher();
+        var dispatcher = CreateDispatcher(publisher);
+
+        await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => dispatcher.DispatchAsync(7, new DispatchRequest(" ", "implementation", "do the task")));
+        await Assert.ThrowsAsync<WorkflowValidationException>(
+            () => dispatcher.DispatchAsync(7, new DispatchRequest("worker", " ", "do the task")));
+
+        Assert.Null(publisher.Envelope);
+    }
+
     [Fact]
     public async Task Dispatch_reports_publish_failure_without_throwing()
     {

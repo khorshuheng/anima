@@ -398,7 +398,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Reassigning_the_same_agent_preserves_ack_but_a_new_agent_clears_it()
+    public async Task Reassigning_the_same_packet_preserves_ack_but_a_new_packet_or_agent_clears_it()
     {
         var store = CreateStore();
         var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
@@ -408,13 +408,20 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             "api", "impl-api", "/tmp/worktrees/api", "anima/api", MessageId: "msg-1"));
         await store.AcknowledgeAssignmentAsync(workflow.Id, "api", "run-1");
 
-        var reassigned = await store.RegisterAssignmentAsync(workflow.Id, new AssignmentInput(
-            "api", "impl-api", "/tmp/worktrees/api", "anima/api", MessageId: "msg-2"));
-        Assert.Equal("msg-2", reassigned.MessageId);
-        Assert.NotNull(reassigned.AcknowledgedAt);
-        Assert.Equal("run-1", reassigned.RunId);
-        Assert.Equal("acknowledged", reassigned.Status);
+        var redelivered = await store.RegisterAssignmentAsync(workflow.Id, new AssignmentInput(
+            "api", "impl-api", "/tmp/worktrees/api", "anima/api", MessageId: "msg-1"));
+        Assert.NotNull(redelivered.AcknowledgedAt);
+        Assert.Equal("run-1", redelivered.RunId);
+        Assert.Equal("acknowledged", redelivered.Status);
         Assert.Equal(WorkflowStatus.Implementing, (await store.GetAsync(workflow.Id))!.Status);
+
+        var newPacket = await store.RegisterAssignmentAsync(workflow.Id, new AssignmentInput(
+            "api", "impl-api", "/tmp/worktrees/api", "anima/api", MessageId: "msg-2"));
+        Assert.Equal("msg-2", newPacket.MessageId);
+        Assert.Null(newPacket.AcknowledgedAt);
+        Assert.Null(newPacket.RunId);
+        Assert.Equal("assigned", newPacket.Status);
+        Assert.Equal(WorkflowStatus.Assigned, (await store.GetAsync(workflow.Id))!.Status);
 
         var replaced = await store.RegisterAssignmentAsync(workflow.Id, new AssignmentInput(
             "api", "impl-other", "/tmp/worktrees/other", "anima/other", MessageId: "msg-3"));

@@ -574,6 +574,11 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                             existing.Properties.GetValueOrDefault("agentId"),
                             assignment.AgentId,
                             StringComparison.Ordinal);
+        var samePacket = sameAgent &&
+                         string.Equals(
+                             existing!.Properties.GetValueOrDefault("messageId"),
+                             assignment.MessageId,
+                             StringComparison.Ordinal);
         var properties = existing is null
             ? new Dictionary<string, string>(StringComparer.Ordinal)
             : new Dictionary<string, string>(existing.Properties, StringComparer.Ordinal);
@@ -582,11 +587,11 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         properties["agentId"] = assignment.AgentId;
         properties["path"] = assignment.WorktreePath;
         properties["branch"] = assignment.Branch;
-        properties["status"] = sameAgent &&
+        properties["status"] = samePacket &&
                               ParseNullableDate(existing!.Properties.GetValueOrDefault("acknowledgedAt")) is not null
             ? "acknowledged"
             : "assigned";
-        if (!sameAgent)
+        if (!samePacket)
         {
             properties.Remove("acknowledgedAt");
             properties.Remove("runId");
@@ -741,6 +746,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         }
 
         await _graph.DeleteNodeAsync(node.Id, cancellationToken);
+        await RefreshStatusAsync(workflowId, "assignment removed", cancellationToken);
         await PublishEventAsync(
             workflowId,
             "assignment.removed",
@@ -748,7 +754,6 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             [node.Id],
             $"{taskKey} released",
             cancellationToken);
-        await RefreshStatusAsync(workflowId, "assignment removed", cancellationToken);
         return true;
     }
 

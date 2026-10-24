@@ -93,7 +93,7 @@ anima workflow show 1
 State machine:
 
 ```
-analysis -> awaiting_answers -> spec_ready -> implementing ->
+analysis -> awaiting_answers -> spec_ready -> assigned -> implementing ->
 implementation_complete -> merge_complete -> completed
                                       \-> failed
 ```
@@ -140,8 +140,9 @@ backpressure.
 ```
 
 `anima bus ask` subscribes to a private reply topic, publishes `ReplyTo`, and
-prints the reply envelope. `MessageEnvelope` carries `ReplyTo`; the workflow
-service uses the same mechanism for `POST /api/workflows/{id}/dispatch`.
+prints the reply envelope. Workflow `POST /api/workflows/{id}/dispatch` is
+fire-and-forget: it publishes the role task and returns `202`; assignments, acks
+and results use the workflow API.
 
 ## Contracts
 

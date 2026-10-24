@@ -141,6 +141,8 @@ The workflow API is the system of record for questions and answers:
   `assigned`; the worker acknowledges with its run id and the workflow becomes
   `implementing`. Delivery is best-effort: a missing subscriber is not a durable
   failure, and the worker must read state and post results through this API.
+  A bus publish failure returns `503` with `success:false`; the assignment
+  remains `assigned` with the message id, so retry or unassign explicitly.
 - Successful implementation, merge and review results require structured
   evidence: a 7-64 character hexadecimal `headSha`, `branch`, `baseRef` and at
   least one `testCommands` entry. Failed results may omit evidence.

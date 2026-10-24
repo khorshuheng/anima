@@ -127,13 +127,14 @@ For each task you want in parallel:
 
 1. Create a worktree and branch yourself:
    `git worktree add -b anima/<wf>-<task> .anima/worktrees/<wf>-<task> <baseRef>`
-2. Register the assignment and publish the wake-up in one call:
+2. Spawn the implementer subagent with the worker packet, not the spec. Start
+   its inbox consumer before publishing; the bus does not queue for offline
+   agents.
+3. Register the assignment and publish the wake-up in one call:
    `anima workflow dispatch <id> --agent <agentId> --role implementer --instructions "..." --task <key> --path <path> --branch <branch>`
-   This returns `202` with `messageId` immediately. It does not wait for a reply;
-   the bus is best-effort, so the worker must already be running/subscribed.
+   This returns `202` with `messageId` immediately. It does not wait for a reply.
    (`workflow assign --message-id` remains available when you already published
    the role task yourself.)
-3. Spawn the implementer subagent with the worker packet, not the spec.
 4. The implementer acks after reading the packet and before editing:
 
 ```bash
@@ -329,6 +330,7 @@ for you.
 | merge gate blocked | an implementation result is missing, failed, or has no head SHA/test commands |
 | dispatch `202` but no worker | bus delivery is best-effort; start/subscribe the agent, then retry or assign explicitly |
 | status `assigned` | assignment registered but not acked; worker has not confirmed start |
+| dispatch `503` | bus publish failed; the assignment row already exists with that message id - retry or `workflow unassign` |
 | status `failed` after review | read `anima workflow timeline` and findings, fix, post a new review |
 | empty context | task key not in the current spec |
 
