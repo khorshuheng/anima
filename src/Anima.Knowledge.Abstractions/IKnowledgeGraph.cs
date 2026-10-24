@@ -43,6 +43,14 @@ public interface IKnowledgeGraph
 
     Task<GraphHealth> GetHealthAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Bounded whole-graph read: summary nodes and the edges between them, both
+    /// ordered by id. Used by the dashboard visualization.
+    /// </summary>
+    Task<GraphSnapshot> GetGraphAsync(
+        GraphSnapshotQuery query,
+        CancellationToken cancellationToken = default);
+
     Task<PlanResult> CreatePlanAsync(PlanDraft plan, CancellationToken cancellationToken = default);
 
     Task<KnowledgeNode> CreateTaskAsync(TaskDraft draft, CancellationToken cancellationToken = default);

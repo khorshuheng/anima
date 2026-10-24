@@ -302,6 +302,43 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         }
     }
 
+    public Task<GraphSnapshot> GetGraphAsync(
+        GraphSnapshotQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            var resolved = ResolvedIds();
+            var nodes = _nodes.Values
+                .OrderBy(node => node.Id)
+                .Take(query.EffectiveMaxNodes)
+                .Select(node => new GraphSnapshotNode(
+                    node.Id,
+                    node.Kind,
+                    node.Name,
+                    node.Description,
+                    resolved.Contains(node.Id)))
+                .ToArray();
+
+            var included = nodes.Select(node => node.Id).ToHashSet();
+            var edges = _edges.Values
+                .Where(edge => included.Contains(edge.Source) && included.Contains(edge.Destination))
+                .OrderBy(edge => edge.Id)
+                .Take(query.EffectiveMaxEdges)
+                .Select(edge => new GraphSnapshotEdge(edge.Id, edge.Source, edge.Destination, edge.EdgeType))
+                .ToArray();
+
+            return Task.FromResult(new GraphSnapshot(
+                nodes,
+                edges,
+                _nodes.Count,
+                _edges.Count,
+                _nodes.Count > nodes.Length || _edges.Count > edges.Length));
+        }
+    }
+
     public Task<PlanResult> CreatePlanAsync(
         PlanDraft plan,
         CancellationToken cancellationToken = default)

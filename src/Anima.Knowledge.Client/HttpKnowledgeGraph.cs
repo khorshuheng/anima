@@ -246,6 +246,16 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
                 health.DuplicateEdgePairs);
     }
 
+    public async Task<GraphSnapshot> GetGraphAsync(
+        GraphSnapshotQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var path = $"api/graph?maxNodes={query.EffectiveMaxNodes}&maxEdges={query.EffectiveMaxEdges}";
+        var snapshot = await _http.GetFromJsonAsync<GraphSnapshot>(path, JsonOptions, cancellationToken);
+        return snapshot ?? throw new KnowledgeException("knowledge service returned an empty body");
+    }
+
     public async Task<PlanResult> CreatePlanAsync(
         PlanDraft plan,
         CancellationToken cancellationToken = default)
