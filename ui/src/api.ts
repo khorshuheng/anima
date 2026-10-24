@@ -1,6 +1,8 @@
 import type {
   AnswerView,
   AssignmentView,
+  BusSnapshot,
+  GraphSnapshot,
   QuestionView,
   ResultView,
   SpecView,
@@ -8,6 +10,9 @@ import type {
   WorkflowDetail,
   WorkflowState,
 } from './types';
+
+/** All reads go through the dashboard BFF so the UI has a single origin. */
+const dashboardBase = '/api/dashboard';
 
 async function get<T>(path: string): Promise<T> {
   const response = await fetch(path);
@@ -32,17 +37,18 @@ async function getOptional<T>(path: string): Promise<T | null> {
 }
 
 export const api = {
-  workflows: () => get<{ items: WorkflowState[] }>('/api/workflows'),
+  workflows: () => get<{ items: WorkflowState[] }>(`${dashboardBase}/workflows`),
 
   async detail(id: number): Promise<WorkflowDetail> {
+    const workflowPath = `${dashboardBase}/workflows/${id}`;
     const [state, questions, answers, assignments, results, timeline, spec] = await Promise.all([
-      get<WorkflowState>(`/api/workflows/${id}`),
-      get<{ items: QuestionView[] }>(`/api/workflows/${id}/questions?open=false`),
-      get<{ items: AnswerView[] }>(`/api/workflows/${id}/answers`),
-      get<{ items: AssignmentView[] }>(`/api/workflows/${id}/assignments`),
-      get<{ items: ResultView[] }>(`/api/workflows/${id}/results`),
-      get<TimelineView>(`/api/workflows/${id}/timeline`),
-      getOptional<SpecView>(`/api/workflows/${id}/spec`),
+      get<WorkflowState>(workflowPath),
+      get<{ items: QuestionView[] }>(`${workflowPath}/questions?open=false`),
+      get<{ items: AnswerView[] }>(`${workflowPath}/answers`),
+      get<{ items: AssignmentView[] }>(`${workflowPath}/assignments`),
+      get<{ items: ResultView[] }>(`${workflowPath}/results`),
+      get<TimelineView>(`${workflowPath}/timeline`),
+      getOptional<SpecView>(`${workflowPath}/spec`),
     ]);
 
     return {
@@ -55,4 +61,12 @@ export const api = {
       spec,
     };
   },
+
+  graph: (maxNodes: number, maxEdges: number) =>
+    get<GraphSnapshot>(`${dashboardBase}/graph?maxNodes=${maxNodes}&maxEdges=${maxEdges}`),
+
+  bus: () => get<BusSnapshot>(`${dashboardBase}/bus`),
+
+  busStreamUrl: (topics: string) =>
+    `${dashboardBase}/bus/stream?topics=${encodeURIComponent(topics)}`,
 };

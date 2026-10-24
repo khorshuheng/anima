@@ -114,3 +114,65 @@ export interface WorkflowDetail {
   results: ResultView[];
   timeline: TimelineView;
 }
+
+export interface GraphNode {
+  id: number;
+  kind: string;
+  name: string;
+  description: string;
+  resolved: boolean;
+}
+
+export interface GraphEdge {
+  id: number;
+  source: number;
+  destination: number;
+  edgeType: string;
+}
+
+export interface GraphSnapshot {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  nodeCount: number;
+  edgeCount: number;
+  truncated: boolean;
+}
+
+export interface BusTopicSnapshot {
+  topic: string;
+  publishedCount: number;
+  lastTimestamp: string | null;
+  typeNames: string[];
+  senders: string[];
+}
+
+export interface BusSubscriptionSnapshot {
+  id: string;
+  name: string;
+  pattern: string;
+  delivered: number;
+  dropped: number;
+  failed: number;
+  lastActivity: string | null;
+}
+
+export interface BusSnapshot {
+  topics: BusTopicSnapshot[];
+  subscriptions: BusSubscriptionSnapshot[];
+  totalPublished: number;
+  totalDelivered: number;
+  totalDropped: number;
+  totalFailed: number;
+}
+
+/** One `anima.**` envelope as delivered by the dashboard SSE proxy. */
+export interface BusStreamEvent {
+  messageId: string;
+  topic: string;
+  typeName: string;
+  timestamp: string;
+  sender?: string | null;
+  recipient?: string | null;
+  correlationId?: string | null;
+  payloadJson?: unknown;
+}
