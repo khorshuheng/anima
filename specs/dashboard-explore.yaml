@@ -8,7 +8,7 @@ steps:
   - waitForText: { target: "[data-testid=graph-results-ready]", text: "7 of 7" }
   - eval: "document.querySelector('[data-testid=graph-results-ready]').getAttribute('data-result-count')"
   - select: { target: "[data-testid=graph-scope]", value: "resolved" }
-  - waitForText: { target: "[data-testid=graph-results-ready]", text: "4 of 4" }
+  - waitForText: { target: "[data-testid=graph-results-ready]", text: "5 of 5" }
   - eval: "document.querySelector('[data-testid=graph-results-ready]').getAttribute('data-result-count')"
   - fill: { target: "[data-testid=graph-search]", value: "orchestration" }
   - click: "[data-testid=graph-search-submit]"

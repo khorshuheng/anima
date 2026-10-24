@@ -9,6 +9,7 @@ builder.Services.AddOptions<DashboardOptions>()
     .Bind(builder.Configuration.GetSection(DashboardOptions.SectionName))
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<DashboardOptions>, DashboardOptionsValidator>();
+builder.Services.AddSingleton<GoalExplorer>();
 
 AddUpstream(builder.Services, DashboardUpstreams.Workflow, options => (options.WorkflowBaseUrl, options.UpstreamTimeout));
 AddUpstream(builder.Services, DashboardUpstreams.Knowledge, options => (options.KnowledgeBaseUrl, options.UpstreamTimeout));
@@ -115,6 +116,13 @@ app.MapGet("/api/dashboard/search", async (
         cancellationToken);
     await upstream.WriteAsync(context.Response, cancellationToken);
 });
+
+app.MapGet("/api/dashboard/goals", async (
+    long? repoId,
+    bool? resolved,
+    GoalExplorer explorer,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await explorer.GetGoalsAsync(repoId, resolved, cancellationToken)));
 
 app.MapGet("/api/dashboard/kinds", async (
     HttpContext context,

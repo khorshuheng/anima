@@ -153,6 +153,22 @@ export interface GraphQueryResult {
   offset: number;
 }
 
+export interface GoalExplorerItem {
+  id: number;
+  name: string;
+  description: string;
+  resolved: boolean;
+  taskCount: number;
+  resolvedTaskCount: number;
+  workflowStatus: string | null;
+  completionSource: 'goal' | 'workflow' | 'tasks' | 'open';
+}
+
+export interface GoalExplorerResponse {
+  items: GoalExplorerItem[];
+  total: number;
+}
+
 export interface BusTopicSnapshot {
   topic: string;
   publishedCount: number;

@@ -1,0 +1,21 @@
+name: goal-explorer
+description: Find unresolved goals in a repo and inspect their tasks.
+steps:
+  - goto: /
+  - click: "button.tab:has-text('Graph')"
+  - waitFor: { target: "h2:has-text('Knowledge graph')" }
+  - waitFor: { target: "[data-testid=graph-results-ready]" }
+  - waitForText: { target: "[data-testid=graph-results-ready]", text: "7 of 7" }
+  - eval: "document.querySelector('[data-testid=graph-repo]').value"
+  - select: { target: "[data-testid=graph-scope]", value: "active" }
+  - waitForText: { target: "[data-testid=graph-results-ready]", text: "2 of 2" }
+  - eval: "document.querySelector('[data-testid=graph-results-ready]').getAttribute('data-result-count')"
+  - eval: "Array.from(document.querySelectorAll('[data-testid^=graph-result-]')).map((node) => node.textContent).join(' | ')"
+  - click: "[data-testid=graph-result-86]"
+  - waitFor: { target: ".inspector-heading" }
+  - waitForText: { target: ".goal-tasks", text: "Tasks 2/14" }
+  - eval: "document.querySelector('.goal-tasks').textContent"
+  - click: "button:has-text('Show goal tasks in graph')"
+  - waitForText: { target: ".graph-panel .panel-heading p", text: "goal tasks" }
+  - eval: "document.querySelector('.graph-panel .panel-heading p').textContent"
+  - screenshot: /tmp/anima-goal-explorer.png

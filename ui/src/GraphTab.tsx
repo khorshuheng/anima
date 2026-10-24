@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Network, type Edge, type Node, type Options } from 'vis-network/standalone';
 import { api } from './api';
-import type { GraphNode, GraphSnapshot, NodeKind } from './types';
+import type { GoalExplorerItem, GraphNode, GraphSnapshot, NodeKind } from './types';
 
 /** Mirrors the knowledge snapshot defaults (Anima.Knowledge.GraphSnapshotQuery). */
 const maxNodes = 500;
@@ -95,6 +95,13 @@ export function GraphTab({ revision }: GraphTabProps) {
   const [showFilteredGraph, setShowFilteredGraph] = useState(true);
   const [workflowStatuses, setWorkflowStatuses] = useState<Record<number, string>>({});
   const [workflowStatusesReady, setWorkflowStatusesReady] = useState(false);
+  const [repos, setRepos] = useState<GraphNode[]>([]);
+  const [repoId, setRepoId] = useState('');
+  const [goalDetails, setGoalDetails] = useState<Record<number, GoalExplorerItem>>({});
+  const [goalContext, setGoalContext] = useState<GraphNode | null>(null);
+  const [goalTasks, setGoalTasks] = useState<GraphNode[]>([]);
+  const [goalTasksLoading, setGoalTasksLoading] = useState(false);
+  const [goalTaskGraph, setGoalTaskGraph] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const networkRef = useRef<Network | null>(null);
   const requestRef = useRef(0);
@@ -123,9 +130,29 @@ export function GraphTab({ revision }: GraphTabProps) {
     const request = ++resultRequestRef.current;
     setResultBusy(true);
     try {
+      const trimmed = query.trim();
+      if (kind === 'goal' && trimmed.length === 0) {
+        const response = await api.goals({
+          repoId: repoId ? Number(repoId) : undefined,
+          resolved: scope === 'all' ? undefined : scope === 'resolved',
+        });
+        if (request !== resultRequestRef.current) return;
+        setGoalDetails(Object.fromEntries(response.items.map((item) => [item.id, item])));
+        setResults(response.items.map((item) => ({
+          id: item.id,
+          kind: 'goal',
+          name: item.name,
+          description: item.description,
+          resolved: item.resolved,
+        })));
+        setResultTotal(response.total);
+        setResultError(null);
+        return;
+      }
+
       const serverScope = kind === 'goal' && scope !== 'all' ? 'all' : scope;
-      const response = query.trim()
-        ? await api.search({ q: query.trim(), kind, scope: serverScope, limit: resultLimit })
+      const response = trimmed
+        ? await api.search({ q: trimmed, kind, scope: serverScope, limit: resultLimit })
         : await api.nodes({ kind, scope: serverScope, limit: resultLimit });
       if (request !== resultRequestRef.current) return;
       const filtered = kind === 'goal' && scope !== 'all'
@@ -143,7 +170,7 @@ export function GraphTab({ revision }: GraphTabProps) {
         setResultBusy(false);
       }
     }
-  }, [kind, query, resolvedFor, scope, workflowStatusesReady]);
+  }, [kind, query, repoId, resolvedFor, scope, workflowStatusesReady]);
 
   useEffect(() => {
     void load();
@@ -190,6 +217,56 @@ export function GraphTab({ revision }: GraphTabProps) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    api.nodes({ kind: 'repo', scope: 'all', limit: 20 })
+      .then((response) => {
+        if (!active) return;
+        setRepos(response.items);
+        const first = response.items[0];
+        if (first) setRepoId(String(first.id));
+      })
+      .catch((exception) => {
+        if (active) setResultError(String(exception));
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!goalContext) {
+      setGoalTasks([]);
+      setGoalTaskGraph(false);
+      return;
+    }
+
+    let active = true;
+    setGoalTaskGraph(false);
+    setGoalTasksLoading(true);
+    api.nodes({ within: goalContext.id, via: 'part_of', scope: 'all', limit: 500 })
+      .then((response) => {
+        if (active) setGoalTasks(response.items);
+      })
+      .catch((exception) => {
+        if (active) setResultError(String(exception));
+      })
+      .finally(() => {
+        if (active) setGoalTasksLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [goalContext]);
+
+  useEffect(() => {
+    if (selectedId === null) return;
+    const node = graph?.nodes.find((candidate) => candidate.id === selectedId);
+    if (node?.kind === 'goal') {
+      setGoalContext(node);
+    }
+  }, [graph, selectedId]);
+
+  useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
@@ -216,10 +293,17 @@ export function GraphTab({ revision }: GraphTabProps) {
 
   const filterActive = query.trim().length > 0 || kind !== '' || scope !== 'all';
   const resultIds = new Set(results.map((node) => node.id));
+  const goalTaskActive = goalTaskGraph && goalContext !== null;
+  const goalTaskIds = new Set<number>([
+    ...(goalContext ? [goalContext.id] : []),
+    ...goalTasks.map((task) => task.id),
+  ]);
   const displayNodes = graph
-    ? filterActive && showFilteredGraph
-      ? graph.nodes.filter((node) => resultIds.has(node.id))
-      : graph.nodes
+    ? goalTaskActive
+      ? graph.nodes.filter((node) => goalTaskIds.has(node.id))
+      : filterActive && showFilteredGraph
+        ? graph.nodes.filter((node) => resultIds.has(node.id))
+        : graph.nodes
     : [];
   const displayNodeIds = new Set(displayNodes.map((node) => node.id));
   const displayEdges = graph
@@ -262,9 +346,11 @@ export function GraphTab({ revision }: GraphTabProps) {
     .sort((left, right) => left.localeCompare(right));
 
   const nodeLabel = graph
-    ? filterActive && showFilteredGraph
-      ? `matches: ${displayNodes.length} nodes · ${displayEdges.length} edges · source: ${graph.nodes.length}/${graph.nodeCount}`
-      : `showing ${graph.nodes.length} of ${graph.nodeCount} nodes · ${graph.edges.length} of ${graph.edgeCount} edges`
+    ? goalTaskActive
+      ? `goal tasks: ${goalTasks.length} tasks · ${displayNodes.length} nodes · ${displayEdges.length} edges`
+      : filterActive && showFilteredGraph
+        ? `matches: ${displayNodes.length} nodes · ${displayEdges.length} edges · source: ${graph.nodes.length}/${graph.nodeCount}`
+        : `showing ${graph.nodes.length} of ${graph.nodeCount} nodes · ${graph.edges.length} of ${graph.edgeCount} edges`
     : 'loading graph';
 
   const submitSearch = (event: FormEvent<HTMLFormElement>) => {
@@ -282,6 +368,9 @@ export function GraphTab({ revision }: GraphTabProps) {
   const selectResult = (node: GraphNode) => {
     setSelectedResult(node);
     setSelectedId(null);
+    if (node.kind === 'goal') {
+      setGoalContext(node);
+    }
     if (displayNodeIds.has(node.id)) {
       focusNode(node.id);
     } else {
@@ -342,6 +431,15 @@ export function GraphTab({ revision }: GraphTabProps) {
             </select>
           </label>
           <label className="field">
+            <span>Repository</span>
+            <select data-testid="graph-repo" value={repoId} onChange={(event) => setRepoId(event.target.value)}>
+              <option value="">All repos</option>
+              {repos.map((repo) => (
+                <option key={repo.id} value={repo.id}>{repo.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
             <span>Completion</span>
             <select data-testid="graph-scope" value={scope} onChange={(event) => setScope(event.target.value)}>
               <option value="all">All</option>
@@ -383,6 +481,11 @@ export function GraphTab({ revision }: GraphTabProps) {
               </span>
               <span className="muted small">#{node.id} · {node.kind}</span>
               {node.description && <span className="search-result-description">{node.description}</span>}
+              {goalDetails[node.id] && (
+                <span className="muted small">
+                  {goalDetails[node.id].resolvedTaskCount}/{goalDetails[node.id].taskCount} tasks · {goalDetails[node.id].completionSource}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -413,6 +516,11 @@ export function GraphTab({ revision }: GraphTabProps) {
               {filterActive && (
                 <button className="button" onClick={() => networkRef.current?.fit({ animation: true })}>
                   Fit matches
+                </button>
+              )}
+              {goalContext && goalTasks.length > 0 && (
+                <button className="button" onClick={() => setGoalTaskGraph((active) => !active)}>
+                  {goalTaskGraph ? 'Hide goal tasks' : 'Show goal tasks'}
                 </button>
               )}
               {selectedNode && displayNodeIds.has(selectedNode.id) && (
@@ -459,6 +567,36 @@ export function GraphTab({ revision }: GraphTabProps) {
                 <div className="stat"><strong>{resolvedFor(selectedNode) ? 'resolved' : 'open'}</strong><span>state</span></div>
               </div>
               <p className="inspector-description">{selectedNode.description || 'No description recorded.'}</p>
+              {goalContext && (
+                <section className="goal-tasks">
+                  <h3 className="inspector-subheading">
+                    Tasks {goalTasks.filter((task) => task.resolved).length}/{goalTasks.length}
+                  </h3>
+                  {goalTasksLoading && <p className="muted small">Loading tasks…</p>}
+                  {!goalTasksLoading && goalTasks.length === 0 && <p className="muted small">No tasks recorded.</p>}
+                  <ul>
+                    {goalTasks.map((task) => (
+                      <li key={task.id}>
+                        <button
+                          className={`task-link ${selectedResult?.id === task.id ? 'selected' : ''}`}
+                          onClick={() => selectResult(task)}
+                        >
+                          <span className={`chip ${task.resolved ? 'chip-done' : 'chip-active'}`}>
+                            {task.resolved ? 'resolved' : 'open'}
+                          </span>
+                          <span>{task.name}</span>
+                          <span className="muted small">#{task.id}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {goalTasks.length > 0 && (
+                    <button className="button" onClick={() => setGoalTaskGraph((active) => !active)}>
+                      {goalTaskGraph ? 'Hide goal tasks in graph' : 'Show goal tasks in graph'}
+                    </button>
+                  )}
+                </section>
+              )}
               {displayNodeIds.has(selectedNode.id) && (
                 <button className="button inspector-focus" onClick={() => focusNode(selectedNode.id)}>
                   Center in graph
