@@ -91,3 +91,8 @@ One local user-facing server and UI at `:7416`:
 - Bus snapshot shows topics/senders/types and subscriber counters; live feed updates.
 - Workflow.Service `/ui` is gone.
 - New tests for graph snapshot and bus diagnostics pass.
+
+- `GET /api/dashboard/workflows/{id}/summary` returns a dashboard-computed
+  summary (tasks, agents/runs, results, reviews, evidence, phases); it returns
+  404 for an unknown workflow and 502 for an unavailable/invalid workflow
+  upstream.

@@ -224,8 +224,10 @@ public static class WorkflowSummaryBuilder
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        var reviews = results
+        var allReviews = results
             .Where(result => Kind(result.Kind) == "review")
+            .ToArray();
+        var reviews = allReviews
             .OrderBy(result => result.CreatedAt)
             .ThenBy(result => result.Id)
             .Select((result, index) => new SummaryReview(
@@ -240,14 +242,17 @@ public static class WorkflowSummaryBuilder
                 result.Summary))
             .ToArray();
 
-        var implementation = results.Where(result => Kind(result.Kind) == "implementation").ToArray();
+        var implementation = results
+            .Where(result => Kind(result.Kind) == "implementation" && result.Success)
+            .ToArray();
+        var successfulReviews = allReviews.Where(review => review.Success).ToArray();
         var evidence = new SummaryEvidence(
             implementation.Length,
             implementation.Count(result => !string.IsNullOrWhiteSpace(result.HeadSha)),
             implementation.Count(result => result.TestCommands.Any(command => !string.IsNullOrWhiteSpace(command))),
-            reviews.Length,
-            reviews.Count(review => !string.IsNullOrWhiteSpace(review.HeadSha)),
-            reviews.Count(review => review.TestCommands.Any(command => !string.IsNullOrWhiteSpace(command))));
+            successfulReviews.Length,
+            successfulReviews.Count(review => !string.IsNullOrWhiteSpace(review.HeadSha)),
+            successfulReviews.Count(review => review.TestCommands.Any(command => !string.IsNullOrWhiteSpace(command))));
 
         var findings = results.SelectMany(result => result.Findings).ToArray();
         var resultSummary = new SummaryResults(

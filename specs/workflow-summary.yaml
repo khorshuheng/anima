@@ -5,7 +5,7 @@ steps:
   - click: "[data-testid=workflow-item-172]"
   - waitFor: { target: "[data-testid=workflow-summary]" }
   - waitForText: { target: "[data-testid=workflow-summary]", text: "Review #1" }
-  - eval: "document.querySelectorAll('[data-testid^=review-iteration-]').length"
-  - eval: "document.querySelector('[data-testid=workflow-summary]').textContent.includes('recorded agents')"
-  - eval: "document.querySelector('.result-list')?.textContent.includes('head 6620278') ?? false"
+  - waitForText: { target: "[data-testid=workflow-summary]", text: "recorded agents" }
+  - waitForText: { target: "[data-testid=workflow-summary]", text: "review iterations" }
+  - waitForText: { target: ".result-list", text: "head " }
   - screenshot: /tmp/anima-workflow-summary.png

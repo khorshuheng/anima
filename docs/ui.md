@@ -30,3 +30,7 @@ make ui-build    # ui/dist, served at / by the dashboard
 
 The UI does not mutate workflows; the harness and agents post facts through the
 workflow API.
+
+The Workflows tab includes a Run summary panel with task roles, recorded
+agents/runs, result and review counts, review iterations, duration and
+evidence-completeness indicators.
