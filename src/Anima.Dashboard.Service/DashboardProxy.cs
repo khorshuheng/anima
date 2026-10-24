@@ -14,25 +14,43 @@ public sealed class DashboardProxy
 
     private readonly HttpClient _client;
     private readonly string _upstream;
+    private readonly TimeSpan _requestTimeout;
 
-    public DashboardProxy(HttpClient client, string upstream)
+    public DashboardProxy(HttpClient client, string upstream, TimeSpan requestTimeout)
     {
         ArgumentNullException.ThrowIfNull(client);
         ArgumentException.ThrowIfNullOrWhiteSpace(upstream);
+        if (requestTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(requestTimeout),
+                requestTimeout,
+                "The dashboard upstream timeout must be positive.");
+        }
+
         _client = client;
         _upstream = upstream;
+        _requestTimeout = requestTimeout;
     }
 
-    /// <summary>Reads the whole upstream reply so the caller can forward it unchanged.</summary>
+    /// <summary>
+    /// Reads the whole upstream reply so the caller can forward it unchanged. One
+    /// linked deadline covers both the reply head and the body read, because
+    /// <see cref="HttpCompletionOption.ResponseHeadersRead"/> ends the client timeout
+    /// once the headers arrive.
+    /// </summary>
     public async Task<UpstreamResponse> GetAsync(string pathAndQuery, CancellationToken cancellationToken = default)
     {
+        using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        requestTimeout.CancelAfter(_requestTimeout);
+
         try
         {
             using var response = await _client.GetAsync(
                 pathAndQuery,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
-            var body = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                requestTimeout.Token);
+            var body = await response.Content.ReadAsByteArrayAsync(requestTimeout.Token);
             return new UpstreamResponse(
                 (int)response.StatusCode,
                 response.Content.Headers.ContentType?.ToString(),
@@ -42,16 +60,17 @@ public sealed class DashboardProxy
         {
             return Timeout();
         }
-        catch (HttpRequestException exception)
+        catch (HttpRequestException)
         {
-            return Unavailable(exception.Message);
+            return Unavailable();
         }
     }
 
     /// <summary>
     /// Streams an upstream server-sent-events reply to <paramref name="response"/>,
     /// flushing every chunk so the browser receives events as they happen. Returns
-    /// the status written to the client.
+    /// the status written to the client. The stream runs until either side closes, so
+    /// it deliberately uses no request deadline.
     /// </summary>
     public async Task<int> CopyEventStreamAsync(
         string pathAndQuery,
@@ -73,9 +92,9 @@ public sealed class DashboardProxy
             await Timeout().WriteAsync(response, cancellationToken);
             return response.StatusCode;
         }
-        catch (HttpRequestException exception)
+        catch (HttpRequestException)
         {
-            await Unavailable(exception.Message).WriteAsync(response, cancellationToken);
+            await Unavailable().WriteAsync(response, cancellationToken);
             return response.StatusCode;
         }
 
@@ -116,11 +135,15 @@ public sealed class DashboardProxy
             message = $"{_upstream} service did not respond within the dashboard upstream timeout",
         }));
 
-    private UpstreamResponse Unavailable(string detail) => new(
+    /// <summary>
+    /// Generic 502. Host and socket details stay out of the browser: they leak internal
+    /// addresses and change shape with the runtime.
+    /// </summary>
+    private UpstreamResponse Unavailable() => new(
         StatusCodes.Status502BadGateway,
         JsonContentType,
         JsonSerializer.SerializeToUtf8Bytes(new
         {
-            message = $"{_upstream} service is unavailable: {detail}",
+            message = $"{_upstream} service is unavailable",
         }));
 }

@@ -62,8 +62,10 @@ export const api = {
     };
   },
 
-  graph: (maxNodes: number, maxEdges: number) =>
-    get<GraphSnapshot>(`${dashboardBase}/graph?maxNodes=${maxNodes}&maxEdges=${maxEdges}`),
+  graph: (maxNodes: number, maxEdges: number, newest: boolean) =>
+    get<GraphSnapshot>(
+      `${dashboardBase}/graph?maxNodes=${maxNodes}&maxEdges=${maxEdges}&newest=${newest}`,
+    ),
 
   bus: () => get<BusSnapshot>(`${dashboardBase}/bus`),
 

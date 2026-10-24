@@ -164,6 +164,10 @@ export interface BusSnapshot {
   totalDelivered: number;
   totalDropped: number;
   totalFailed: number;
+  /** Topics the bus still tracks; topics past its cap are only counted in the totals. */
+  trackedTopics: number;
+  /** True when `topics` is the busiest slice of `trackedTopics`. */
+  topicsTruncated: boolean;
 }
 
 /** One `anima.**` envelope as delivered by the dashboard SSE proxy. */

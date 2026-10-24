@@ -415,11 +415,15 @@ app.MapGet("/api/graph-health", async (IKnowledgeGraph graph, CancellationToken 
     return Results.Ok(health);
 });
 
-// Dashboard snapshot: summary nodes/edges only, capped server-side. GraphSnapshot
-// pins its camelCase wire names because this endpoint is consumed by the dashboard.
+// Dashboard snapshot: summary nodes/edges only, capped server-side. `newest=true`
+// windows the graph from the newest ids and `sinceId` filters to newer nodes, so the
+// active workflow stays reachable when the cap cuts the graph. GraphSnapshot pins its
+// camelCase wire names because this endpoint is consumed by the dashboard.
 app.MapGet("/api/graph", async (
     int? maxNodes,
     int? maxEdges,
+    bool? newest,
+    long? sinceId,
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
@@ -428,6 +432,8 @@ app.MapGet("/api/graph", async (
         {
             MaxNodes = maxNodes ?? GraphSnapshotQuery.DefaultMaxNodes,
             MaxEdges = maxEdges ?? GraphSnapshotQuery.DefaultMaxEdges,
+            Newest = newest ?? false,
+            SinceId = sinceId,
         },
         cancellationToken);
 

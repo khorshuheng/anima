@@ -6,6 +6,8 @@ namespace Anima.Dashboard.Service.Tests;
 
 public sealed class DashboardProxyTests
 {
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
+
     [Fact]
     public async Task Get_forwards_the_upstream_status_body_and_content_type()
     {
@@ -14,7 +16,7 @@ public sealed class DashboardProxyTests
             Content = new StringContent("{\"message\":\"workflow 42 does not exist\"}", Encoding.UTF8, "application/json"),
         }));
 
-        var upstream = await new DashboardProxy(client, "workflow").GetAsync("api/workflows/42");
+        var upstream = await CreateProxy(client, "workflow").GetAsync("api/workflows/42");
 
         Assert.Equal(404, upstream.StatusCode);
         Assert.Equal("application/json; charset=utf-8", upstream.ContentType);
@@ -27,20 +29,23 @@ public sealed class DashboardProxyTests
         var handler = new StubHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
         using var client = CreateClient(handler);
 
-        await new DashboardProxy(client, "workflow").GetAsync("api/workflows/42/questions?open=false");
+        await CreateProxy(client, "workflow").GetAsync("api/workflows/42/questions?open=false");
 
         Assert.Equal("http://upstream.test/api/workflows/42/questions?open=false", handler.LastRequestUri?.ToString());
     }
 
     [Fact]
-    public async Task Get_maps_an_unreachable_upstream_to_502()
+    public async Task Get_maps_an_unreachable_upstream_to_a_generic_502()
     {
-        using var client = CreateClient((_, _) => throw new HttpRequestException("connection refused"));
+        using var client = CreateClient(
+            (_, _) => throw new HttpRequestException("connection refused (127.0.0.1:7411)"));
 
-        var upstream = await new DashboardProxy(client, "knowledge").GetAsync("api/graph");
+        var upstream = await CreateProxy(client, "knowledge").GetAsync("api/graph");
 
         Assert.Equal(502, upstream.StatusCode);
-        Assert.Contains("knowledge service is unavailable", Encoding.UTF8.GetString(upstream.Body));
+        Assert.Equal(
+            "{\"message\":\"knowledge service is unavailable\"}",
+            Encoding.UTF8.GetString(upstream.Body));
     }
 
     [Fact]
@@ -54,10 +59,29 @@ public sealed class DashboardProxyTests
             },
             TimeSpan.FromMilliseconds(100));
 
-        var upstream = await new DashboardProxy(client, "bus").GetAsync("api/bus/snapshot");
+        var upstream = await CreateProxy(client, "bus").GetAsync("api/bus/snapshot");
 
         Assert.Equal(504, upstream.StatusCode);
         Assert.Contains("bus service did not respond", Encoding.UTF8.GetString(upstream.Body));
+    }
+
+    [Fact]
+    public async Task Get_applies_the_request_timeout_to_the_body_read()
+    {
+        // Headers arrive immediately, so only the proxy's own deadline bounds the body:
+        // the HttpClient timeout ends when the response head is read.
+        using var client = CreateClient(
+            (_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StalledContent(TimeSpan.FromSeconds(5)),
+            }),
+            Timeout.InfiniteTimeSpan);
+        var proxy = CreateProxy(client, "knowledge", TimeSpan.FromMilliseconds(100));
+
+        var upstream = await proxy.GetAsync("api/graph");
+
+        Assert.Equal(504, upstream.StatusCode);
+        Assert.Contains("knowledge service did not respond", Encoding.UTF8.GetString(upstream.Body));
     }
 
     [Fact]
@@ -70,7 +94,7 @@ public sealed class DashboardProxyTests
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
 
-        var status = await new DashboardProxy(client, "bus")
+        var status = await CreateProxy(client, "bus")
             .CopyEventStreamAsync("api/bus/stream?topics=anima.**", context.Response);
 
         Assert.Equal(200, status);
@@ -81,24 +105,38 @@ public sealed class DashboardProxyTests
     }
 
     [Fact]
-    public async Task CopyEventStream_maps_an_unreachable_upstream_to_502()
+    public async Task CopyEventStream_maps_an_unreachable_upstream_to_a_generic_502()
     {
         using var client = CreateClient((_, _) => throw new HttpRequestException("connection refused"));
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
 
-        var status = await new DashboardProxy(client, "bus")
+        var status = await CreateProxy(client, "bus")
             .CopyEventStreamAsync("api/bus/stream", context.Response);
 
         Assert.Equal(502, status);
         Assert.Equal(502, context.Response.StatusCode);
-        Assert.Contains("bus service is unavailable", ReadBody(context));
+        Assert.Equal("{\"message\":\"bus service is unavailable\"}", ReadBody(context));
     }
+
+    [Fact]
+    public void Constructor_rejects_a_non_positive_request_timeout()
+    {
+        using var client = CreateClient((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new DashboardProxy(client, "bus", TimeSpan.Zero));
+    }
+
+    private static DashboardProxy CreateProxy(
+        HttpClient client,
+        string upstream,
+        TimeSpan? requestTimeout = null) => new(client, upstream, requestTimeout ?? RequestTimeout);
 
     private static HttpClient CreateClient(StubHandler handler, TimeSpan? timeout = null) => new(handler)
     {
         BaseAddress = new Uri("http://upstream.test"),
-        Timeout = timeout ?? TimeSpan.FromSeconds(10),
+        Timeout = timeout ?? RequestTimeout,
     };
 
     private static HttpClient CreateClient(
@@ -122,6 +160,25 @@ public sealed class DashboardProxyTests
         {
             LastRequestUri = request.RequestUri;
             return respond(request, cancellationToken);
+        }
+    }
+
+    /// <summary>Reply head is instant; the body only completes when the reader cancels.</summary>
+    private sealed class StalledContent(TimeSpan stall) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            => Task.Delay(stall);
+
+        protected override async Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context,
+            CancellationToken cancellationToken)
+            => await Task.Delay(stall, cancellationToken);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 }

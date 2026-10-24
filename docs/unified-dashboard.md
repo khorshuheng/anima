@@ -21,8 +21,11 @@ One local user-facing server and UI at `:7416`:
 ### graph-api — Knowledge graph snapshot
 - `IKnowledgeGraph.GetGraphAsync(GraphSnapshotQuery)` returning
   `GraphSnapshot(Nodes, Edges, NodeCount, EdgeCount, Truncated)`.
-- `GET /api/graph?maxNodes=500&maxEdges=1000` on the knowledge service.
+- `GET /api/graph?maxNodes=500&maxEdges=1000&newest=true&sinceId=0` on the knowledge service.
 - Summary nodes (no content), edges only between included nodes, caps enforced.
+- `newest=true` walks the window from the highest ids (nodes and the edge subquery
+  share the window), so the active workflow stays reachable after the cap; `sinceId`
+  filters to newer nodes for incremental reads.
 - Implement in InMemory, SQLite, Publishing decorator and HTTP client;
   add SQLite tests for caps/truncation and endpoint smoke.
 
@@ -30,6 +33,9 @@ One local user-facing server and UI at `:7416`:
 - `IBusDiagnostics.GetSnapshot()` and `GET /api/bus/snapshot`.
 - Topics: topic, published count, last timestamp, type names, senders.
 - Subscriptions: id, name, pattern, delivered, dropped, failed, last activity.
+- Bounded by `BusOptions`: `MaxTrackedTopics` (4096), `MaxTypesPerTopic`/
+  `MaxSendersPerTopic` (64) and `MaxSnapshotTopics` (100). The snapshot returns the
+  busiest topics plus `TrackedTopics`/`TopicsTruncated`.
 - Track in `InProcMessageBus`; add tests.
 
 ### dashboard-service — Unified server/BFF
@@ -39,14 +45,17 @@ One local user-facing server and UI at `:7416`:
   - `/api/dashboard/graph` -> knowledge `/api/graph`
   - `/api/dashboard/bus` -> bus `/api/bus/snapshot`
   - `/api/dashboard/bus/stream?topics=...` -> SSE proxy
-- Upstream timeout -> 504, unavailable -> 502.
+- Upstream timeout -> 504 (one deadline covers the reply head and the body read),
+  unavailable -> generic 502 that never echoes host/socket details.
+- Upstreams come from validated `IOptions<DashboardOptions>`.
 - Remove UI hosting from Workflow.Service.
 - Wire `AnimaPorts.Dashboard`, dev script, Makefile, solution/filter.
 
 ### ui — Unified React dashboard
 - Three tabs: Workflows, Graph, Bus.
-- Graph: vis-network force layout, pan/zoom, node inspector, truncation banner.
-- Bus: topics/producers and subscriber tables, live event feed.
+- Graph: vis-network force layout, pan/zoom, node inspector, truncation banner;
+  reads the newest window (`newest=true`).
+- Bus: topics/producers and subscriber tables, live event feed, truncation notice.
 - Workflow: existing views, now under `/api/dashboard/workflows`.
 - Live via `/api/dashboard/bus/stream`; polling fallback.
 - Vite base `/`, dev proxy to `:7416`.

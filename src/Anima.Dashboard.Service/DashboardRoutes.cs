@@ -14,21 +14,34 @@ public static class DashboardRoutes
         return path + queryString;
     }
 
-    /// <summary><c>/api/dashboard/graph</c> -> knowledge <c>api/graph</c>, forwarding only the graph caps.</summary>
-    public static string Graph(int? maxNodes = null, int? maxEdges = null)
+    /// <summary>
+    /// <c>/api/dashboard/graph</c> -> knowledge <c>api/graph</c>, forwarding only the graph
+    /// window parameters (<c>newest</c> selects the newest ids first, <c>sinceId</c> filters).
+    /// </summary>
+    public static string Graph(int? maxNodes = null, int? maxEdges = null, bool? newest = null, long? sinceId = null)
     {
-        var caps = new List<string>(2);
+        var parameters = new List<string>(4);
         if (maxNodes is { } nodes)
         {
-            caps.Add($"maxNodes={nodes}");
+            parameters.Add($"maxNodes={nodes}");
         }
 
         if (maxEdges is { } edges)
         {
-            caps.Add($"maxEdges={edges}");
+            parameters.Add($"maxEdges={edges}");
         }
 
-        return caps.Count == 0 ? "api/graph" : $"api/graph?{string.Join('&', caps)}";
+        if (newest is { } newestWindow)
+        {
+            parameters.Add($"newest={(newestWindow ? "true" : "false")}");
+        }
+
+        if (sinceId is { } since)
+        {
+            parameters.Add($"sinceId={since}");
+        }
+
+        return parameters.Count == 0 ? "api/graph" : $"api/graph?{string.Join('&', parameters)}";
     }
 
     /// <summary><c>/api/dashboard/bus</c> -> bus <c>api/bus/snapshot</c>.</summary>

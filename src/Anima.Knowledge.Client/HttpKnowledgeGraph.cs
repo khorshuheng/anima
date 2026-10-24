@@ -252,6 +252,16 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
     {
         ArgumentNullException.ThrowIfNull(query);
         var path = $"api/graph?maxNodes={query.EffectiveMaxNodes}&maxEdges={query.EffectiveMaxEdges}";
+        if (query.Newest)
+        {
+            path += "&newest=true";
+        }
+
+        if (query.SinceId is { } sinceId)
+        {
+            path += $"&sinceId={sinceId}";
+        }
+
         var snapshot = await _http.GetFromJsonAsync<GraphSnapshot>(path, JsonOptions, cancellationToken);
         return snapshot ?? throw new KnowledgeException("knowledge service returned an empty body");
     }
