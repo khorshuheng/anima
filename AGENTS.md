@@ -70,3 +70,18 @@ worktrees; it uses Anima through HTTP, the bus and `anima` CLI.
 - Contract changes are compiled and validated.
 - Docs and the orchestration skill are updated when a seam, endpoint, CLI command
   or wire shape changes.
+
+## Worktree / subagent process hygiene
+
+Shared Anima services run on reserved ports **7410–7416**. A worktree worker must
+never stop a service it did not start.
+
+- Never use `pkill -f`, `killall`, or `fuser -k` on a shared port or name. Broad
+  process-name matches kill every checkout of that service.
+- Start private smoke instances on ports **7500+** with a private temp DB, using
+  the compiled DLL (`dotnet path/to/X.Service.dll --urls ...`), not `dotnet run`.
+  Capture `$!`, set a trap, and kill only that PID (or its process group).
+- If a shared service is down, report it and continue with a private instance;
+  do not restart or kill shared services.
+- Cleanup must be scoped: `kill "$pid"` / `kill -- -"$pgid"`, never by service
+  name.

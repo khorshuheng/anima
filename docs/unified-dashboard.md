@@ -51,11 +51,27 @@ One local user-facing server and UI at `:7416`:
 - Live via `/api/dashboard/bus/stream`; polling fallback.
 - Vite base `/`, dev proxy to `:7416`.
 
+### merge — Integration
+- Harness-owned: merge implementation branches into `main`, resolve conflicts,
+  rebuild, run the full test suite, and post a merge result with changed files.
+- Requires successful results for graph-api, bus-diagnostics, dashboard-service and ui.
+
+### review — Code review
+- Apply the code-review skill to the integrated diff.
+- Post findings and a review result. A failed review must be fixed before close.
+
 ### verify — Validation
 - `make check`, `make ui-build`, all solution filters.
 - Six-service smoke (knowledge, bus, workflow, automation, deploy, dashboard).
 - Dashboard `/`, `/api/dashboard/graph`, `/api/dashboard/bus` return 200.
 - Graph caps and bus counters visible.
+
+## Worker isolation
+- Shared services use ports 7410–7416 and are off-limits for worker cleanup.
+- Workers use private ports 7500+ and a private temp DB.
+- Workers run the compiled service DLL, capture `$!`, set a trap, and kill only
+  that PID/process group. No `pkill -f`, `killall`, or `fuser -k` by name/port.
+- A down shared service is reported, never killed/restarted by a worker.
 
 ## Acceptance
 - Dashboard boots and serves the UI.
