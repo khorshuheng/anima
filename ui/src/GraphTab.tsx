@@ -98,6 +98,7 @@ export function GraphTab({ revision }: GraphTabProps) {
   const [repos, setRepos] = useState<GraphNode[]>([]);
   const [repoId, setRepoId] = useState('');
   const [goalDetails, setGoalDetails] = useState<Record<number, GoalExplorerItem>>({});
+  const goalDetailsRef = useRef<Record<number, GoalExplorerItem>>({});
   const [goalContext, setGoalContext] = useState<GraphNode | null>(null);
   const [goalTasks, setGoalTasks] = useState<GraphNode[]>([]);
   const [goalTasksLoading, setGoalTasksLoading] = useState(false);
@@ -122,7 +123,9 @@ export function GraphTab({ revision }: GraphTabProps) {
   }, []);
 
   const resolvedFor = useCallback((node: GraphNode) => {
-    return node.resolved || (node.kind === 'goal' && workflowStatuses[node.id] === 'completed');
+    return node.resolved ||
+      goalDetailsRef.current[node.id]?.resolved === true ||
+      (node.kind === 'goal' && workflowStatuses[node.id] === 'completed');
   }, [workflowStatuses]);
 
   const loadResults = useCallback(async () => {
@@ -137,7 +140,9 @@ export function GraphTab({ revision }: GraphTabProps) {
           resolved: scope === 'all' ? undefined : scope === 'resolved',
         });
         if (request !== resultRequestRef.current) return;
-        setGoalDetails(Object.fromEntries(response.items.map((item) => [item.id, item])));
+        const details = Object.fromEntries(response.items.map((item) => [item.id, item]));
+        goalDetailsRef.current = details;
+        setGoalDetails(details);
         setResults(response.items.map((item) => ({
           id: item.id,
           kind: 'goal',
@@ -151,8 +156,17 @@ export function GraphTab({ revision }: GraphTabProps) {
       }
 
       const serverScope = kind === 'goal' && scope !== 'all' ? 'all' : scope;
+      const repoScope = repoId ? Number(repoId) : undefined;
       const response = trimmed
-        ? await api.search({ q: trimmed, kind, scope: serverScope, limit: resultLimit })
+        ? await api.search({
+          q: trimmed,
+          kind,
+          scope: serverScope,
+          within: repoScope,
+          via: repoScope === undefined ? undefined : 'belongs_to',
+          descend: repoScope === undefined ? undefined : 'part_of',
+          limit: resultLimit,
+        })
         : await api.nodes({ kind, scope: serverScope, limit: resultLimit });
       if (request !== resultRequestRef.current) return;
       const filtered = kind === 'goal' && scope !== 'all'
@@ -243,7 +257,14 @@ export function GraphTab({ revision }: GraphTabProps) {
     let active = true;
     setGoalTaskGraph(false);
     setGoalTasksLoading(true);
-    api.nodes({ within: goalContext.id, via: 'part_of', scope: 'all', limit: 500 })
+    api.nodes({
+      within: goalContext.id,
+      via: 'part_of',
+      descend: 'part_of',
+      kind: 'task',
+      scope: 'all',
+      limit: 500,
+    })
       .then((response) => {
         if (active) setGoalTasks(response.items);
       })

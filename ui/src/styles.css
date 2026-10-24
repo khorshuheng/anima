@@ -408,3 +408,10 @@ summary { cursor: pointer; color: var(--accent); font-size: 12px; }
 .task-link > span:nth-child(2) { flex: 1; }
 .graph-search-form { grid-template-columns: minmax(180px, 1fr) 145px 145px 180px auto; }
 .graph-search-form .graph-filter-toggle { grid-column: 1 / -1; }
+@media (max-width: 900px) {
+  .graph-search-form { grid-template-columns: 1fr 1fr; }
+  .graph-search-form .field-search { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) {
+  .graph-search-form { grid-template-columns: 1fr; }
+}

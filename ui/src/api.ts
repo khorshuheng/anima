@@ -90,17 +90,28 @@ export const api = {
     return get<GraphQueryResult>(`${dashboardBase}/nodes?${query.toString()}`);
   },
 
-  goals: (params: { repoId?: number; resolved?: boolean; limit?: number }) => {
+  goals: (params: { repoId?: number; resolved?: boolean }) => {
     const query = new URLSearchParams();
     if (params.repoId !== undefined) query.set('repoId', String(params.repoId));
     if (params.resolved !== undefined) query.set('resolved', String(params.resolved));
     return get<GoalExplorerResponse>(`${dashboardBase}/goals?${query.toString()}`);
   },
 
-  search: (params: { q: string; kind?: string; scope?: string; limit?: number }) => {
+  search: (params: {
+    q: string;
+    kind?: string;
+    scope?: string;
+    within?: number;
+    via?: string;
+    descend?: string;
+    limit?: number;
+  }) => {
     const query = new URLSearchParams({ q: params.q, summary: 'true', limit: String(params.limit ?? 100) });
     if (params.kind) query.set('kind', params.kind);
     if (params.scope) query.set('scope', params.scope);
+    if (params.within !== undefined) query.set('within', String(params.within));
+    if (params.via) query.set('via', params.via);
+    if (params.descend) query.set('descend', params.descend);
     return get<GraphQueryResult>(`${dashboardBase}/search?${query.toString()}`);
   },
 

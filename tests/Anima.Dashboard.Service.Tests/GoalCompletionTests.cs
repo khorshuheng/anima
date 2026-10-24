@@ -30,6 +30,18 @@ public sealed class GoalCompletionTests
     }
 
     [Fact]
+    public void A_non_completed_workflow_is_not_overridden_by_resolved_tasks()
+    {
+        var failed = GoalCompletion.Compute(false, "failed", 3, 3);
+        var implementing = GoalCompletion.Compute(false, "implementing", 3, 3);
+
+        Assert.False(failed.Resolved);
+        Assert.Equal(GoalCompletion.Open, failed.Source);
+        Assert.False(implementing.Resolved);
+        Assert.Equal(GoalCompletion.Open, implementing.Source);
+    }
+
+    [Fact]
     public void Partial_or_absent_tasks_stay_open()
     {
         var partial = GoalCompletion.Compute(false, "implementing", 3, 2);
