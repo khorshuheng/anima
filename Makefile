@@ -3,11 +3,13 @@ DOTNET ?= dotnet
 CONFIG ?= Debug
 SOLUTION := Anima.sln
 CLI := $(DOTNET) run --project tools/Anima.Cli -c $(CONFIG) --
+BASE ?= main
+HEAD ?= HEAD
 
 .DEFAULT_GOAL := help
 
 .PHONY: help restore build test fmt fmt-check check contracts dev browser-check \
-        playwright-install hooks-install clean ui-install ui-build ui-dev graph-sync graph-status \
+        playwright-install hooks-install clean ui-install ui-build ui-dev graph-sync graph-status review-packet \
         build-contracts test-contracts build-bus test-bus build-knowledge test-knowledge \
         build-automation test-automation build-deploy test-deploy build-workflow test-workflow \
         build-dashboard test-dashboard \
@@ -26,6 +28,7 @@ help:
 	@echo "  make ui-install        install React UI dependencies"
 	@echo "  make ui-build          build ui/dist, served by the dashboard at /"
 	@echo "  make ui-dev            run the Vite dev server (proxy to :7416)"
+	@echo "  make review-packet     build artifacts/review/<base>..<head>/packet.md"
 	@echo ""
 	@echo "  per component: make build-<name> / test-<name>"
 	@echo "    contracts bus knowledge automation deploy workflow dashboard"
@@ -86,6 +89,9 @@ graph-sync:
 
 graph-status:
 	codegraph status
+
+review-packet:
+	./scripts/review-packet.sh "$(BASE)" "$(HEAD)"
 
 clean:
 	$(DOTNET) clean $(SOLUTION) -c $(CONFIG)

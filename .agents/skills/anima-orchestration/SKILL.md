@@ -185,21 +185,43 @@ resolve and post a new merge result to recover.
 
 ## 7. Review gate
 
-Run the reviewer in the merged worktree. It must run the spec's verify commands,
-inspect the diff from `BaseRef` to `HeadSha`, and inspect the changed files. Post
-findings with severity and file/line when known:
+Build a pinned review packet, then launch one or more read-only reviewer lanes
+through the repo-owned `workflows/code-review.js` template. Do not ask the
+reviewer to reconstruct the diff from memory or a moving working tree.
 
 ```bash
-anima workflow result <id> --kind review --summary "2 issues" --failure \
-  --finding "error:missing auth check src/Api.cs:42" \
-  --finding "warning:no retry test" \
-  --head-sha "$(git rev-parse HEAD)" --test "make check" \
-  --agent reviewer --worktree .anima/worktrees/<wf>-merge
+scripts/review-packet.sh "$BASE_SHA" "$HEAD_SHA" \
+  --verify "make check" \
+  --doc docs/code-quality.md \
+  --doc .agents/skills/anima-orchestration/SKILL.md
+```
+
+Pass the resulting `packet.md`, `diff.patch` and `changed-files.txt` paths plus
+`baseRef`, `headRef`, `verifyCommands` and `docs` to `workflows/code-review.js`.
+Use separate reviewer lanes for correctness and contract drift when the diff is
+non-trivial. Each lane must return JSON with `verdict`, `diffReviewed`,
+`findings`, `notExamined` and `testsRun`.
+
+Map the result to Anima:
+
+- P0/P1 -> `--finding "error:P1 ..."`; the review cannot be successful.
+- P2 -> `--finding "warning:P2 ..."`.
+- `blocked` or `diffReviewed: false` -> `--failure`; it is not a clean review.
+- `ok` with no P0/P1 -> successful review with head SHA, branch, base ref and
+  the verify commands it actually ran.
+
+```bash
+anima workflow result <id> --kind review --summary "P1: ..." --failure \
+  --finding "error:P1 missing auth check src/Api.cs:42" \
+  --finding "warning:P2 no retry test" \
+  --head-sha "$HEAD_SHA" --branch merge/<wf> --base-ref main \
+  --test "make check" --agent reviewer --worktree .anima/worktrees/<wf>-merge
 ```
 
 P0/P1 findings block completion and must be fixed and re-reviewed. A successful
 review with no blocking findings sets `completed`; a failed review sets `failed`.
-Do not mark a review successful from prose alone: cite the command and head SHA.
+Do not mark a review successful from prose alone: require the structured verdict,
+the diff packet, the command and the head SHA.
 
 ## 8. Bus usage
 

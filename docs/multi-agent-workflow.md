@@ -65,12 +65,16 @@ building the whole repo:
    result with head SHA, branch and test commands. The harness creates a merge
    worktree, runs the merger agent, and posts `--kind merge` with the same
    evidence plus conflicts/changed files.
-7. **Review gate.** A reviewer agent works in the merged worktree, runs the
-   spec's verify commands, inspects the diff from base ref to head SHA, and posts
-   `--kind review` plus findings with severity and path/line. P0/P1 findings must
-   be fixed and re-reviewed; a failed review marks the workflow `failed` and a
-   retry posts another result. A review result also carries head SHA, branch,
-   base ref and the commands it ran.
+7. **Review gate.** Build a pinned review packet with
+   `scripts/review-packet.sh <base> <head> --verify <command> --doc <path>` and
+   launch read-only reviewer lanes through `workflows/code-review.js`. The
+   reviewer reads `packet.md`/`diff.patch`/`changed-files.txt`, applies the
+   code-review skill, and returns a JSON verdict (`ok`, `changes_required` or
+   `blocked`) plus findings. A missing or unreadable diff is `blocked`, never
+   clean. Map P0/P1 to Anima `error` findings and P2 to `warning`; post
+   `--kind review` with head SHA, branch, base ref and the commands actually
+   run. P0/P1 findings must be fixed and re-reviewed; a failed or blocked review
+   marks the workflow `failed` and a retry posts another result.
 8. **Close.** A successful review sets `completed`. The harness records the
    change in memgraph/knowledge as needed.
 

@@ -74,6 +74,45 @@ The script returns a plain-JSON board in input order:
 `ok` is true only when every lane child completed successfully. Read `output` per
 lane; the board intentionally does not copy child transcripts.
 
+## `code-review.js`
+
+Independent review lanes against a generated packet. Generate the packet first;
+the workflow does not read the filesystem or reconstruct the diff.
+
+```bash
+scripts/review-packet.sh 8c1b66f HEAD \
+  --verify "make check" \
+  --doc docs/code-quality.md \
+  --doc workflows/README.md
+```
+
+```js
+subagent({
+  cwd: "/path/to/repo",
+  workflow: "./workflows/code-review.js",
+  args: {
+    repo: "/abs/path/to/repo",
+    baseRef: "8c1b66f",
+    headRef: "HEAD",
+    packet: "/abs/path/to/repo/artifacts/review/.../packet.md",
+    diff: "/abs/path/to/repo/artifacts/review/.../diff.patch",
+    changedFiles: "/abs/path/to/repo/artifacts/review/.../changed-files.txt",
+    verifyCommands: ["make check"],
+    docs: ["docs/code-quality.md"],
+    reviewers: [
+      { key: "correctness", agent: "reviewer", focus: "async, state, concurrency" },
+      { key: "contract", agent: "reviewer", focus: "CLI, docs, API, protocol" }
+    ]
+  }
+});
+```
+
+Each reviewer gets the pinned base/head, packet and diff paths, the verify
+commands, the contract paths, and the required JSON verdict schema (`ok`,
+`changes_required`, `blocked`). The parent merges the reviewer boards and maps
+P0/P1 to Anima `error` findings, P2 to `warning`. A `blocked` verdict is a
+failed review, not a clean one. Reviewers are read-only.
+
 ## Isolation rules
 
 - One writer per worktree. Create the worktree and branch in the harness, give

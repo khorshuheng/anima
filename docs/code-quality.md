@@ -66,3 +66,30 @@ Use it in the harness/reviewer, not inside every worker:
 - a worktree has its own checkout; do not assume the main index describes it.
 
 `make graph-sync` wraps `codegraph sync`.
+
+## Independent review packet
+
+Review is a separate phase from build gates. Pinning the change makes the review
+reproducible and prevents a reviewer from silently reviewing only the working
+tree:
+
+```bash
+scripts/review-packet.sh 8c1b66f HEAD \
+  --verify "make check" \
+  --doc docs/code-quality.md \
+  --doc .agents/skills/anima-orchestration/SKILL.md
+# or: make review-packet BASE=8c1b66f HEAD=HEAD
+```
+
+The packet is written to `artifacts/review/<base>..<head>/` (gitignored) and
+contains `packet.md`, `diff.patch`, `changed-files.txt` and the commit log.
+Launch review lanes with `workflows/code-review.js`; each lane is read-only and
+must return:
+
+- `verdict: ok | changes_required | blocked`
+- `diffReviewed` plus `findings` (`P0/P1/P2`, kind, path/line, evidence label)
+- `notExamined` and `testsRun`
+
+A blocked verdict, or a reviewer that could not read the diff, is a failed
+review. P0/P1 findings block completion; P2 findings are recorded. The CLI and
+docs are part of the contract: a documented command that does not run is a P1.
