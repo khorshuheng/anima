@@ -14,3 +14,5 @@ public sealed record AnswersResponse(
     IReadOnlyList<AnswerView> Added,
     IReadOnlyList<QuestionView> Open,
     WorkflowStatus Status);
+
+public sealed record AckAssignmentRequest(string? RunId = null);

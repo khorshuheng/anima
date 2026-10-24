@@ -315,6 +315,129 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             question => Assert.False(question.Answered));
     }
 
+    [Fact]
+    public async Task Spec_hash_is_deterministic_and_exposed_on_state_and_context()
+    {
+        var store = CreateStore();
+        var first = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        var second = await store.CreateAsync(new WorkflowStart("W2", "R2", _repoPath));
+
+        var spec = await store.WriteSpecAsync(first.Id, new SpecInput(
+            "# Spec\r\n\r\nDo the thing.\r\n",
+            [
+                new SpecTaskInput("api", "Add endpoint", "POST /x", ["201"], ["dotnet test"]),
+                new SpecTaskInput("docs", "Update docs", "Explain /x"),
+            ]));
+        var sameSpec = await store.WriteSpecAsync(second.Id, new SpecInput(
+            "# Spec\n\nDo the thing.\n",
+            [
+                new SpecTaskInput("api", "Add endpoint", "POST /x", ["201"], ["dotnet test"]),
+                new SpecTaskInput("docs", "Update docs", "Explain /x"),
+            ]));
+
+        Assert.Equal(64, spec.Hash.Length);
+        Assert.Equal(spec.Hash, sameSpec.Hash);
+
+        var state = await store.GetAsync(first.Id);
+        Assert.Equal(1, state!.SpecVersion);
+        Assert.Equal(spec.Hash, state.SpecHash);
+
+        var context = await store.GetContextAsync(first.Id, "api");
+        Assert.Equal(1, context.SpecVersion);
+        Assert.Equal(spec.Hash, context.SpecHash);
+
+        var revised = await store.WriteSpecAsync(first.Id, new SpecInput(
+            "# Spec\n\nDo the thing.\n",
+            [
+                new SpecTaskInput("api", "Add endpoint", "POST /x", ["201"], ["dotnet test"]),
+                new SpecTaskInput("docs", "Update docs", "Explain /x and /y"),
+            ]));
+        Assert.Equal(2, revised.Version);
+        Assert.NotEqual(spec.Hash, revised.Hash);
+        Assert.Equal(revised.Hash, (await store.GetAsync(first.Id))!.SpecHash);
+    }
+
+    [Fact]
+    public async Task Assignment_ack_persists_message_correlation()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec", [new SpecTaskInput("api", "API")]));
+
+        var assignment = await store.RegisterAssignmentAsync(workflow.Id, new AssignmentInput(
+            "api",
+            "impl-api",
+            "/tmp/worktrees/api",
+            "anima/api",
+            MessageId: "msg-42"));
+        Assert.Equal("msg-42", assignment.MessageId);
+        Assert.Null(assignment.AcknowledgedAt);
+        Assert.Null(assignment.RunId);
+
+        var acknowledged = await store.AcknowledgeAssignmentAsync(workflow.Id, "api", "run-7");
+
+        Assert.Equal("msg-42", acknowledged.MessageId);
+        Assert.NotNull(acknowledged.AcknowledgedAt);
+        Assert.Equal("run-7", acknowledged.RunId);
+        var persisted = Assert.Single(await store.GetAssignmentsAsync(workflow.Id));
+        Assert.Equal(acknowledged.AcknowledgedAt, persisted.AcknowledgedAt);
+        Assert.Equal("run-7", persisted.RunId);
+
+        var context = await store.GetContextAsync(workflow.Id, "api");
+        Assert.Equal("msg-42", context.Assignment!.MessageId);
+        Assert.Equal("run-7", context.Assignment.RunId);
+
+        await Assert.ThrowsAsync<WorkflowNotFoundException>(
+            () => store.AcknowledgeAssignmentAsync(workflow.Id, "missing"));
+    }
+
+    [Fact]
+    public async Task Result_evidence_round_trips_and_defaults_are_empty()
+    {
+        var store = CreateStore();
+        var workflow = await store.CreateAsync(new WorkflowStart("W", "R", _repoPath));
+        await store.WriteSpecAsync(workflow.Id, new SpecInput("spec",
+        [
+            new SpecTaskInput("api", "API"),
+            new SpecTaskInput("docs", "Docs"),
+        ]));
+
+        await store.AddResultAsync(workflow.Id, new ResultInput(
+            "api",
+            WorkflowResultKind.Implementation,
+            true,
+            "implemented",
+            ChangedFiles: ["src/Api.cs"],
+            AgentId: "impl-api",
+            HeadSha: "abc123",
+            Branch: "anima/api",
+            BaseRef: "main",
+            RunId: "run-7",
+            TestCommands: ["dotnet test Anima.Workflow.slnf"],
+            ArtifactPaths: ["artifacts/api.trx"]));
+
+        var evidence = (await store.GetResultsAsync(workflow.Id)).Single();
+        Assert.Equal("abc123", evidence.HeadSha);
+        Assert.Equal("anima/api", evidence.Branch);
+        Assert.Equal("main", evidence.BaseRef);
+        Assert.Equal("run-7", evidence.RunId);
+        Assert.Equal(["dotnet test Anima.Workflow.slnf"], evidence.TestCommands.ToArray());
+        Assert.Equal(["artifacts/api.trx"], evidence.ArtifactPaths.ToArray());
+
+        var context = await store.GetContextAsync(workflow.Id, "api");
+        Assert.Equal("abc123", context.LastResult!.HeadSha);
+        Assert.Equal(["artifacts/api.trx"], context.LastResult.ArtifactPaths.ToArray());
+
+        await store.AddResultAsync(workflow.Id, new ResultInput("docs", WorkflowResultKind.Implementation, true, "docs"));
+        var defaults = (await store.GetResultsAsync(workflow.Id)).Single(result => result.TaskKey == "docs");
+        Assert.Null(defaults.HeadSha);
+        Assert.Null(defaults.Branch);
+        Assert.Null(defaults.BaseRef);
+        Assert.Null(defaults.RunId);
+        Assert.Empty(defaults.TestCommands);
+        Assert.Empty(defaults.ArtifactPaths);
+    }
+
     private KnowledgeWorkflowStore CreateStore(WorkflowOptions? options = null)
     {
         var graph = new InMemoryKnowledgeGraph(

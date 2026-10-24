@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Anima.Knowledge;
 using Microsoft.Extensions.Logging;
@@ -414,6 +416,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
 
         var previous = await GetSpecAsync(workflowId, cancellationToken);
         var version = (previous?.Version ?? 0) + 1;
+        var hash = ComputeSpecHash(spec.Markdown, tasks);
         var specNode = await _graph.CreateNodeAsync(
             new NodeDraft(
                 KnowledgeKinds.Spec,
@@ -424,6 +427,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 {
                     ["workflowId"] = Id(workflowId),
                     ["version"] = version.ToString(CultureInfo.InvariantCulture),
+                    ["hash"] = hash,
                 }),
             cancellationToken);
 
@@ -573,6 +577,10 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             ["branch"] = assignment.Branch,
             ["status"] = "assigned",
         };
+        if (!string.IsNullOrWhiteSpace(assignment.MessageId))
+        {
+            properties["messageId"] = assignment.MessageId;
+        }
 
         var existing = await FindAssignmentNodeAsync(workflowId, assignment.TaskKey, cancellationToken);
         var node = existing is null
@@ -629,6 +637,58 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             cancellationToken);
         await RefreshStatusAsync(workflowId, "assignment registered", cancellationToken);
         return MapAssignment(node);
+    }
+
+    public async Task<AssignmentView> AcknowledgeAssignmentAsync(
+        long workflowId,
+        string taskKey,
+        string? runId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await _mutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await AcknowledgeAssignmentCoreAsync(workflowId, taskKey, runId, cancellationToken);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    private async Task<AssignmentView> AcknowledgeAssignmentCoreAsync(
+        long workflowId,
+        string taskKey,
+        string? runId,
+        CancellationToken cancellationToken = default)
+    {
+        Require(taskKey, "taskKey");
+        await RequireWorkflowAsync(workflowId, cancellationToken);
+        var node = await FindAssignmentNodeAsync(workflowId, taskKey, cancellationToken)
+            ?? throw new WorkflowNotFoundException($"no assignment for task '{taskKey}'");
+
+        var properties = new Dictionary<string, string>(node.Properties, StringComparer.Ordinal)
+        {
+            ["acknowledgedAt"] = (ParseNullableDate(node.Properties.GetValueOrDefault("acknowledgedAt"))
+                ?? DateTimeOffset.UtcNow).ToString("O", CultureInfo.InvariantCulture),
+        };
+        if (!string.IsNullOrWhiteSpace(runId))
+        {
+            properties["runId"] = runId;
+        }
+
+        var updated = await _graph.UpdateNodeAsync(
+            node.Id,
+            new NodePatch(Properties: properties),
+            cancellationToken);
+        await PublishEventAsync(
+            workflowId,
+            "assignment.acknowledged",
+            ParseStatus((await RequireWorkflowAsync(workflowId, cancellationToken)).Properties),
+            [node.Id],
+            $"{taskKey} acknowledged",
+            cancellationToken);
+        return MapAssignment(updated);
     }
 
     public async Task<bool> RemoveAssignmentAsync(
@@ -808,6 +868,29 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             properties["worktreePath"] = result.WorktreePath;
         }
 
+        if (!string.IsNullOrWhiteSpace(result.HeadSha))
+        {
+            properties["headSha"] = result.HeadSha;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.Branch))
+        {
+            properties["branch"] = result.Branch;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.BaseRef))
+        {
+            properties["baseRef"] = result.BaseRef;
+        }
+
+        if (!string.IsNullOrWhiteSpace(result.RunId))
+        {
+            properties["runId"] = result.RunId;
+        }
+
+        properties["testCommands"] = JsonSerializer.Serialize(result.TestCommands ?? [], JsonOptions);
+        properties["artifactPaths"] = JsonSerializer.Serialize(result.ArtifactPaths ?? [], JsonOptions);
+
         var node = await _graph.CreateNodeAsync(
             new NodeDraft(
                 KnowledgeKinds.Result,
@@ -939,6 +1022,8 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             task?.AcceptanceCriteria ?? [],
             task?.VerifyCommands ?? [],
             spec?.Id,
+            spec?.Version,
+            spec?.Hash,
             assignment,
             lastResult);
     }
@@ -999,6 +1084,8 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             workflow.Properties.GetValueOrDefault("repoPath") ?? string.Empty,
             workflow.Properties.GetValueOrDefault("baseRef") ?? "main",
             spec?.Id,
+            spec?.Version,
+            spec?.Hash,
             questions.Count,
             spec?.Tasks.Count(task => task.Role == WorkflowTaskRole.Implementation) ?? 0,
             completed,
@@ -1321,7 +1408,10 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         node.Properties.GetValueOrDefault("path") ?? node.Content,
         node.Properties.GetValueOrDefault("branch") ?? string.Empty,
         node.Properties.GetValueOrDefault("status") ?? "assigned",
-        node.UpdatedAt);
+        node.UpdatedAt,
+        NullIfEmpty(node.Properties.GetValueOrDefault("messageId")),
+        ParseNullableDate(node.Properties.GetValueOrDefault("acknowledgedAt")),
+        NullIfEmpty(node.Properties.GetValueOrDefault("runId")));
 
     private static ResultView MapResult(KnowledgeNode node, IReadOnlyList<KnowledgeNode> findings)
     {
@@ -1339,6 +1429,12 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 NullIfEmpty(finding.Properties.GetValueOrDefault("path")),
                 ParseNullableInt(finding.Properties.GetValueOrDefault("line")))).ToArray(),
             NullIfEmpty(node.Properties.GetValueOrDefault("agentId")),
+            NullIfEmpty(node.Properties.GetValueOrDefault("headSha")),
+            NullIfEmpty(node.Properties.GetValueOrDefault("branch")),
+            NullIfEmpty(node.Properties.GetValueOrDefault("baseRef")),
+            NullIfEmpty(node.Properties.GetValueOrDefault("runId")),
+            DeserializeList(node.Properties.GetValueOrDefault("testCommands")),
+            DeserializeList(node.Properties.GetValueOrDefault("artifactPaths")),
             node.CreatedAt);
     }
 
@@ -1352,7 +1448,8 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             node.Content,
             tasks,
             ParseNullableInt(node.Properties.GetValueOrDefault("version")) ?? 1,
-            node.UpdatedAt);
+            node.UpdatedAt,
+            node.Properties.GetValueOrDefault("hash") ?? string.Empty);
     }
 
     private static List<SpecTaskView> DeserializeTasks(string? json)
@@ -1388,6 +1485,15 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             return [];
         }
     }
+
+    private static DateTimeOffset? ParseNullableDate(string? value)
+        => DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind,
+            out var parsed)
+            ? parsed
+            : null;
 
     private static WorkflowStatus ParseStatus(IReadOnlyDictionary<string, string> properties)
         => ParseStatus(properties.GetValueOrDefault("status"));
@@ -1425,6 +1531,33 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
     private static string Wire(FindingSeverity severity) => severity.ToString().ToLowerInvariant();
 
     private static string Id(long id) => id.ToString(CultureInfo.InvariantCulture);
+
+    private static string ComputeSpecHash(string markdown, IReadOnlyList<SpecTaskInput> tasks)
+    {
+        var canonical = new StringBuilder();
+        AppendHashField(
+            canonical,
+            markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').TrimEnd());
+        foreach (var task in tasks)
+        {
+            AppendHashField(canonical, task.Key);
+            AppendHashField(canonical, task.Title);
+            AppendHashField(canonical, task.Description ?? string.Empty);
+            AppendHashField(canonical, JsonSerializer.Serialize(task.AcceptanceCriteria ?? [], JsonOptions));
+            AppendHashField(canonical, JsonSerializer.Serialize(task.VerifyCommands ?? [], JsonOptions));
+            AppendHashField(canonical, Wire(task.Role));
+        }
+
+        return Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
+    }
+
+    private static void AppendHashField(StringBuilder builder, string value)
+        => builder
+            .Append(value.Length.ToString(CultureInfo.InvariantCulture))
+            .Append(':')
+            .Append(value)
+            .Append('\n');
 
     private string? Clip(string? value)
     {

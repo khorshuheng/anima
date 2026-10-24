@@ -28,6 +28,7 @@ internal static class WorkflowCommands
                 "spec-write" => await SpecWriteAsync(http, args),
                 "assignments" => await GetAsync(http, $"api/workflows/{RequireId(args)}/assignments"),
                 "assign" => await AssignAsync(http, args),
+                "ack" => await AckAsync(http, args),
                 "unassign" => await UnassignAsync(http, args),
                 "results" => await GetAsync(http, $"api/workflows/{RequireId(args)}/results"),
                 "result" => await ResultAsync(http, args),
@@ -167,7 +168,22 @@ internal static class WorkflowCommands
         return await PostAsync(
             http,
             $"api/workflows/{RequireId(args)}/assignments",
-            new AssignmentInput(taskKey, agent, path, branch, CliJson.Option(args, "--note")));
+            new AssignmentInput(
+                taskKey,
+                agent,
+                path,
+                branch,
+                CliJson.Option(args, "--note"),
+                CliJson.Option(args, "--message-id")));
+    }
+
+    private static async Task<int> AckAsync(HttpClient http, string[] args)
+    {
+        var taskKey = CliJson.Option(args, "--task") ?? throw new WorkflowValidationException("--task is required");
+        return await PostAsync(
+            http,
+            $"api/workflows/{RequireId(args)}/assignments/{Uri.EscapeDataString(taskKey)}/ack",
+            new { runId = CliJson.Option(args, "--run") });
     }
 
     private static async Task<int> UnassignAsync(HttpClient http, string[] args)
@@ -209,7 +225,13 @@ internal static class WorkflowCommands
                 findings,
                 CliJson.Option(args, "--agent"),
                 CliJson.Option(args, "--worktree"),
-                CliJson.Option(args, "--output-tail")));
+                CliJson.Option(args, "--output-tail"),
+                CliJson.Option(args, "--head-sha"),
+                CliJson.Option(args, "--branch"),
+                CliJson.Option(args, "--base-ref"),
+                CliJson.Option(args, "--run-id"),
+                CliJson.OptionValues(args, "--test"),
+                CliJson.OptionValues(args, "--artifact")));
     }
 
     private static async Task<int> DispatchAsync(HttpClient http, string[] args)
@@ -293,10 +315,11 @@ internal static class WorkflowCommands
               anima workflow spec <id>
               anima workflow spec-write <id> --file <spec.md> [--tasks <tasks.json>] [--name <n>]
               anima workflow assignments <id>
-              anima workflow assign <id> --task <key> --agent <id> --path <worktree> --branch <branch>
+              anima workflow assign <id> --task <key> --agent <id> --path <worktree> --branch <branch> [--message-id <id>]
+              anima workflow ack <id> --task <key> [--run <id>]
               anima workflow unassign <id> --task <key>
               anima workflow results <id>
-              anima workflow result <id> [--task <key>] --kind <implementation|merge|review|verification> [--failure] --summary <text> [--changed-file <p>] [--conflict <p>] [--finding <severity:msg>] [--agent <id>]
+              anima workflow result <id> [--task <key>] --kind <implementation|merge|review|verification> [--failure] --summary <text> [--changed-file <p>] [--conflict <p>] [--finding <severity:msg>] [--agent <id>] [--head-sha <sha>] [--branch <ref>] [--base-ref <ref>] [--run-id <id>] [--test <cmd>] [--artifact <path>]
               anima workflow timeline <id>
               anima workflow dispatch <id> --agent <id> --role <role> --instructions <text> [--context <json-file>] [--timeout <s>]
               anima workflow api <METHOD> <path> [json|@file]
