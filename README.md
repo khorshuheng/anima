@@ -14,9 +14,10 @@ creates a worktree.
 | `Anima.Bus.Service` | 7412 | Agent message transport: publish, SSE subscribe, contract validation |
 | `Anima.Automation.Service` | 7413 | CDP-capable UI automation sessions and YAML script execution |
 | `Anima.Deploy.Service` | 7414 | Git-push sink that runs repo-owned deploy scripts |
-| `Anima.Workflow.Service` | 7415 | Durable workflow state: questions, spec, assignments, results, timeline; serves the UI at `/ui` |
+| `Anima.Workflow.Service` | 7415 | Durable workflow state: questions, spec, assignments, results, timeline |
+| `Anima.Dashboard.Service` | 7416 | Read-only dashboard: serves `ui/dist` at `/` and proxies workflow, graph and bus reads |
 
-Ports live in `src/Anima.Hosting/AnimaPorts.cs`. `make dev` starts the five
+Ports live in `src/Anima.Hosting/AnimaPorts.cs`. `make dev` starts the six
 services; agent harnesses are not started by Anima.
 
 ## Layout
@@ -34,8 +35,9 @@ src/
   Anima.Automation.*        driver/session abstractions, Playwright driver, YAML DSL, host
   Anima.Deploy.*            hook normalization/validation, script runner, host
   Anima.Workflow.*          state models, graph-backed store, bus dispatcher, host
+  Anima.Dashboard.Service   unified dashboard host and read-only BFF proxy
   Anima.Hosting             shared host defaults, repo layout, ports
-ui/                         React/Vite read-only workflow visualizer (served at /ui)
+ui/                         React/Vite read-only dashboard (served at / by the dashboard)
 tools/Anima.Cli             harness-facing CLI: contracts, scripts, browser, bus, knowledge, workflow
 tests/                      one xUnit project per component
 .agents/skills/             project skill: anima-orchestration (harness runbook)
@@ -52,11 +54,11 @@ make contracts      # .proto -> contracts/descriptors/anima.pb
 make build
 make test
 make ui-build       # React UI -> ui/dist (make dev does this too)
-make dev            # knowledge, bus, automation, deploy, workflow
+make dev            # knowledge, bus, automation, deploy, workflow, dashboard
 make browser-check  # Chrome executable Playwright will launch
 ```
 
-UI: `http://127.0.0.1:7415/ui/`. Vite dev server: `make ui-dev`.
+Dashboard UI: `http://127.0.0.1:7416/`. Vite dev server: `make ui-dev`.
 Windows: `make` is optional; run the underlying `dotnet`/`npm` commands. The
 deployment target has **no PowerShell assumption** (see Deploy below).
 
@@ -109,7 +111,7 @@ Facts, not guesses, drive the state:
    implementation, a successful merge exists, and a review passes without error
    findings.
 
-Inspect it at `http://127.0.0.1:7415/ui/` or with `anima workflow show <id>`.
+Inspect it at `http://127.0.0.1:7416/` or with `anima workflow show <id>`.
 Knowledge plans can be created in Anima's own graph with
 `anima knowledge create-node` / `anima knowledge plan --file plan.json`.
 

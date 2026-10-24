@@ -12,5 +12,6 @@ dotnet run --project src/Anima.Bus.Service &
 dotnet run --project src/Anima.Automation.Service &
 dotnet run --project src/Anima.Deploy.Service &
 dotnet run --project src/Anima.Workflow.Service &
+dotnet run --project src/Anima.Dashboard.Service &
 
 wait

@@ -1,7 +1,8 @@
 # Workflow UI
 
-Read-only React/Vite visualizer, served by `Anima.Workflow.Service` at
-`http://127.0.0.1:7415/ui/` after `make ui-build`.
+Read-only React/Vite dashboard, served by `Anima.Dashboard.Service` at
+`http://127.0.0.1:7416/` after `make ui-build`. `Anima.Workflow.Service` is
+API-only; the dashboard proxies reads under `/api/dashboard/*`.
 
 What it shows:
 
@@ -16,18 +17,18 @@ What it shows:
 Live updates come from the bus:
 
 ```text
-http://127.0.0.1:7412/api/bus/stream?topics=anima.**
+http://127.0.0.1:7416/api/dashboard/bus/stream?topics=anima.**
 ```
 
-The bus service allows `http://127.0.0.1:7415`, `http://localhost:7415` and the
-Vite dev origins. If SSE fails, the UI polls every 10 seconds.
+The dashboard proxies the SSE stream to the bus at `:7412` on the same origin.
+If SSE fails, the UI polls every 10 seconds.
 
 Development:
 
 ```bash
 make ui-install
-make ui-dev      # http://localhost:5173, /api proxied to :7415
-make ui-build    # ui/dist, served at /ui/
+make ui-dev      # http://localhost:5173, /api proxied to :7416
+make ui-build    # ui/dist, served at / by the dashboard
 ```
 
 The UI does not mutate workflows; the harness and agents post facts through the

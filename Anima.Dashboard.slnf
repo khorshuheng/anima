@@ -1,0 +1,9 @@
+{
+  "solution": {
+    "path": "Anima.sln",
+    "projects": [
+      "src/Anima.Dashboard.Service/Anima.Dashboard.Service.csproj",
+      "tests/Anima.Dashboard.Service.Tests/Anima.Dashboard.Service.Tests.csproj"
+    ]
+  }
+}

@@ -33,21 +33,31 @@ public static class AnimaServiceDefaults
         return builder;
     }
 
-    /// <summary>Maps the common endpoints and pipeline shared by all services.</summary>
-    public static WebApplication UseAnimaServiceDefaults(this WebApplication app, string serviceName)
+    /// <summary>
+    /// Maps the common endpoints and pipeline shared by all services. Set
+    /// <paramref name="mapServiceInfo"/> to false when the service owns `/`, as the
+    /// dashboard does for the UI.
+    /// </summary>
+    public static WebApplication UseAnimaServiceDefaults(
+        this WebApplication app,
+        string serviceName,
+        bool mapServiceInfo = true)
     {
         ArgumentNullException.ThrowIfNull(app);
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
 
         app.UseExceptionHandler();
 
-        app.MapGet("/", (AnimaServiceInfo info) => Results.Ok(new
+        if (mapServiceInfo)
         {
-            service = info.Name,
-            version = info.Version,
-            health = "/health",
-            openapi = "/openapi/v1.json",
-        }));
+            app.MapGet("/", (AnimaServiceInfo info) => Results.Ok(new
+            {
+                service = info.Name,
+                version = info.Version,
+                health = "/health",
+                openapi = "/openapi/v1.json",
+            }));
+        }
 
         app.MapHealthChecks("/health");
         app.MapHealthChecks("/api/health");
