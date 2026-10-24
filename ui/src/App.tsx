@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BusTab } from './BusTab';
-import { GraphTab } from './GraphTab';
+import { GraphErrorBoundary } from './GraphErrorBoundary';
 import { WorkflowsTab } from './WorkflowsTab';
 import { useBusStream } from './useBusStream';
 import type { BusStreamEvent } from './types';
+
+const GraphTab = lazy(() => import('./GraphTab').then((module) => ({ default: module.GraphTab })));
 
 type Tab = 'workflows' | 'graph' | 'bus';
 
@@ -89,7 +91,13 @@ export default function App() {
           revision={revision}
         />
       )}
-      {tab === 'graph' && <GraphTab revision={revision} />}
+      {tab === 'graph' && (
+        <GraphErrorBoundary onRetry={() => window.location.reload()}>
+          <Suspense fallback={<div className="panel graph-loading">Loading graph…</div>}>
+            <GraphTab revision={revision} />
+          </Suspense>
+        </GraphErrorBoundary>
+      )}
       {tab === 'bus' && <BusTab events={events} status={status} revision={revision} />}
     </div>
   );

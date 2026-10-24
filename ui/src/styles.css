@@ -382,3 +382,8 @@ summary { cursor: pointer; color: var(--accent); font-size: 12px; }
 }
 .graph-filter-toggle input { accent-color: var(--accent); }
 .inspector-focus { margin-top: 10px; }
+.graph-loading {
+  margin: 20px 24px 60px;
+  color: var(--muted);
+  font-size: 13px;
+}

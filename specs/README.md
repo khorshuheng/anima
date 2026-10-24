@@ -34,3 +34,11 @@ Run (browser must be installed and selected explicitly):
 ```bash
 dotnet run --project tools/Anima.Cli -- scripts run specs/login-smoke.yaml --browser firefox --base-url http://uat.local
 ```
+
+## Error-path check
+
+The Graph tab is a lazy chunk. To verify the boundary manually, block or delete
+the generated `assets/GraphTab-*.js` request after the dashboard has loaded,
+open **Graph**, and confirm the Workflows and Bus tabs still work. The panel
+offers **Reload page**; a fresh page load is required because a stale hashed
+chunk cannot be recovered by re-importing it.
