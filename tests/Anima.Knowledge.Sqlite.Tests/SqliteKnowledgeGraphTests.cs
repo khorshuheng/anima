@@ -230,6 +230,113 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
             () => graph.CreateTaskAsync(new TaskDraft("Orphan", Parent: loose.Id)));
     }
 
+    [Fact]
+    public async Task Graph_snapshot_returns_ordered_summaries_with_totals()
+    {
+        using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima", "the repo"));
+        var plan = await graph.CreatePlanAsync(new PlanDraft(
+            "Ship the dashboard",
+            Anchor: new PlanAnchor(repo.Id, KnowledgeEdgeTypes.BelongsTo),
+            Tasks:
+            [
+                new PlanTaskDraft("api", "Graph API", "snapshot endpoint"),
+                new PlanTaskDraft("ui", "Graph tab", DependsOn: ["api"]),
+            ]));
+        var goal = plan.Goal!;
+        var api = plan.Tasks.Single(task => task.Key == "api").Node;
+        var ui = plan.Tasks.Single(task => task.Key == "ui").Node;
+        var change = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Change, "Ship it"));
+        await graph.AddEdgeAsync(new EdgeDraft(change.Id, api.Id, KnowledgeEdgeTypes.Implements));
+
+        var snapshot = await graph.GetGraphAsync(new GraphSnapshotQuery());
+
+        Assert.False(snapshot.Truncated);
+        Assert.Equal(5, snapshot.NodeCount);
+        Assert.Equal(5, snapshot.EdgeCount);
+        Assert.Equal(
+            new[] { repo.Id, goal.Id, api.Id, ui.Id, change.Id },
+            snapshot.Nodes.Select(node => node.Id));
+        Assert.Equal(
+            snapshot.Edges.Select(edge => edge.Id).Order(),
+            snapshot.Edges.Select(edge => edge.Id));
+        Assert.Equal(5, snapshot.Edges.Count);
+        Assert.Equal("snapshot endpoint", snapshot.Nodes.Single(node => node.Id == api.Id).Description);
+        Assert.True(snapshot.Nodes.Single(node => node.Id == api.Id).Resolved);
+        Assert.False(snapshot.Nodes.Single(node => node.Id == goal.Id).Resolved);
+        Assert.Contains(
+            snapshot.Edges,
+            edge => edge.Source == change.Id &&
+                    edge.Destination == api.Id &&
+                    edge.EdgeType == KnowledgeEdgeTypes.Implements);
+    }
+
+    [Fact]
+    public async Task Graph_snapshot_caps_nodes_and_edges_and_keeps_only_internal_edges()
+    {
+        using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var plan = await graph.CreatePlanAsync(new PlanDraft(
+            "Goal",
+            Anchor: new PlanAnchor(repo.Id, KnowledgeEdgeTypes.BelongsTo),
+            Tasks:
+            [
+                new PlanTaskDraft("api", "Graph API"),
+                new PlanTaskDraft("ui", "Graph tab", DependsOn: ["api"]),
+            ]));
+        var change = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Change, "Ship it"));
+        await graph.AddEdgeAsync(
+            new EdgeDraft(change.Id, plan.Tasks.Single(task => task.Key == "api").Node.Id, KnowledgeEdgeTypes.Implements));
+
+        var nodeCapped = await graph.GetGraphAsync(new GraphSnapshotQuery { MaxNodes = 2, MaxEdges = 10 });
+
+        Assert.True(nodeCapped.Truncated);
+        Assert.Equal(5, nodeCapped.NodeCount);
+        Assert.Equal(5, nodeCapped.EdgeCount);
+        Assert.Equal(new[] { repo.Id, plan.Goal!.Id }, nodeCapped.Nodes.Select(node => node.Id));
+        Assert.Single(nodeCapped.Edges);
+        Assert.Equal(KnowledgeEdgeTypes.BelongsTo, nodeCapped.Edges[0].EdgeType);
+
+        var singleNode = await graph.GetGraphAsync(new GraphSnapshotQuery { MaxNodes = 1, MaxEdges = 10 });
+        Assert.Single(singleNode.Nodes);
+        Assert.Empty(singleNode.Edges);
+        Assert.True(singleNode.Truncated);
+
+        var edgeCapped = await graph.GetGraphAsync(new GraphSnapshotQuery { MaxNodes = 10, MaxEdges = 2 });
+        Assert.Equal(5, edgeCapped.Nodes.Count);
+        Assert.Equal(2, edgeCapped.Edges.Count);
+        Assert.True(edgeCapped.Truncated);
+        Assert.Equal(
+            edgeCapped.Edges.Select(edge => edge.Id).Order(),
+            edgeCapped.Edges.Select(edge => edge.Id));
+    }
+
+    [Fact]
+    public async Task Graph_snapshot_clamps_caps_to_the_supported_range()
+    {
+        var minimum = new GraphSnapshotQuery { MaxNodes = 0, MaxEdges = -5 };
+        var maximum = new GraphSnapshotQuery { MaxNodes = 99_999, MaxEdges = 99_999 };
+
+        Assert.Equal(GraphSnapshotQuery.MinCap, minimum.EffectiveMaxNodes);
+        Assert.Equal(GraphSnapshotQuery.MinCap, minimum.EffectiveMaxEdges);
+        Assert.Equal(GraphSnapshotQuery.MaxCap, maximum.EffectiveMaxNodes);
+        Assert.Equal(GraphSnapshotQuery.MaxCap, maximum.EffectiveMaxEdges);
+        Assert.Equal(500, new GraphSnapshotQuery().EffectiveMaxNodes);
+        Assert.Equal(1000, new GraphSnapshotQuery().EffectiveMaxEdges);
+
+        using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var goal = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Goal, "Loose"));
+        await graph.AddEdgeAsync(new EdgeDraft(goal.Id, repo.Id, KnowledgeEdgeTypes.BelongsTo));
+
+        var clamped = await graph.GetGraphAsync(new GraphSnapshotQuery { MaxNodes = 0, MaxEdges = 0 });
+
+        Assert.Single(clamped.Nodes);
+        Assert.Equal(repo.Id, clamped.Nodes[0].Id);
+        Assert.Empty(clamped.Edges);
+        Assert.True(clamped.Truncated);
+    }
+
     private static SqliteKnowledgeGraph CreateGraph(string path) => new(
         Options.Create(new SqliteKnowledgeOptions
         {

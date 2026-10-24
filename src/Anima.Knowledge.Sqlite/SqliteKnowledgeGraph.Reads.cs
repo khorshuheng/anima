@@ -193,6 +193,83 @@ public sealed partial class SqliteKnowledgeGraph
         return new GraphHealth(nodeCount, edgeCount, isolated, unanchored, duplicates);
     }
 
+    public async Task<GraphSnapshot> GetGraphAsync(
+        GraphSnapshotQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var maxNodes = query.EffectiveMaxNodes;
+        var maxEdges = query.EffectiveMaxEdges;
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+
+        var nodes = new List<GraphSnapshotNode>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"""
+                SELECT n.id, k.name, n.name, n.description,
+                       CASE WHEN {ResolvedExists} THEN 1 ELSE 0 END AS resolved
+                FROM node n JOIN node_kind k ON k.id = n.kind_id
+                ORDER BY n.id
+                LIMIT $maxNodes;
+                """;
+            command.Parameters.AddWithValue("$maxNodes", maxNodes);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                nodes.Add(new GraphSnapshotNode(
+                    reader.GetInt64(0),
+                    reader.GetString(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    reader.GetInt64(4) != 0));
+            }
+        }
+
+        // Both endpoints must be inside the node window, so the subqueries repeat the
+        // node ordering and cap instead of materializing an id list client-side.
+        var edges = new List<GraphSnapshotEdge>();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT e.id, e.source, e.destination, t.name
+                FROM edge e JOIN edge_type t ON t.id = e.edge_type_id
+                WHERE e.source IN (SELECT id FROM node ORDER BY id LIMIT $maxNodes)
+                  AND e.destination IN (SELECT id FROM node ORDER BY id LIMIT $maxNodes)
+                ORDER BY e.id
+                LIMIT $maxEdges;
+                """;
+            command.Parameters.AddWithValue("$maxNodes", maxNodes);
+            command.Parameters.AddWithValue("$maxEdges", maxEdges);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                edges.Add(new GraphSnapshotEdge(
+                    reader.GetInt64(0),
+                    reader.GetInt64(1),
+                    reader.GetInt64(2),
+                    reader.GetString(3)));
+            }
+        }
+
+        int nodeCount;
+        int edgeCount;
+        await using (var countCommand = connection.CreateCommand())
+        {
+            countCommand.CommandText = "SELECT (SELECT COUNT(*) FROM node), (SELECT COUNT(*) FROM edge);";
+            await using var reader = await countCommand.ExecuteReaderAsync(cancellationToken);
+            await reader.ReadAsync(cancellationToken);
+            nodeCount = (int)reader.GetInt64(0);
+            edgeCount = (int)reader.GetInt64(1);
+        }
+
+        return new GraphSnapshot(
+            nodes,
+            edges,
+            nodeCount,
+            edgeCount,
+            nodeCount > nodes.Count || edgeCount > edges.Count);
+    }
+
     private async Task<NodePage> QueryAsync(
         NodeQuery query,
         string[]? searchText,

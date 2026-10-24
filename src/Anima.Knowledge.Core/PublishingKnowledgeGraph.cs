@@ -118,6 +118,9 @@ public sealed class PublishingKnowledgeGraph : IKnowledgeGraph, IAsyncDisposable
     public async Task<GraphHealth> GetHealthAsync(CancellationToken cancellationToken = default)
         => await _inner.GetHealthAsync(cancellationToken);
 
+    public async Task<GraphSnapshot> GetGraphAsync(GraphSnapshotQuery query, CancellationToken cancellationToken = default)
+        => await _inner.GetGraphAsync(query, cancellationToken);
+
     public async Task<PlanResult> CreatePlanAsync(PlanDraft plan, CancellationToken cancellationToken = default)
     {
         var result = await _inner.CreatePlanAsync(plan, cancellationToken);

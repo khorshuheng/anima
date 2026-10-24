@@ -155,6 +155,38 @@ public sealed class InMemoryKnowledgeGraphTests
         Assert.Contains(scoped.Items, node => node.Id == plan.Tasks[0].Node.Id);
     }
 
+    [Fact]
+    public async Task Graph_snapshot_orders_by_id_and_enforces_caps()
+    {
+        var graph = CreateGraph();
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var plan = await graph.CreatePlanAsync(new PlanDraft(
+            "Goal",
+            Anchor: new PlanAnchor(repo.Id, KnowledgeEdgeTypes.BelongsTo),
+            Tasks:
+            [
+                new PlanTaskDraft("api", "Graph API"),
+                new PlanTaskDraft("ui", "Graph tab", DependsOn: ["api"]),
+            ]));
+
+        var all = await graph.GetGraphAsync(new GraphSnapshotQuery());
+
+        Assert.False(all.Truncated);
+        Assert.Equal(4, all.NodeCount);
+        Assert.Equal(4, all.EdgeCount);
+        Assert.Equal(
+            new[] { repo.Id, plan.Goal!.Id, plan.Tasks[0].Node.Id, plan.Tasks[1].Node.Id },
+            all.Nodes.Select(node => node.Id));
+
+        var capped = await graph.GetGraphAsync(new GraphSnapshotQuery { MaxNodes = 2, MaxEdges = 1 });
+
+        Assert.True(capped.Truncated);
+        Assert.Equal(2, capped.Nodes.Count);
+        Assert.Single(capped.Edges);
+        Assert.All(capped.Edges, edge => Assert.Contains(edge.Source, capped.Nodes.Select(node => node.Id)));
+        Assert.All(capped.Edges, edge => Assert.Contains(edge.Destination, capped.Nodes.Select(node => node.Id)));
+    }
+
     private static InMemoryKnowledgeGraph CreateGraph() => new(
         Options.Create(new KnowledgeOptions()),
         NullLogger<InMemoryKnowledgeGraph>.Instance);

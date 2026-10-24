@@ -415,6 +415,25 @@ app.MapGet("/api/graph-health", async (IKnowledgeGraph graph, CancellationToken 
     return Results.Ok(health);
 });
 
+// Dashboard snapshot: summary nodes/edges only, capped server-side. GraphSnapshot
+// pins its camelCase wire names because this endpoint is consumed by the dashboard.
+app.MapGet("/api/graph", async (
+    int? maxNodes,
+    int? maxEdges,
+    IKnowledgeGraph graph,
+    CancellationToken cancellationToken) =>
+{
+    var snapshot = await graph.GetGraphAsync(
+        new GraphSnapshotQuery
+        {
+            MaxNodes = maxNodes ?? GraphSnapshotQuery.DefaultMaxNodes,
+            MaxEdges = maxEdges ?? GraphSnapshotQuery.DefaultMaxEdges,
+        },
+        cancellationToken);
+
+    return Results.Ok(snapshot);
+});
+
 app.MapGet("/api/session", (HttpContext context) => Results.Ok(new
 {
     session = context.Request.Headers["X-Session-Id"].FirstOrDefault() ?? "anonymous",
