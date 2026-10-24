@@ -48,6 +48,12 @@ public interface IWorkflowStore
         AssignmentInput assignment,
         CancellationToken cancellationToken = default);
 
+    Task<AssignmentView> AcknowledgeAssignmentAsync(
+        long workflowId,
+        string taskKey,
+        string? runId = null,
+        CancellationToken cancellationToken = default);
+
     Task<bool> RemoveAssignmentAsync(
         long workflowId,
         string taskKey,

@@ -194,6 +194,18 @@ app.MapPost("/api/workflows/{id:long}/assignments", async (
     CancellationToken cancellationToken) =>
     Results.Ok(await store.RegisterAssignmentAsync(id, assignment, cancellationToken)));
 
+app.MapPost("/api/workflows/{id:long}/assignments/{taskKey}/ack", async (
+    long id,
+    string taskKey,
+    AckAssignmentRequest? request,
+    IWorkflowStore store,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await store.AcknowledgeAssignmentAsync(
+        id,
+        taskKey,
+        request?.RunId,
+        cancellationToken)));
+
 app.MapDelete("/api/workflows/{id:long}/assignments/{taskKey}", async (
     long id,
     string taskKey,

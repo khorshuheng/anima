@@ -43,6 +43,8 @@ public sealed record WorkflowState(
     string RepoPath,
     string BaseRef,
     long? SpecId,
+    int? SpecVersion,
+    string? SpecHash,
     int OpenQuestionCount,
     int TaskCount,
     int CompletedTaskCount,
@@ -105,14 +107,16 @@ public sealed record SpecView(
     string Markdown,
     IReadOnlyList<SpecTaskView> Tasks,
     int Version,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string Hash);
 
 public sealed record AssignmentInput(
     string TaskKey,
     string AgentId,
     string WorktreePath,
     string Branch,
-    string? Note = null);
+    string? Note = null,
+    string? MessageId = null);
 
 public sealed record AssignmentView(
     long Id,
@@ -121,7 +125,10 @@ public sealed record AssignmentView(
     string WorktreePath,
     string Branch,
     string Status,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    string? MessageId,
+    DateTimeOffset? AcknowledgedAt,
+    string? RunId);
 
 public sealed record FindingInput(
     FindingSeverity Severity,
@@ -145,7 +152,13 @@ public sealed record ResultInput(
     IReadOnlyList<FindingInput>? Findings = null,
     string? AgentId = null,
     string? WorktreePath = null,
-    string? OutputTail = null);
+    string? OutputTail = null,
+    string? HeadSha = null,
+    string? Branch = null,
+    string? BaseRef = null,
+    string? RunId = null,
+    IReadOnlyList<string>? TestCommands = null,
+    IReadOnlyList<string>? ArtifactPaths = null);
 
 public sealed record ResultView(
     long Id,
@@ -157,6 +170,12 @@ public sealed record ResultView(
     IReadOnlyList<string> Conflicts,
     IReadOnlyList<FindingView> Findings,
     string? AgentId,
+    string? HeadSha,
+    string? Branch,
+    string? BaseRef,
+    string? RunId,
+    IReadOnlyList<string> TestCommands,
+    IReadOnlyList<string> ArtifactPaths,
     DateTimeOffset CreatedAt);
 
 public sealed record PhaseView(
@@ -177,6 +196,8 @@ public sealed record WorkflowContext(
     IReadOnlyList<string> AcceptanceCriteria,
     IReadOnlyList<string> VerifyCommands,
     long? SpecId,
+    int? SpecVersion,
+    string? SpecHash,
     AssignmentView? Assignment,
     ResultView? LastResult);
 
