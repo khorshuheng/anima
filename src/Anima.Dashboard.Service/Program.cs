@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Anima.Dashboard.Service;
 using Anima.Hosting;
 using Microsoft.Extensions.FileProviders;
@@ -10,6 +11,7 @@ builder.Services.AddOptions<DashboardOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<IValidateOptions<DashboardOptions>, DashboardOptionsValidator>();
 builder.Services.AddSingleton<GoalExplorer>();
+builder.Services.AddSingleton<WorkflowSummaryService>();
 
 AddUpstream(builder.Services, DashboardUpstreams.Workflow, options => (options.WorkflowBaseUrl, options.UpstreamTimeout));
 AddUpstream(builder.Services, DashboardUpstreams.Knowledge, options => (options.KnowledgeBaseUrl, options.UpstreamTimeout));
@@ -47,6 +49,32 @@ else
 {
     app.Logger.LogWarning("UI build not found at {UiRoot}; run 'make ui-build'.", uiRoot);
 }
+
+app.MapGet("/api/dashboard/workflows/{id:long}/summary", async (
+    long id,
+    WorkflowSummaryService service,
+    CancellationToken cancellationToken) =>
+{
+    try
+    {
+        var summary = await service.GetAsync(id, cancellationToken);
+        return summary is null
+            ? Results.NotFound(new { message = $"workflow {id} does not exist" })
+            : Results.Ok(summary);
+    }
+    catch (HttpRequestException)
+    {
+        return Results.Json(
+            new { message = "workflow service is unavailable" },
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+    catch (JsonException)
+    {
+        return Results.Json(
+            new { message = "workflow service returned an invalid summary response" },
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+});
 
 app.MapGet("/api/dashboard/workflows/{**path}", async (
     string? path,

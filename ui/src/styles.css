@@ -415,3 +415,11 @@ summary { cursor: pointer; color: var(--accent); font-size: 12px; }
 @media (max-width: 560px) {
   .graph-search-form { grid-template-columns: 1fr; }
 }
+.workflow-summary .summary-roles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.workflow-summary .summary-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 16px; }
+.review-list, .evidence-list { margin: 6px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.review-item { padding-left: 2px; }
+.evidence-list { list-style: disc; color: #c9d1d9; font-size: 12px; }
+@media (max-width: 900px) {
+  .workflow-summary .summary-columns { grid-template-columns: 1fr; }
+}

@@ -69,6 +69,9 @@ export interface AssignmentView {
   branch: string;
   status: string;
   updatedAt: string;
+  messageId: string | null;
+  acknowledgedAt: string | null;
+  runId: string | null;
 }
 
 export type ResultKind = 'implementation' | 'merge' | 'review' | 'verification';
@@ -91,7 +94,97 @@ export interface ResultView {
   conflicts: string[];
   findings: FindingView[];
   agentId: string | null;
+  headSha: string | null;
+  branch: string | null;
+  baseRef: string | null;
+  runId: string | null;
+  testCommands: string[];
+  artifactPaths: string[];
   createdAt: string;
+}
+
+export interface SummaryTaskBreakdown {
+  total: number;
+  implementation: number;
+  merge: number;
+  review: number;
+  verification: number;
+  documentation: number;
+}
+
+export interface SummaryAgents {
+  recordedAgents: number;
+  recordedRuns: number;
+  agentIds: string[];
+}
+
+export interface SummaryResults {
+  total: number;
+  implementation: number;
+  merge: number;
+  review: number;
+  verification: number;
+  findings: number;
+  errors: number;
+  warnings: number;
+}
+
+export interface SummaryEvidence {
+  implementationResults: number;
+  implementationWithHeadSha: number;
+  implementationWithTests: number;
+  reviewResults: number;
+  reviewWithHeadSha: number;
+  reviewWithTests: number;
+}
+
+export interface SummaryReview {
+  index: number;
+  resultId: number;
+  createdAt: string;
+  success: boolean;
+  agentId: string | null;
+  headSha: string | null;
+  testCommands: string[];
+  findingCount: number;
+  summary: string;
+}
+
+export interface SummaryAssignment {
+  id: number;
+  taskKey: string;
+  agentId: string;
+  status: string;
+  messageId: string | null;
+  acknowledgedAt: string | null;
+  runId: string | null;
+  updatedAt: string;
+}
+
+export interface SummaryPhase {
+  id: number;
+  name: string;
+  status: WorkflowStatus;
+  summary: string | null;
+  createdAt: string;
+}
+
+export interface WorkflowRunSummary {
+  id: number;
+  name: string;
+  status: WorkflowStatus;
+  createdAt: string;
+  updatedAt: string;
+  durationMs: number;
+  specVersion: number | null;
+  specHash: string | null;
+  tasks: SummaryTaskBreakdown;
+  agents: SummaryAgents;
+  results: SummaryResults;
+  evidence: SummaryEvidence;
+  reviewIterations: SummaryReview[];
+  assignments: SummaryAssignment[];
+  phases: SummaryPhase[];
 }
 
 export interface PhaseView {
@@ -115,6 +208,7 @@ export interface WorkflowDetail {
   assignments: AssignmentView[];
   results: ResultView[];
   timeline: TimelineView;
+  summary: WorkflowRunSummary;
 }
 
 export interface GraphNode {

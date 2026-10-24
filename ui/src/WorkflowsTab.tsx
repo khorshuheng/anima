@@ -25,6 +25,17 @@ function formatTime(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '—';
+  const totalSeconds = Math.round(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
 function statusClass(status: WorkflowStatus): string {
   if (status === 'failed') return 'chip chip-failed';
   if (status === 'completed') return 'chip chip-done';
@@ -109,6 +120,7 @@ export function WorkflowsTab({ selectedId, onSelect, revision }: WorkflowsTabPro
             {workflows.map((workflow) => (
               <button
                 key={workflow.id}
+                data-testid={`workflow-item-${workflow.id}`}
                 className={`workflow-item ${workflow.id === selectedId ? 'selected' : ''}`}
                 onClick={() => onSelect(workflow.id)}
               >
@@ -147,6 +159,79 @@ export function WorkflowsTab({ selectedId, onSelect, revision }: WorkflowsTabPro
                   <div className="stat"><strong>{detail.state.completedTaskCount}</strong><span>implemented</span></div>
                   <div className="stat"><strong>{detail.spec?.version ?? '—'}</strong><span>spec version</span></div>
                   <div className="stat"><strong>{formatTime(detail.state.updatedAt)}</strong><span>updated</span></div>
+                </div>
+              </section>
+
+              <section className="panel workflow-summary" data-testid="workflow-summary">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Run summary</h2>
+                    <p className="muted small">
+                      {formatTime(detail.summary.createdAt)} → {formatTime(detail.summary.updatedAt)} ·{' '}
+                      {formatDuration(detail.summary.durationMs)}
+                    </p>
+                  </div>
+                  <span className="chip">{detail.summary.status}</span>
+                </div>
+                <div className="stats">
+                  <div className="stat"><strong>{detail.summary.tasks.total}</strong><span>tasks</span></div>
+                  <div className="stat"><strong>{detail.summary.agents.recordedAgents}</strong><span>recorded agents</span></div>
+                  <div className="stat"><strong>{detail.summary.agents.recordedRuns}</strong><span>recorded runs</span></div>
+                  <div className="stat"><strong>{detail.summary.results.total}</strong><span>results</span></div>
+                  <div className="stat"><strong>{detail.summary.reviewIterations.length}</strong><span>review iterations</span></div>
+                  <div className="stat"><strong>{detail.summary.results.findings}</strong><span>findings</span></div>
+                </div>
+                <div className="summary-roles">
+                  <span className="chip">implementation {detail.summary.tasks.implementation}</span>
+                  <span className="chip">merge {detail.summary.tasks.merge}</span>
+                  <span className="chip">review {detail.summary.tasks.review}</span>
+                  <span className="chip">verification {detail.summary.tasks.verification}</span>
+                  <span className="chip">documentation {detail.summary.tasks.documentation}</span>
+                </div>
+                <div className="summary-columns">
+                  <div>
+                    <h3 className="inspector-subheading">Review iterations</h3>
+                    {detail.summary.reviewIterations.length === 0 && <p className="muted small">No review results yet.</p>}
+                    <ol className="review-list">
+                      {detail.summary.reviewIterations.map((review) => (
+                        <li key={review.resultId} className="review-item" data-testid={`review-iteration-${review.index}`}>
+                          <div className="question-heading">
+                            <strong>Review #{review.index}</strong>
+                            <span className={review.success ? 'chip chip-done' : 'chip chip-failed'}>
+                              {review.success ? 'passed' : 'failed'}
+                            </span>
+                          </div>
+                          <span className="muted small">{formatTime(review.createdAt)} · {review.findingCount} finding(s)</span>
+                          {review.headSha && <p className="mono small">head {review.headSha}</p>}
+                          {review.testCommands.length > 0 && (
+                            <p className="mono small">tests: {review.testCommands.join('; ')}</p>
+                          )}
+                          <p className="muted small">{review.summary}</p>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                  <div>
+                    <h3 className="inspector-subheading">Evidence</h3>
+                    <ul className="evidence-list">
+                      <li>
+                        implementation head/test:{' '}
+                        <strong>{detail.summary.evidence.implementationWithHeadSha}/{detail.summary.evidence.implementationResults}</strong> /{' '}
+                        <strong>{detail.summary.evidence.implementationWithTests}/{detail.summary.evidence.implementationResults}</strong>
+                      </li>
+                      <li>
+                        review head/test:{' '}
+                        <strong>{detail.summary.evidence.reviewWithHeadSha}/{detail.summary.evidence.reviewResults}</strong> /{' '}
+                        <strong>{detail.summary.evidence.reviewWithTests}/{detail.summary.evidence.reviewResults}</strong>
+                      </li>
+                    </ul>
+                    {(detail.summary.evidence.implementationWithHeadSha < detail.summary.evidence.implementationResults ||
+                      detail.summary.evidence.implementationWithTests < detail.summary.evidence.implementationResults ||
+                      detail.summary.evidence.reviewWithHeadSha < detail.summary.evidence.reviewResults ||
+                      detail.summary.evidence.reviewWithTests < detail.summary.evidence.reviewResults) && (
+                      <p className="muted small">Some results are missing head SHA or test evidence.</p>
+                    )}
+                  </div>
                 </div>
               </section>
 
@@ -228,7 +313,10 @@ export function WorkflowsTab({ selectedId, onSelect, revision }: WorkflowsTabPro
                       </div>
                       <p className="mono small">{assignment.branch}</p>
                       <p className="mono small muted">{assignment.worktreePath}</p>
-                      <span className="muted small">{assignment.status} · {formatTime(assignment.updatedAt)}</span>
+                      <span className="muted small">
+                        {assignment.status} · ack {formatTime(assignment.acknowledgedAt ?? '')} · run {assignment.runId ?? '—'}
+                      </span>
+                      {assignment.messageId && <p className="mono small muted">message {assignment.messageId}</p>}
                     </article>
                   ))}
                 </div>
@@ -250,6 +338,15 @@ export function WorkflowsTab({ selectedId, onSelect, revision }: WorkflowsTabPro
                       </div>
                       <p>{result.summary}</p>
                       {result.agentId && <p className="muted small">agent {result.agentId}</p>}
+                      {result.runId && <p className="mono small muted">run {result.runId}</p>}
+                      {result.headSha && (
+                        <p className="mono small">
+                          head {result.headSha}{result.branch ? ` · ${result.branch}` : ''}{result.baseRef ? ` · base ${result.baseRef}` : ''}
+                        </p>
+                      )}
+                      {result.testCommands.length > 0 && (
+                        <p className="mono small">tests: {result.testCommands.join('; ')}</p>
+                      )}
                       {result.changedFiles.length > 0 && (
                         <p className="mono small">changed: {result.changedFiles.join(', ')}</p>
                       )}

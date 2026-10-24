@@ -11,6 +11,7 @@ import type {
   SpecView,
   TimelineView,
   WorkflowDetail,
+  WorkflowRunSummary,
   WorkflowState,
 } from './types';
 
@@ -44,7 +45,7 @@ export const api = {
 
   async detail(id: number): Promise<WorkflowDetail> {
     const workflowPath = `${dashboardBase}/workflows/${id}`;
-    const [state, questions, answers, assignments, results, timeline, spec] = await Promise.all([
+    const [state, questions, answers, assignments, results, timeline, spec, summary] = await Promise.all([
       get<WorkflowState>(workflowPath),
       get<{ items: QuestionView[] }>(`${workflowPath}/questions?open=false`),
       get<{ items: AnswerView[] }>(`${workflowPath}/answers`),
@@ -52,6 +53,7 @@ export const api = {
       get<{ items: ResultView[] }>(`${workflowPath}/results`),
       get<TimelineView>(`${workflowPath}/timeline`),
       getOptional<SpecView>(`${workflowPath}/spec`),
+      get<WorkflowRunSummary>(`${workflowPath}/summary`),
     ]);
 
     return {
@@ -62,6 +64,7 @@ export const api = {
       results: results.items,
       timeline,
       spec,
+      summary,
     };
   },
 
@@ -69,6 +72,8 @@ export const api = {
     get<GraphSnapshot>(
       `${dashboardBase}/graph?maxNodes=${maxNodes}&maxEdges=${maxEdges}&newest=${newest}`,
     ),
+
+  workflowSummary: (id: number) => get<WorkflowRunSummary>(`${dashboardBase}/workflows/${id}/summary`),
 
   bus: () => get<BusSnapshot>(`${dashboardBase}/bus`),
   kinds: () => get<{ items: NodeKind[] }>(`${dashboardBase}/kinds`),
