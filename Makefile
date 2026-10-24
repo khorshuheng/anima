@@ -9,8 +9,8 @@ CLI := $(DOTNET) run --project tools/Anima.Cli -c $(CONFIG) --
 .PHONY: help restore build test fmt fmt-check check contracts dev browser-check \
         playwright-install hooks-install clean \
         build-contracts test-contracts build-bus test-bus build-knowledge test-knowledge \
-        build-automation test-automation build-deploy test-deploy build-agent test-agent \
-        run-knowledge run-bus run-automation run-deploy run-agent
+        build-automation test-automation build-deploy test-deploy build-workflow test-workflow \
+        run-knowledge run-bus run-automation run-deploy run-workflow
 
 help:
 	@echo "Anima monorepo"
@@ -24,9 +24,9 @@ help:
 	@echo "  make browser-check     show the Chrome executable Playwright will use"
 	@echo ""
 	@echo "  per component: make build-<name> / test-<name>"
-	@echo "    contracts bus knowledge automation deploy agent"
+	@echo "    contracts bus knowledge automation deploy workflow"
 	@echo ""
-	@echo "  run: make run-<name>   (knowledge, bus, automation, deploy, agent)"
+	@echo "  run: make run-<name>   (knowledge, bus, automation, deploy, workflow)"
 	@echo "  optional: make playwright-install BROWSERS='firefox webkit'"
 	@echo "  hooks: make hooks-install REPO=/path/to/repo"
 
@@ -95,10 +95,10 @@ build-deploy:
 test-deploy:
 	$(DOTNET) test Anima.Deploy.slnf -c $(CONFIG) --nologo
 
-build-agent:
-	$(DOTNET) build Anima.Agent.slnf -c $(CONFIG) --nologo
-test-agent:
-	$(DOTNET) test Anima.Agent.slnf -c $(CONFIG) --nologo
+build-workflow:
+	$(DOTNET) build Anima.Workflow.slnf -c $(CONFIG) --nologo
+test-workflow:
+	$(DOTNET) test Anima.Workflow.slnf -c $(CONFIG) --nologo
 
 run-knowledge:
 	$(DOTNET) run --project src/Anima.Knowledge.Service -c $(CONFIG)
@@ -108,5 +108,5 @@ run-automation:
 	$(DOTNET) run --project src/Anima.Automation.Service -c $(CONFIG)
 run-deploy:
 	$(DOTNET) run --project src/Anima.Deploy.Service -c $(CONFIG)
-run-agent:
-	$(DOTNET) run --project src/Anima.Agent.Service -c $(CONFIG)
+run-workflow:
+	$(DOTNET) run --project src/Anima.Workflow.Service -c $(CONFIG)

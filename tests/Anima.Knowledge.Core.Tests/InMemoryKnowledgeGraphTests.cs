@@ -136,3 +136,60 @@ public sealed class InMemoryKnowledgeGraphTests
         Options.Create(new KnowledgeOptions()),
         NullLogger<InMemoryKnowledgeGraph>.Instance);
 }
+
+public sealed class KnowledgeUpdateTests
+{
+    [Fact]
+    public async Task Update_node_replaces_properties_and_content()
+    {
+        var graph = CreateGraph();
+        var node = await graph.CreateNodeAsync(new NodeDraft(
+            KnowledgeKinds.Workflow,
+            "Workflow",
+            Properties: new Dictionary<string, string> { ["status"] = "analysis" }));
+
+        var updated = await graph.UpdateNodeAsync(
+            node.Id,
+            new NodePatch(
+                Description: "updated",
+                Content: "body",
+                Properties: new Dictionary<string, string> { ["status"] = "specReady" }));
+
+        Assert.Equal("updated", updated.Description);
+        Assert.Equal("body", updated.Content);
+        Assert.Equal("specReady", updated.Properties["status"]);
+    }
+
+    [Fact]
+    public async Task Query_filters_by_properties_and_can_omit_content()
+    {
+        var graph = CreateGraph();
+        await graph.CreateNodeAsync(new NodeDraft(
+            KnowledgeKinds.Spec,
+            "Spec A",
+            Content: "long markdown",
+            Properties: new Dictionary<string, string> { ["workflowId"] = "7" }));
+        await graph.CreateNodeAsync(new NodeDraft(
+            KnowledgeKinds.Spec,
+            "Spec B",
+            Content: "other",
+            Properties: new Dictionary<string, string> { ["workflowId"] = "8" }));
+
+        var page = await graph.QueryNodesAsync(new NodeQuery
+        {
+            Kind = KnowledgeKinds.Spec,
+            Scope = KnowledgeScope.All,
+            SummaryOnly = true,
+            Properties = new Dictionary<string, string> { ["workflowId"] = "7" },
+        });
+
+        Assert.Equal(1, page.Total);
+        Assert.Equal("Spec A", page.Items[0].Name);
+        Assert.Equal(string.Empty, page.Items[0].Content);
+        Assert.Equal("7", page.Items[0].Properties["workflowId"]);
+    }
+
+    private static InMemoryKnowledgeGraph CreateGraph() => new(
+        Options.Create(new KnowledgeOptions()),
+        NullLogger<InMemoryKnowledgeGraph>.Instance);
+}

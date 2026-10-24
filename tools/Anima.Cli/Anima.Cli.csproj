@@ -16,6 +16,9 @@
     <ProjectReference Include="../../src/Anima.Automation.Dsl/Anima.Automation.Dsl.csproj" />
     <ProjectReference Include="../../src/Anima.Automation.Playwright/Anima.Automation.Playwright.csproj" />
     <ProjectReference Include="../../src/Anima.Hosting/Anima.Hosting.csproj" />
+    <ProjectReference Include="../../src/Anima.Bus.Client/Anima.Bus.Client.csproj" />
+    <ProjectReference Include="../../src/Anima.Bus.Abstractions/Anima.Bus.Abstractions.csproj" />
+    <ProjectReference Include="../../src/Anima.Workflow.Abstractions/Anima.Workflow.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

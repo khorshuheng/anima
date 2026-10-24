@@ -24,7 +24,30 @@ app.MapPost("/api/bus/publish", async (
     var contentType = request.ContentType ?? ContractContentTypes.ProtobufJson;
     byte[] payload;
 
-    if (request.Payload is not { } json)
+    if (!string.IsNullOrWhiteSpace(request.PayloadBase64))
+    {
+        try
+        {
+            payload = Convert.FromBase64String(request.PayloadBase64);
+        }
+        catch (FormatException)
+        {
+            return Results.UnprocessableEntity(new { message = "payloadBase64 is not valid base64" });
+        }
+
+        if (BusEnvelopeJson.IsJsonContentType(contentType) && payload.Length > 0)
+        {
+            try
+            {
+                _ = codec.Parse(request.TypeName, Encoding.UTF8.GetString(payload));
+            }
+            catch (ContractValidationException exception)
+            {
+                return Results.UnprocessableEntity(new { message = exception.Message });
+            }
+        }
+    }
+    else if (request.Payload is not { } json)
     {
         payload = [];
     }
@@ -61,6 +84,7 @@ app.MapPost("/api/bus/publish", async (
         request.Recipient,
         request.CorrelationId,
         request.CausationId,
+        request.ReplyTo,
         request.Headers);
 
     await bus.PublishAsync(envelope, cancellationToken);
@@ -87,11 +111,14 @@ app.MapGet("/api/bus/stream", async (
         topics,
         async (envelope, token) =>
         {
-            var json = JsonSerializer.Serialize(Describe(envelope, codec), BusJson.Sse);
+            var json = JsonSerializer.Serialize(BusEnvelopeJson.ToJson(envelope), BusJson.Sse);
             await context.Response.WriteAsync($"event: message\ndata: {json}\n\n", token);
             await context.Response.Body.FlushAsync(token);
         },
         cancellationToken: cancellationToken);
+
+    await context.Response.WriteAsync("event: ready\ndata: {}\n\n", cancellationToken);
+    await context.Response.Body.FlushAsync(cancellationToken);
 
     try
     {
@@ -149,37 +176,3 @@ app.MapPost("/api/bus/validate", (ValidateRequest request, IMessageCodec codec) 
 app.MapGet("/api/bus/info", (Microsoft.Extensions.Options.IOptions<BusOptions> options) => Results.Ok(options.Value));
 
 app.Run();
-
-static object Describe(MessageEnvelope envelope, IMessageCodec codec)
-{
-    string? payloadJson = null;
-    if (envelope.ContentType == ContractContentTypes.ProtobufJson &&
-        codec.IsKnown(envelope.TypeName))
-    {
-        try
-        {
-            payloadJson = codec.ToJson(codec.Decode(envelope.TypeName, envelope.Payload));
-        }
-        catch (Exception exception) when (
-            exception is ContractValidationException or InvalidProtocolBufferException)
-        {
-            payloadJson = null;
-        }
-    }
-
-    return new
-    {
-        envelope.MessageId,
-        envelope.Topic,
-        envelope.TypeName,
-        envelope.ContentType,
-        envelope.Timestamp,
-        envelope.Sender,
-        envelope.Recipient,
-        envelope.CorrelationId,
-        envelope.CausationId,
-        envelope.Headers,
-        PayloadBase64 = Convert.ToBase64String(envelope.Payload.Span),
-        PayloadJson = payloadJson,
-    };
-}

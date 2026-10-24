@@ -1,208 +1,175 @@
 # Anima
 
-A .NET 10 monorepo for multi-agent workflows. Five runnable services, shared
-libraries with narrow seams, and repo-owned contracts that agents can change
-without rebuilding C#.
+Infrastructure for multi-agent workflows. Anima owns **state, contracts,
+transport, UI automation and deploy execution**. A dedicated agent harness
+(pi, or anything else) owns the agents: it creates them, runs them, and manages
+their git worktrees. Anima never spawns an agent, never calls an LLM, and never
+creates a worktree.
 
 ## Services
 
 | Service | Port | Responsibility |
 | --- | --- | --- |
-| `Anima.Agent.Service` | 7410 | Agent turns, planner/tool loop, mailbox worker |
-| `Anima.Knowledge.Service` | 7411 | Task planning **and** long-term memory over one node/edge graph, memgraph-compatible HTTP |
-| `Anima.Bus.Service` | 7412 | Lightweight agent message bus (topics, SSE stream, contract validation) |
+| `Anima.Knowledge.Service` | 7411 | Task planning and long-term memory over one node/edge graph, memgraph-compatible HTTP |
+| `Anima.Bus.Service` | 7412 | Agent message transport: publish, SSE subscribe, contract validation |
 | `Anima.Automation.Service` | 7413 | CDP-capable UI automation sessions and YAML script execution |
 | `Anima.Deploy.Service` | 7414 | Git-push sink that runs repo-owned deploy scripts |
+| `Anima.Workflow.Service` | 7415 | Durable workflow state: questions, spec, assignments, results, timeline |
 
-Ports are defined once in `src/Anima.Hosting/AnimaPorts.cs`.
+Ports live in `src/Anima.Hosting/AnimaPorts.cs`. `make dev` starts the five
+services; agent harnesses are not started by Anima.
 
 ## Layout
 
 ```
-contracts/proto/            user-editable .proto contracts
+contracts/proto/            user-editable .proto contracts (incl. workflow roles/events)
 contracts/descriptors/      compiled descriptor set (runtime schema)
 specs/                      agent-derived UI scripts (anima-yaml/v1)
-scripts/                    contract compilation, dev runner, deploy scripts, git hooks
+scripts/                    runbook scripts, git hooks, deploy samples
 config/                     deploy rule examples
 src/
   Anima.Contracts           descriptor catalog + descriptor-driven JSON codec
-  Anima.Bus.*               abstractions, in-proc bus, HTTP host
+  Anima.Bus.*               abstractions, in-proc bus, HTTP client, host
   Anima.Knowledge.*         abstractions, in-memory graph, memgraph-compatible client, host
   Anima.Automation.*        driver/session abstractions, Playwright driver, YAML DSL, host
   Anima.Deploy.*            hook normalization/validation, script runner, host
-  Anima.Agent.*             planner/tool/runtime abstractions, runtime, host
+  Anima.Workflow.*          state models, graph-backed store, bus dispatcher, host
   Anima.Hosting             shared host defaults, repo layout, ports
-  Anima.<Area>.Service      thin HTTP hosts
-tools/Anima.Cli             agent-facing CLI (contracts, scripts, browser check)
+tools/Anima.Cli             harness-facing CLI: contracts, scripts, browser, bus, workflow
 tests/                      one xUnit project per component
-Anima.sln + Anima.*.slnf    solution filters per component for parallel work
+.agents/skills/             project skill: anima-orchestration (harness runbook)
+Anima.sln + Anima.*.slnf    solution filters per component
 ```
 
-## Quick start (Linux/macOS)
+## Quick start
 
-Prerequisites: .NET 10 SDK, `protoc` (only needed when contracts change), Chrome
-for UI automation.
+Prerequisites: .NET 10 SDK, `protoc` (only when contracts change), Chrome for UI
+automation.
 
 ```bash
 make contracts      # .proto -> contracts/descriptors/anima.pb
 make build
 make test
-make dev            # all five services; ports above
-make browser-check  # shows the Chrome executable Playwright will launch
+make dev            # knowledge, bus, automation, deploy, workflow
+make browser-check  # Chrome executable Playwright will launch
 ```
 
-Windows (including the deployment target): `make` is optional. Use the same
-commands directly:
+Windows: `make` is optional; run the underlying `dotnet` commands. The deployment
+target has **no PowerShell assumption** (see Deploy below).
 
-```bat
-dotnet run --project tools/Anima.Cli -- contracts compile
-dotnet build Anima.sln
-dotnet test Anima.sln
-dotnet run --project src\Anima.Knowledge.Service
+## Harness workflow
+
+The full runbook is in `.agents/skills/anima-orchestration/SKILL.md`; the design
+is in `docs/workflow-design.md`.
+
+```bash
+anima workflow start --name "Feature X" --requirement "..." --repo "$PWD"
+anima workflow show 1
 ```
+
+State machine:
+
+```
+analysis -> awaiting_answers -> spec_ready -> implementing ->
+implementation_complete -> merge_complete -> completed
+                                      \-> failed
+```
+
+Facts, not guesses, drive the state:
+
+1. Analyst agent posts questions (`anima workflow ask`).
+2. Main agent reads open questions (`anima workflow questions`), asks the user,
+   posts answers (`anima workflow answer`).
+3. Analyst posts the refined spec and task list (`anima workflow spec-write`).
+4. Harness creates worktrees, spawns implementer agents, registers assignments
+   (`anima workflow assign`), and posts results (`anima workflow result`).
+5. Merger and reviewer do the same; review findings are stored.
+6. Status becomes `completed` only when a successful review result exists.
+
+Anima stores the assignment metadata (path, branch, agent id) but does not create
+the worktree. See `docs/adr/0005-workflow-boundary.md`.
+
+## Q&A and the bus
+
+The workflow API is the system of record for questions and answers; the bus is
+for wake-ups and agent-to-agent messages. A bus-only Q&A loop has no durability,
+replay or state transition, and the workflow blocking on a human gate would be
+wrong.
+
+```bash
+# watch workflow events (question added, answer added, spec updated, result posted)
+anima bus watch --topics anima.workflow.events
+
+# request/response between two running agents
+anima bus ask --topic anima.agent.analyst.inbox \
+  --type anima.workflow.v1.WorkflowRoleTask \
+  --payload @role-task.json --timeout 120
+```
+
+`anima bus ask` subscribes to a private reply topic, publishes `ReplyTo`, and
+prints the reply envelope. `MessageEnvelope` carries `ReplyTo`; the workflow
+service uses the same mechanism for `POST /api/workflows/{id}/dispatch`.
 
 ## Contracts
 
-Protobuf is the IDL, but **no C# is generated**. `contracts/descriptors/anima.pb`
-is loaded at runtime and payloads are validated against the descriptors.
+Protobuf is the IDL; no C# is generated. Payloads are validated against the
+loaded descriptors.
 
-- Add or edit a `.proto` under `contracts/proto/anima/<area>/v1/`.
-- Run `make contracts` (or the CLI `contracts compile`).
-- Publish JSON that matches the message. Unknown fields, wrong scalar types and
-  invalid timestamps are rejected at the bus boundary.
+```bash
+make contracts
+anima contracts list
+anima contracts validate anima.workflow.v1.WorkflowRoleTask payload.json
+```
+
+- Unknown fields and wrong scalar types are rejected.
 - `int64` is a string, `bytes` are base64, enums are names.
-- Validate first: `anima contracts validate <Message> payload.json`, or
-  `POST /api/bus/validate`.
-
-See `contracts/README.md` and `docs/adr/0002-contracts.md`.
+- Adding a contract needs a `.proto` edit and `make contracts`, not a rebuild.
+- Content type is `application/x-protobuf+json`.
 
 ## UI automation
 
-`Anima.Automation` drives a browser behind `IBrowserDriver`/`IBrowserSession`.
-Playwright is an implementation detail; raw CDP is exposed when the engine
-supports it.
+Playwright sits behind `IBrowserDriver`/`IBrowserSession`; raw CDP is exposed only
+on Chromium-family engines.
 
-- **Chrome is assumed and launched from the system install** (no browser
-  download): Linux and Windows locations are probed, `ANIMA_CHROME_PATH`
-  overrides. `make browser-check` prints the resolved executable.
-- Override the engine with `--browser chromium|msedge|firefox|webkit` or
-  `ANIMA_BROWSER`. Firefox/WebKit require Playwright-managed builds
-  (`make playwright-install BROWSERS='firefox'`); Chromium-family engines use the
-  installed executable.
-- CDP is available only on Chromium-family engines; `IBrowserSession.Cdp` is null
-  otherwise. No stealth patches are applied — these are dev/UAT pages we own.
-
-Scripts are declarative and reusable without an agent in the loop:
-
-```yaml
-name: login-smoke
-variables:
-  user: "${env.UAT_USER}"
-steps:
-  - goto: /login
-  - fill: { target: "#username", value: "${user}" }
-  - click: "button[type=submit]"
-  - expect: { target: "#dashboard", text: "Welcome" }
-  - extract: { name: token, target: "#session-token" }
-```
+- Chrome is launched from the system install (Linux and Windows paths probed,
+  `ANIMA_CHROME_PATH` overrides). No browser download is required.
+- `--browser chromium|msedge|firefox|webkit` switches engines; Firefox/WebKit need
+  `make playwright-install BROWSERS='firefox'`.
+- Scripts are `anima-yaml/v1` data in `specs/`; validate then run:
 
 ```bash
-dotnet run --project tools/Anima.Cli -- scripts validate specs/login-smoke.yaml
-dotnet run --project tools/Anima.Cli -- scripts run specs/login-smoke.yaml --base-url http://uat.local
+anima scripts validate specs/login-smoke.yaml
+anima scripts run specs/login-smoke.yaml --base-url http://uat.local
 ```
-
-Run one through the service: `POST /api/sessions`, then
-`POST /api/sessions/{id}/scripts` with `{ "source": "..." }`.
 
 ## Deploy sink
 
-`Anima.Deploy` receives a git push hook, normalizes the payload, matches rules,
-and runs a repo-owned script. Pushes never block: runs are queued and logged.
+Push hooks post to `POST /hooks/git/{provider}`; rules match repository/ref and
+run a repo-owned script. Runs are queued and logged.
 
-```json
-[
-  {
-    "name": "uat-main",
-    "repositoryPattern": "*",
-    "refPattern": "refs/heads/main",
-    "script": "example-deploy.cmd",
-    "environment": "uat",
-    "enabled": true
-  }
-]
-```
-
-- Linux/macOS: `.sh` scripts run with `bash`.
-- Windows deployment: `.cmd`/`.bat` run with `cmd.exe`, `.exe` runs directly.
-  **PowerShell is not assumed**; `.ps1` requires an explicit
-  `Deploy:PowerShellExecutable`. `Deploy:Shell` overrides inference entirely.
-- Start with `RulesPath=config/deploy.rules.json` or
-  `config/deploy.rules.windows.json`, or put rules under `Anima:Deploy:Rules`.
+- Linux/macOS: `.sh` runs with `bash`.
+- Windows deployment: `.cmd`/`.bat` run with `cmd.exe`, `.exe` directly.
+  **PowerShell is not assumed**; `.ps1` requires `Deploy:PowerShellExecutable`.
+  `Deploy:Shell` overrides inference.
 - Hook install: `make hooks-install REPO=/path/to/repo` (or copy
-  `scripts/git-hooks/post-receive` into `.git/hooks/`). It needs only `curl`,
-  which Git for Windows bundles.
-- Secret enabled? The hook computes HMAC-SHA256 when `ANIMA_DEPLOY_SECRET` is
-  set and `openssl` exists. The sink verifies `X-Anima-Signature`,
-  `X-Gitea-Signature` or `X-Hub-Signature-256`.
+  `scripts/git-hooks/post-receive`); it needs only `curl`.
 
-Inspect runs at `GET /api/runs`, `GET /api/runs/{id}`, `GET /api/runs/{id}/log`.
+Inspect runs: `GET /api/runs`, `GET /api/runs/{id}`,
+`GET /api/runs/{id}/log`.
 
-## Agent workflow
+## Context discipline
 
-The default planner is deterministic; replace `IAgentPlanner` with an LLM-backed
-implementation without touching tools or the runtime.
-
-```bash
-# call a tool
-curl -X POST localhost:7410/api/agents/orchestrator/turns \
-  -H 'content-type: application/json' \
-  -d '{"input":"/knowledge.remember {\"kind\":\"memory\",\"name\":\"Login flow\"}"}'
-
-# delegate to another agent
-curl -X POST localhost:7410/api/agents/orchestrator/turns \
-  -H 'content-type: application/json' \
-  -d '{"input":"delegate:worker: run specs/login-smoke.yaml"}'
-```
-
-Built-in tools: `knowledge.remember`, `knowledge.search`,
-`automation.run_script`. Delegation uses per-agent inboxes on the bus.
-
-Task management and memory are the same graph: goals and tasks are nodes, and a
-task is resolved when a `change` node has an `implements` edge to it. See
-`docs/adr/0003-knowledge-service.md`.
-
-## Topology
-
-Services are separate projects, but hosts wire them **in-process** by default:
-the agent host registers the in-memory bus, graph, DSL and Playwright driver.
-Every boundary is an interface, so moving to HTTP or a broker is a
-composition-root change.
-
-For more than one agent process, point agents at the shared knowledge service so
-task and memory state is common:
-
-```json
-{ "Anima": { "Knowledge": { "Transport": "Http", "BaseUrl": "http://127.0.0.1:7411" } } }
-```
-
-The default (`InMemory`) keeps a single agent self-contained.
-
-- `IKnowledgeGraph` -> `Anima.Knowledge.Client.AddKnowledgeClient()` talks to a
-  memgraph-compatible service.
-- `IMessageBus` -> replace `AddInProcBus()` with a broker-backed implementation.
-- `IBrowserDriver` -> point at a remote automation service, or keep Playwright
-  local.
-- `IDeployHookSink` -> keep the sink local, or call it over HTTP.
-
-Each service also exposes its own HTTP host, so the remote topology is already
-reachable; only the client-side composition changes.
+- Workflow list/context endpoints are compact; the spec is a separate read.
+- Knowledge reads support `summary=true` and exact property filters.
+- Role tasks carry a task key, acceptance criteria and a spec id, not the spec.
+- Command output is tail-truncated in results.
+- `GET /api/workflows/{id}/context?taskKey=` is the agent brief: worktree path,
+  branch, acceptance criteria, verify commands and last result summary.
 
 ## Verification
 
 ```bash
-make check                       # dotnet format check + build + test
-dotnet build Anima.Knowledge.slnf
-dotnet test  Anima.Automation.slnf
+make check
+dotnet build Anima.Workflow.slnf
+dotnet test  Anima.Bus.slnf
 ```
-
-Build is warnings-as-errors with the .NET analyzers enabled.

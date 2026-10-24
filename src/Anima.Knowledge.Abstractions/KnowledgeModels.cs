@@ -48,6 +48,12 @@ public sealed record EdgeTypeDefinition(
     bool Resolves = false,
     bool SingleOutgoing = false);
 
+public sealed record NodePatch(
+    string? Name = null,
+    string? Description = null,
+    string? Content = null,
+    IReadOnlyDictionary<string, string>? Properties = null);
+
 public sealed record NodeDraft(
     string Kind,
     string Name,

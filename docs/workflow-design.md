@@ -13,10 +13,10 @@ git worktrees, and transports messages.
 
 | Role | Who drives it | What Anima gives it |
 | --- | --- | --- |
-| Main agent | pi session | workflow state, open questions, user answers, worktree assignments |
+| Main agent | pi session | workflow state, open questions, user answers, assignment metadata |
 | Analyst | pi subagent | question list, requirement, answers; writes questions and the refined spec |
-| Implementer | pi subagent | one git worktree + branch, task brief, acceptance criteria |
-| Merger | pi subagent | merge worktree + branches, conflict state |
+| Implementer | pi subagent | a harness-created worktree + branch, task brief, acceptance criteria |
+| Merger | pi subagent | a harness-created merge worktree + branches, conflict state |
 | Reviewer | pi subagent | merged worktree, spec, diff, verify commands |
 
 The main agent asks the user questions and posts answers back. Subagents report
@@ -25,7 +25,8 @@ results; no result is inferred by Anima.
 ## State machine
 
 ```
-analysis -> awaiting_answers -> spec_ready -> implementing -> merging -> reviewing -> completed
+analysis -> awaiting_answers -> spec_ready -> implementing -> implementation_complete
+        -> merge_complete -> completed
      |             |                |              |            |           |
      +-------------+----------------+--------------+------------+-----------+--> failed
 ```
@@ -37,8 +38,8 @@ Transitions are derived from posted facts, not set blindly:
 - spec posted -> `spec_ready`
 - every task has an implementation result with `success=true` -> `implementing`
   complete (otherwise `failed` or `implementing` if some are outstanding)
-- merge result with `success=true` -> `merging` complete
-- review result with `passed=true` -> `completed`; otherwise `failed`
+- merge result with `success=true` -> `merge_complete`
+- review result with `success=true` -> `completed`; otherwise `failed`
 
 ## HTTP surface (port 7415)
 
@@ -51,10 +52,9 @@ POST   /api/workflows/{id}/questions              { questions:[{text,rationale?}
 POST   /api/workflows/{id}/answers                { answers:[{questionId,text}] }
 GET    /api/workflows/{id}/spec
 POST   /api/workflows/{id}/spec                   { markdown, tasks:[...] }
-POST   /api/workflows/{id}/worktrees              { taskKey, baseRef? } -> path/branch
-GET    /api/workflows/{id}/worktrees
-DELETE /api/workflows/{id}/worktrees/{taskKey}
-POST   /api/workflows/{id}/worktrees/merge        -> merge worktree path/branch
+POST   /api/workflows/{id}/assignments            { taskKey, agentId, worktreePath, branch }
+GET    /api/workflows/{id}/assignments
+DELETE /api/workflows/{id}/assignments/{taskKey}
 POST   /api/workflows/{id}/results                { taskKey, kind, success, summary, ... }
 GET    /api/workflows/{id}/timeline               phases + result summaries
 POST   /api/workflows/{id}/dispatch               bus role task to a named agent
@@ -107,6 +107,22 @@ resolution graph-derived rather than adding a status field to everything.
   worktree path/branch, spec id, and the last result summary only.
 - No endpoint returns raw agent transcripts.
 
+## Q&A path (decision)
+
+The workflow API is the system of record for questions and answers:
+
+- Analyst subagent: `POST /questions`; main agent: `GET /questions?open=true`;
+  user answers: `POST /answers`; analyst: `GET /answers?since=<id>`.
+- The workflow service publishes `anima.workflow.v1.WorkflowEvent` on
+  `anima.workflow.events` after every mutation (question added, answer added,
+  spec updated, assignment registered, result posted, status changed).
+- Agents subscribe with `anima bus watch --topics anima.workflow.events` to wake
+  up, but they never depend on the event to read state. Bus-only Q&A is rejected:
+  it has no durability, replay, or state transition, and the workflow service
+  blocking on a human gate would be wrong.
+- `POST /dispatch` is for agent-to-agent role tasks, not for Q&A. It publishes a
+  role task and awaits a reply; the harness owns the agent's lifetime.
+
 ## Bus protocol
 
 - `MessageEnvelope` gains `ReplyTo`.
@@ -120,14 +136,18 @@ resolution graph-derived rather than adding a status field to everything.
   External agents can also use `anima bus watch/ask/publish` directly.
 - Anima never starts the agent that answers.
 
-## Worktree lifecycle
+## Worktree ownership
 
-- Allocation: `git worktree add -b <prefix>/<workflow>-<task> <path> <baseRef>`.
-- Path: `<repo>/.anima/worktrees/<workflow-id>-<task>-<short-id>` (gitignored).
-- Implementation agents work only in their path; results include the branch.
-- Merge worktree: `<repo>/.anima/worktrees/<workflow-id>-merge`.
-- Release removes the worktree; branches remain unless `deleteBranch=true`.
-- Anima requires the repo to have a commit and a resolvable base ref.
+The harness creates and removes worktrees. Anima only stores the assignment:
+task key, agent id, path, branch and status. There is no Anima endpoint that runs
+`git worktree`, and no Anima code that starts an agent.
+
+1. Harness: `git worktree add -b anima/<workflow>-<task> <path> <baseRef>`.
+2. Harness: `anima workflow assign <id> --task <key> --agent <id> --path <path> --branch <branch>`.
+3. Harness spawns the implementer in that path.
+4. Implementer works, runs verify commands, posts a result with the branch and
+   changed files.
+5. Harness removes the worktree after merge (branches can stay for audit).
 
 ## Files and ownership
 

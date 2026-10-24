@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package anima.workflow.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option csharp_namespace = "Anima.Contracts.Workflow.V1";
+
+// A role task sent by the harness or workflow service to an external agent.
+// Anima never creates or owns the agent that receives this.
+message WorkflowRoleTask {
+  string workflow_id = 1;
+  string role = 2;
+  string instructions = 3;
+  google.protobuf.Struct context = 4;
+  string response_schema = 5;
+}
+
+message WorkflowRoleResult {
+  bool success = 1;
+  string summary = 2;
+  google.protobuf.Struct data = 3;
+  repeated CommandResult commands = 4;
+}
+
+message CommandResult {
+  string command = 1;
+  int32 exit_code = 2;
+  string output_tail = 3;
+}
+
+// Durable workflow events. Consumers must read state from the workflow API;
+// these events are wake-ups and audit breadcrumbs.
+message WorkflowEvent {
+  string workflow_id = 1;
+  string event = 2;
+  string status = 3;
+  repeated int64 node_ids = 4;
+  string summary = 5;
+  google.protobuf.Timestamp timestamp = 6;
+}
+
+message Question {
+  int64 id = 1;
+  string text = 2;
+  string rationale = 3;
+  bool answered = 4;
+}
+
+message SpecTask {
+  string key = 1;
+  string title = 2;
+  string description = 3;
+  repeated string acceptance_criteria = 4;
+  repeated string verify_commands = 5;
+  int64 node_id = 6;
+}

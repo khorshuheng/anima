@@ -3,8 +3,10 @@
     "path": "Anima.sln",
     "projects": [
       "src/Anima.Bus.Abstractions/Anima.Bus.Abstractions.csproj",
+      "src/Anima.Bus.Client/Anima.Bus.Client.csproj",
       "src/Anima.Bus.Core/Anima.Bus.Core.csproj",
       "src/Anima.Bus.Service/Anima.Bus.Service.csproj",
+      "tests/Anima.Bus.Client.Tests/Anima.Bus.Client.Tests.csproj",
       "tests/Anima.Bus.Core.Tests/Anima.Bus.Core.Tests.csproj"
     ]
   }

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <RootNamespace>Anima.Agent.Abstractions</RootNamespace>
+    <RootNamespace>Anima.Workflow</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../Anima.Bus.Abstractions/Anima.Bus.Abstractions.csproj" />
+    <ProjectReference Include="../Anima.Knowledge.Abstractions/Anima.Knowledge.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>

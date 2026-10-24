@@ -3,6 +3,7 @@ using System.Globalization;
 using Anima.Automation;
 using Anima.Automation.Dsl;
 using Anima.Automation.Playwright;
+using Anima.Cli;
 using Anima.Contracts;
 using Anima.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -18,6 +19,12 @@ try
         "contracts" => Contracts(rest),
         "scripts" => await ScriptsAsync(rest),
         "browser" => Browser(rest),
+        "bus" => await BusCommands.RunAsync(
+            rest,
+            Environment.GetEnvironmentVariable("ANIMA_BUS_URL") ?? "http://127.0.0.1:7412"),
+        "workflow" => await WorkflowCommands.RunAsync(
+            rest,
+            Environment.GetEnvironmentVariable("ANIMA_WORKFLOW_URL") ?? "http://127.0.0.1:7415"),
         "help" or "--help" or "-h" => Help(),
         _ => Unknown(command),
     };
@@ -40,6 +47,8 @@ static int Help()
           anima contracts validate <fully.qualified.Message> <json-file>
           anima scripts list [--dir <specs-dir>]
           anima scripts validate <script.yaml>
+          anima bus publish|ask|watch ...
+          anima workflow start|show|ask|answer|spec|assign|result ...
           anima browser check [--browser <name>]
           anima scripts run <script.yaml> [--browser <name>] [--base-url <url>] [--headed] [--var key=value]
 

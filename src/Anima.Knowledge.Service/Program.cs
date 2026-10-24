@@ -69,6 +69,8 @@ app.MapGet("/api/nodes", async (
     string? descend,
     int? limit,
     int? offset,
+    bool? summary,
+    string? props,
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
@@ -89,6 +91,8 @@ app.MapGet("/api/nodes", async (
             Descend = descend,
             Limit = limit ?? 100,
             Offset = offset ?? 0,
+            SummaryOnly = summary ?? false,
+            Properties = KnowledgeEndpointMappings.ParseProperties(props),
         },
         cancellationToken);
 
@@ -135,6 +139,20 @@ app.MapGet("/api/nodes/{id:long}", async (
 {
     var node = await graph.GetNodeAsync(id, cancellationToken)
         ?? throw new KnowledgeNotFoundException($"node {id} does not exist");
+    var vocabulary = await graph.VocabularyAsync(cancellationToken);
+    return Results.Ok(node.ToResponse(vocabulary.Kinds));
+});
+
+app.MapPatch("/api/nodes/{id:long}", async (
+    long id,
+    PatchNodeRequest request,
+    IKnowledgeGraph graph,
+    CancellationToken cancellationToken) =>
+{
+    var node = await graph.UpdateNodeAsync(
+        id,
+        new NodePatch(request.Name, request.Description, request.Content, request.Properties),
+        cancellationToken);
     var vocabulary = await graph.VocabularyAsync(cancellationToken);
     return Results.Ok(node.ToResponse(vocabulary.Kinds));
 });
@@ -239,6 +257,8 @@ app.MapGet("/api/search", async (
     string? descend,
     int? limit,
     int? offset,
+    bool? summary,
+    string? props,
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
@@ -250,6 +270,8 @@ app.MapGet("/api/search", async (
         Descend = descend,
         Limit = limit ?? 100,
         Offset = offset ?? 0,
+        SummaryOnly = summary ?? false,
+        Properties = KnowledgeEndpointMappings.ParseProperties(props),
     };
 
     var page = await graph.SearchAsync(q, query, cancellationToken);

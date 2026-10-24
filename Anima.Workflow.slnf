@@ -1,0 +1,11 @@
+{
+  "solution": {
+    "path": "Anima.sln",
+    "projects": [
+      "src/Anima.Workflow.Abstractions/Anima.Workflow.Abstractions.csproj",
+      "src/Anima.Workflow.Core/Anima.Workflow.Core.csproj",
+      "src/Anima.Workflow.Service/Anima.Workflow.Service.csproj",
+      "tests/Anima.Workflow.Core.Tests/Anima.Workflow.Core.Tests.csproj"
+    ]
+  }
+}

@@ -42,6 +42,7 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
                 name = draft.Name,
                 description = draft.Description ?? string.Empty,
                 content = draft.Content ?? string.Empty,
+                properties = draft.Properties,
             },
             JsonOptions,
             cancellationToken);
@@ -108,6 +109,30 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
         }).ToArray();
 
         return new NodePage(nodes, envelope.Total ?? nodes.Length, effective.Limit, effective.Offset);
+    }
+
+    public async Task<KnowledgeNode> UpdateNodeAsync(
+        long id,
+        NodePatch patch,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(patch);
+
+        using var response = await _http.PatchAsJsonAsync(
+            $"api/nodes/{id}",
+            new
+            {
+                name = patch.Name,
+                description = patch.Description,
+                content = patch.Content,
+                properties = patch.Properties,
+            },
+            JsonOptions,
+            cancellationToken);
+
+        var node = await ReadAsync<NodeDto>(response, cancellationToken);
+        var vocabulary = await GetVocabularyAsync(cancellationToken);
+        return node.ToModel(vocabulary.KindName(node.KindId));
     }
 
     public async Task<bool> DeleteNodeAsync(long id, CancellationToken cancellationToken = default)
@@ -343,6 +368,16 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
             parameters.Add($"descend={Uri.EscapeDataString(query.Descend)}");
         }
 
+        if (query.SummaryOnly)
+        {
+            parameters.Add("summary=true");
+        }
+
+        if (query.Properties is { Count: > 0 } properties)
+        {
+            parameters.Add($"props={Uri.EscapeDataString(JsonSerializer.Serialize(properties, JsonOptions))}");
+        }
+
         parameters.Add($"limit={query.Limit}");
         parameters.Add($"offset={query.Offset}");
         return $"{path}?{string.Join('&', parameters)}";
@@ -451,13 +486,7 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
 
     private sealed record NodeEnvelope(
         [property: JsonPropertyName("items")] List<NodeDto>? Items,
-        [property: JsonPropertyName("total")] int? Total)
-    {
-        public NodeEnvelope(List<NodeDto> items)
-            : this(items, items.Count)
-        {
-        }
-    }
+        [property: JsonPropertyName("total")] int? Total = null);
 
     private sealed record EdgeDto(
         long Id,

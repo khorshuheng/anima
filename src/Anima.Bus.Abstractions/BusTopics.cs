@@ -11,6 +11,9 @@ public static class BusTopics
     public const string AutomationRun = "anima.automation.run";
     public const string DeployRequested = "anima.deploy.requested";
     public const string DeployFinished = "anima.deploy.finished";
+    public const string WorkflowEvents = "anima.workflow.events";
+    public const string WorkflowRole = "anima.workflow.role";
+    public const string ReplyPrefix = "anima.reply";
 
     public static string AgentInbox(string agentId) => $"anima.agent.{Normalize(agentId)}.inbox";
 

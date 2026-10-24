@@ -1,8 +1,12 @@
 
+using System.Text.Json;
+
 namespace Anima.Knowledge.Service;
 
 internal static class KnowledgeEndpointMappings
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     public static object ToResponse(
         this KnowledgeNode node,
         IReadOnlyDictionary<string, int> kindIds) => new
@@ -48,6 +52,23 @@ internal static class KnowledgeEndpointMappings
         "resolved" => KnowledgeScope.Resolved,
         _ => KnowledgeScope.Active,
     };
+
+    public static IReadOnlyDictionary<string, string>? ParseProperties(string? props)
+    {
+        if (string.IsNullOrWhiteSpace(props))
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(props, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            throw new KnowledgeValidationException("props must be a JSON object of string values");
+        }
+    }
 
     public static EdgeDirection ParseDirection(string? direction) => direction?.ToLowerInvariant() switch
     {

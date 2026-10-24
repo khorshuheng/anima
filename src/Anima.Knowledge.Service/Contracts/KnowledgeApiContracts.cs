@@ -24,6 +24,12 @@ public sealed record CreateTaskRequest(
 
 public sealed record PatchTaskRequest(string? Name, string? Description, string? Content);
 
+public sealed record PatchNodeRequest(
+    string? Name,
+    string? Description,
+    string? Content,
+    Dictionary<string, string>? Properties);
+
 public sealed record PlanGoalRequest(string Name, string? Description, string? Content);
 
 public sealed record PlanAnchorRequest(long NodeId, string EdgeType);

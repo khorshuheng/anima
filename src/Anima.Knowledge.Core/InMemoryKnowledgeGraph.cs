@@ -63,6 +63,48 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         }
     }
 
+    public Task<KnowledgeNode> UpdateNodeAsync(
+        long id,
+        NodePatch patch,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(patch);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (patch.Name is null && patch.Description is null && patch.Content is null && patch.Properties is null)
+        {
+            throw new KnowledgeValidationException(
+                "patch requires at least one of name, description, content or properties");
+        }
+
+        lock (_gate)
+        {
+            var node = RequireNode(id);
+            if (patch.Name is not null)
+            {
+                node.Name = RequireName(patch.Name);
+            }
+
+            if (patch.Description is not null)
+            {
+                node.Description = patch.Description;
+            }
+
+            if (patch.Content is not null)
+            {
+                node.Content = patch.Content;
+            }
+
+            if (patch.Properties is not null)
+            {
+                node.Properties = new Dictionary<string, string>(patch.Properties, StringComparer.Ordinal);
+            }
+
+            node.UpdatedAt = DateTimeOffset.UtcNow;
+            return Task.FromResult(ToNode(node));
+        }
+    }
+
     public Task<NodePage> QueryNodesAsync(
         NodeQuery query,
         CancellationToken cancellationToken = default)
@@ -112,7 +154,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             var items = ordered
                 .Skip(offset)
                 .Take(limit)
-                .Select(pair => ToNode(pair.Node))
+                .Select(pair => ToNode(pair.Node, effective.SummaryOnly))
                 .ToArray();
 
             return Task.FromResult(new NodePage(items, ordered.Count, limit, offset));
@@ -521,7 +563,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             .OrderBy(node => node.Id)
             .Skip(offset)
             .Take(limit)
-            .Select(node => ToNode(node, resolved))
+            .Select(node => ToNode(node, resolved, includeContent: !query.SummaryOnly))
             .ToArray();
 
         return new NodePage(items, matching.Count, limit, offset);
@@ -543,6 +585,13 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             var kind = Normalize(query.Kind);
             candidates = candidates.Where(node =>
                 string.Equals(node.Kind, kind, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (query.Properties is { Count: > 0 } properties)
+        {
+            candidates = candidates.Where(node => properties.All(pair =>
+                node.Properties.TryGetValue(pair.Key, out var value) &&
+                string.Equals(value, pair.Value, StringComparison.Ordinal)));
         }
 
         candidates = query.Scope switch
@@ -778,20 +827,23 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
                 pair.Value.Contains(term, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static KnowledgeNode ToNode(NodeState node) => new()
+    private static KnowledgeNode ToNode(NodeState node, bool includeContent = true) => new()
     {
         Id = node.Id,
         Kind = node.Kind,
         Name = node.Name,
         Description = node.Description,
-        Content = node.Content,
+        Content = includeContent ? node.Content : string.Empty,
         Properties = new Dictionary<string, string>(node.Properties, StringComparer.Ordinal),
         CreatedAt = node.CreatedAt,
         UpdatedAt = node.UpdatedAt,
     };
 
     private static KnowledgeNode ToNode(NodeState node, HashSet<long> resolved)
-        => ToNode(node) with { Resolved = resolved.Contains(node.Id) };
+        => ToNode(node, resolved, includeContent: true);
+
+    private static KnowledgeNode ToNode(NodeState node, HashSet<long> resolved, bool includeContent)
+        => ToNode(node, includeContent) with { Resolved = resolved.Contains(node.Id) };
 
     private static KnowledgeEdge ToEdge(EdgeState edge) => new()
     {
@@ -814,7 +866,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
 
         public required string Content { get; set; }
 
-        public required Dictionary<string, string> Properties { get; init; }
+        public required Dictionary<string, string> Properties { get; set; }
 
         public required DateTimeOffset CreatedAt { get; init; }
 

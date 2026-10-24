@@ -22,6 +22,9 @@ public sealed record MessageEnvelope
 
     public string? CorrelationId { get; init; }
 
+    /// <summary>Topic a request wants its reply on.</summary>
+    public string? ReplyTo { get; init; }
+
     public string? CausationId { get; init; }
 
     public string? Sender { get; init; }
@@ -40,6 +43,7 @@ public sealed record MessageEnvelope
         string? recipient = null,
         string? correlationId = null,
         string? causationId = null,
+        string? replyTo = null,
         IReadOnlyDictionary<string, string>? headers = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(topic);
@@ -56,6 +60,7 @@ public sealed record MessageEnvelope
             Recipient = recipient,
             CorrelationId = correlationId,
             CausationId = causationId,
+            ReplyTo = replyTo,
             Headers = headers ?? new Dictionary<string, string>(StringComparer.Ordinal),
         };
     }

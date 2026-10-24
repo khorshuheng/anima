@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run all Anima services locally. Ports are fixed by AnimaPorts.
+# Run the Anima services locally. Agent harnesses are external and are not started here.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,6 +11,6 @@ dotnet run --project src/Anima.Knowledge.Service &
 dotnet run --project src/Anima.Bus.Service &
 dotnet run --project src/Anima.Automation.Service &
 dotnet run --project src/Anima.Deploy.Service &
-dotnet run --project src/Anima.Agent.Service &
+dotnet run --project src/Anima.Workflow.Service &
 
 wait

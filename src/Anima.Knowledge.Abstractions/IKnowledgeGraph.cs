@@ -18,6 +18,11 @@ public interface IKnowledgeGraph
         NodeQuery? query = null,
         CancellationToken cancellationToken = default);
 
+    Task<KnowledgeNode> UpdateNodeAsync(
+        long id,
+        NodePatch patch,
+        CancellationToken cancellationToken = default);
+
     Task<bool> DeleteNodeAsync(long id, CancellationToken cancellationToken = default);
 
     Task<KnowledgeEdge> AddEdgeAsync(EdgeDraft draft, CancellationToken cancellationToken = default);

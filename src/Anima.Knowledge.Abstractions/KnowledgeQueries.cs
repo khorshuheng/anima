@@ -29,6 +29,12 @@ public sealed record NodeQuery
     public int Limit { get; init; } = 100;
 
     public int Offset { get; init; }
+
+    /// <summary>Exact-match property filters; all must match.</summary>
+    public IReadOnlyDictionary<string, string>? Properties { get; init; }
+
+    /// <summary>Drop content from the result to save agent context.</summary>
+    public bool SummaryOnly { get; init; }
 }
 
 public sealed record NodePage(IReadOnlyList<KnowledgeNode> Items, int Total, int Limit, int Offset);

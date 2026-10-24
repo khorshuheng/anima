@@ -1,71 +1,99 @@
-# Multi-agent workflow
+# Multi-agent workflow runbook
 
-## Working in parallel
+The harness (pi) is the orchestrator. Anima is the shared state, transport,
+contract, automation and deploy layer. The project skill
+`.agents/skills/anima-orchestration/SKILL.md` is the executable form of this doc.
 
-Each component has a solution filter and an owner-facing boundary. An agent
-working on automation does not need to build the agent host:
+## Ownership
+
+| Concern | Harness | Anima |
+| --- | --- | --- |
+| Create/stop agents | yes | **no** |
+| Prompt/model choice | yes | **no** |
+| Git worktrees/branches | yes | metadata only |
+| Analyst Q&A state | asks the user | stores questions/answers |
+| Refined spec | writes the content | stores spec + tasks |
+| Implementation results | reports them | stores them |
+| Merge/review | runs them | stores results/findings |
+| Contracts/validation | uses them | owns them |
+| Bus messages | produces/consumes | transports/validates |
+| UI automation | scripts it | executes it |
+| Deploy | triggers via push | runs the sink script |
+
+## Parallel slices
+
+Each component keeps a solution filter, so agents can work in parallel without
+building the whole repo:
 
 | Slice | Build | Test |
 | --- | --- | --- |
 | Contracts | `dotnet build Anima.Contracts.slnf` | `dotnet test Anima.Contracts.slnf` |
 | Bus | `dotnet build Anima.Bus.slnf` | `dotnet test Anima.Bus.slnf` |
 | Knowledge | `dotnet build Anima.Knowledge.slnf` | `dotnet test Anima.Knowledge.slnf` |
+| Workflow | `dotnet build Anima.Workflow.slnf` | `dotnet test Anima.Workflow.slnf` |
 | Automation | `dotnet build Anima.Automation.slnf` | `dotnet test Anima.Automation.slnf` |
 | Deploy | `dotnet build Anima.Deploy.slnf` | `dotnet test Anima.Deploy.slnf` |
-| Agent | `dotnet build Anima.Agent.slnf` | `dotnet test Anima.Agent.slnf` |
 
-Before handing off, run the full `make check` once to catch cross-slice issues.
+## Sequence
 
-## Contract-first parallel work
+1. **Start** (`anima workflow start`). Anima creates a goal, a workflow node
+   anchored to the repo, and an `analysis` phase.
+2. **Analyst questions.** The harness runs an analyst agent. The analyst posts
+   questions (`anima workflow ask`). Anima moves to `awaiting_answers` and emits
+   `question.added`.
+3. **User answers.** The main agent reads open questions
+   (`anima workflow questions <id>`), asks the human, and posts answers
+   (`anima workflow answer`). Repeat until the analyst has no more questions.
+4. **Spec.** The analyst writes a markdown spec plus a task list and posts both
+   (`anima workflow spec-write`). Anima creates task nodes and moves to
+   `spec_ready`.
+5. **Implementation.** For each task the harness creates a worktree and branch,
+   spawns an implementer, and registers the assignment (`anima workflow assign`).
+   The implementer works in its own worktree and posts a result
+   (`anima workflow result --kind implementation`). Implementations can run in
+   parallel; Anima only records their paths and outcomes.
+6. **Merge.** The harness creates a merge worktree, runs the merger agent, and
+   posts `--kind merge` with conflicts/changed files.
+7. **Review.** A reviewer agent works in the merged worktree, runs verify
+   commands, and posts `--kind review` plus findings. A failed review marks the
+   workflow `failed`; a retry can post another result.
+8. **Close.** A successful review sets `completed`. The harness records the
+   change in memgraph/knowledge as needed.
 
-Contracts are the only shared surface that changes without codegen:
+## Worktree rules (harness side)
 
-1. One agent edits `contracts/proto/anima/<area>/v1/*.proto`.
-2. They run `make contracts` and commit `contracts/descriptors/anima.pb`.
-3. Other agents pull the descriptor, validate payloads with
-   `anima contracts validate <Message> <file>`, and continue.
+- Create from the recorded `baseRef`; branch name includes workflow + task key.
+- One writer per worktree.
+- Register the assignment with the real path and branch before work starts.
+- Keep logs out of agent context; post an output tail or a path.
+- Do not reuse a worktree for two tasks.
+- Remove the worktree after merge; branches can remain for audit.
 
-No project rebuild is needed for a contract change, so contract work does not
-serialize the other slices.
+## Context economy
 
-## End-to-end example
+- `anima workflow context <id> --task <key>` returns the brief (acceptance,
+  verify commands, worktree, last result) without the spec body.
+- `anima workflow spec <id>` is an explicit read, not part of every turn.
+- Knowledge lists default to `summary=true`; content is opt-in.
+- Role tasks carry ids and short instructions, not full documents.
+- Post a summary and changed-file list in results; put long logs in `--output-tail`
+  only when needed.
 
-1. **Plan** (knowledge): create a repo node, then a goal with `belongs_to` and
-   tasks with `part_of`/`depends_on`.
-2. **Delegate** (agent -> bus): orchestrator sends `delegation` to
-   `anima.agent.worker.inbox`.
-3. **Work** (worker agent): calls `knowledge.remember` and
-   `automation.run_script` tools.
-4. **Verify** (automation): run `specs/login-smoke.yaml` against dev/UAT.
-5. **Deliver** (knowledge): create a `change` node with `implements` to resolve
-   the task.
-6. **Deploy** (deploy): local push hook posts to the sink; the matching rule runs
-   `example-deploy.cmd` (Windows) or `example-deploy.sh` (Linux).
-7. **Record**: deploy result can be attached as a `decision` or `note` node.
+## Bus usage
 
-## Agent-facing endpoints
+- Wake-ups: `anima bus watch --topics anima.workflow.events`.
+- Agent-to-agent request/response: `anima bus ask ...`; the requester subscribes
+  to a private reply topic and times out.
+- Workflow dispatch: `anima workflow dispatch <id> --agent <id> --role analyst
+  --instructions ...`; the agent must already be running. Anima does not start it.
+- Treat events as hints; always re-read workflow state.
 
-| Service | Endpoint | Use |
-| --- | --- | --- |
-| Agent | `POST /api/agents/{id}/turns` | run one turn |
-| Agent | `GET /api/agents/{id}/mailbox/stream` | SSE inbox |
-| Knowledge | `POST /api/plans`, `/api/tasks` | plan/task writes |
-| Knowledge | `GET /api/search`, `/api/nodes` | memory reads |
-| Bus | `POST /api/bus/publish` | publish a contract message |
-| Bus | `GET /api/bus/stream?topics=anima.**` | SSE debug stream |
-| Automation | `POST /api/sessions/{id}/scripts` | run a derived script |
-| Automation | `POST /api/sessions/{id}/cdp` | raw CDP (Chromium only) |
-| Deploy | `POST /hooks/git/{provider}` | push sink |
-| Deploy | `GET /api/runs/{id}/log` | deploy output |
+## Failure handling
 
-All services expose `/health`, `/api/health`, `/openapi/v1.json` and `/`.
-
-## Division-of-work rules
-
-- Do not edit another component's implementation to make your slice pass; add or
-  change an abstraction and wire it in the host.
-- If a change crosses components, name it explicitly in the handoff.
-- Keep platform assumptions honest: Chrome is installed; the deploy target is
-  Windows without PowerShell; automation CDP is Chromium-only.
-- Agents adding tasks to memgraph should anchor goals with `belongs_to` so
-  project-scoped reads keep working.
+| Symptom | Action |
+| --- | --- |
+| 422 on answer | question already answered or not in this workflow; re-read questions |
+| 422 on assignment | spec not posted or task key mismatch |
+| Dispatch timeout | agent id/topic wrong or agent not subscribed; check mailbox |
+| Implementation result rejected | task key not in the current spec |
+| Review failed | read findings, fix, post a new review result |

@@ -12,7 +12,7 @@ should not require a broker, containers or service discovery.
 Each area gets `Abstractions`, an implementation library and a thin HTTP host.
 Hosts wire implementations in-process by default. All cross-boundary calls go
 through interfaces (`IMessageBus`, `IKnowledgeGraph`, `IBrowserDriver`,
-`IDeployHookSink`).
+`IDeployHookSink`). There is no agent runtime: external harnesses are clients.
 
 ## Consequences
 
