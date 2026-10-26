@@ -86,7 +86,7 @@ public sealed record SessionOptions
     /// <summary>Base URL used to resolve relative navigations.</summary>
     public string? BaseUrl { get; init; }
 
-    public bool Headless { get; init; } = true;
+    public bool Headless { get; init; }
 
     public double TimeoutMs { get; init; } = 30_000;
 

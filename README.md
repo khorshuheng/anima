@@ -172,6 +172,10 @@ on Chromium-family engines.
   `ANIMA_CHROME_PATH` overrides). No browser download is required.
 - `--browser chromium|msedge|firefox|webkit` switches engines; Firefox/WebKit need
   `make playwright-install BROWSERS='firefox'`.
+- Chrome opens a **visible window by default** so a run can be watched. Where no
+  display exists (CI, headless servers, agent containers) pass `--headless`, set
+  `Anima:Automation:Playwright:Headless`, or send `{"headless": true}` when creating
+  a session.
 - `--mode` (or `ANIMA_BROWSER_MODE`) picks how Chrome is obtained:
   - `launch` (default) spawns a throwaway Chrome; each session gets its own
     context, base URL and optional trace.

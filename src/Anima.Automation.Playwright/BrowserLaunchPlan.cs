@@ -48,7 +48,7 @@ public sealed record BrowserLaunchPlan
     /// <summary>CDP endpoint such as <c>http://127.0.0.1:9222</c>. Connect mode only.</summary>
     public Uri? ConnectEndpoint { get; init; }
 
-    public bool Headless { get; init; } = true;
+    public bool Headless { get; init; }
 
     /// <summary>Certificate policy applied to contexts the driver creates.</summary>
     public bool IgnoreHttpsErrors { get; init; } = true;

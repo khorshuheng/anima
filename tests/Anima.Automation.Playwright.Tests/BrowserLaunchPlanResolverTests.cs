@@ -232,6 +232,14 @@ public sealed class BrowserLaunchPlanResolverTests
     }
 
     [Fact]
+    public void Chrome_is_headed_unless_headless_is_requested()
+    {
+        // Headed is the default so the operator can watch the run; CI opts in.
+        Assert.False(Resolve().Headless);
+        Assert.True(Resolve(new PlaywrightOptions { Headless = true }).Headless);
+    }
+
+    [Fact]
     public void Https_error_policy_reaches_the_plan()
     {
         Assert.True(Resolve().IgnoreHttpsErrors);

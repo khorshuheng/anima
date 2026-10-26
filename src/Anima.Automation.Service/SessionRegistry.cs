@@ -31,7 +31,8 @@ public sealed class SessionRegistry : IAsyncDisposable
         var options = new SessionOptions
         {
             BaseUrl = request.BaseUrl,
-            Headless = request.Headless ?? true,
+            // Headed by default; a caller that wants no window asks for it explicitly.
+            Headless = request.Headless ?? false,
             TimeoutMs = request.TimeoutMs ?? 30_000,
             TracePath = request.TracePath,
             CaptureHeaders = request.CaptureHeaders ?? false,

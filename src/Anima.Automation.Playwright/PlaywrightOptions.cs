@@ -46,8 +46,13 @@ public sealed class PlaywrightOptions
     /// <summary>Slows down operations; useful when debugging a script.</summary>
     public double SlowMoMs { get; set; }
 
-    /// <summary>Browser launch mode. Sessions cannot override this per-session.</summary>
-    public bool Headless { get; set; } = true;
+    /// <summary>
+    /// Launch Chrome without a window. Off by default: a headed browser is visible,
+    /// watchable and matches what the operator sees, at the cost of needing a
+    /// display. Set this (or the HOST env var) for CI, headless servers and agent
+    /// containers, where Chrome cannot open a window at all.
+    /// </summary>
+    public bool Headless { get; set; }
 
     /// <summary>
     /// Accept invalid or self-signed certificates for contexts the driver creates

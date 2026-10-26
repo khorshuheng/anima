@@ -54,9 +54,11 @@ static int Help()
           anima workflow start|show|ask|answer|spec|assign|result ...
           anima knowledge kinds|search|get|create-node|edge|plan ...
           anima browser check [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>]
-          anima scripts run <script.yaml> [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>] [--base-url <url>] [--headed] [--events|--events-errors] [--var key=value]
+          anima scripts run <script.yaml> [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>] [--base-url <url>] [--headless] [--events|--events-errors] [--var key=value]
 
         --browser (or ANIMA_BROWSER) is required: chromium, chrome, msedge, firefox or webkit.
+        Chrome opens a visible window by default; pass --headless (or set
+        Anima:Automation:Playwright:Headless) where no display exists, such as CI.
         --events / --events-errors print the captured console, network, navigation,
         dialog and page-error log after the run; --capture-headers / --capture-bodies
         extend network events (secrets are redacted).
@@ -88,7 +90,7 @@ static int Browser(string[] args)
     BrowserLaunchPlan plan;
     try
     {
-        plan = BrowserLaunchPlanResolver.Resolve(CreateBrowserOptions(args, name, headless: true));
+        plan = BrowserLaunchPlanResolver.Resolve(CreateBrowserOptions(args, name, headless: false));
     }
     catch (InvalidOperationException exception)
     {
@@ -372,7 +374,7 @@ static async Task<int> ScriptsAsync(string[] args)
 
                 if (args.Length < 2)
                 {
-                    Console.Error.WriteLine("usage: anima scripts run <script.yaml> [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>] [--base-url <url>] [--headed] [--events|--events-errors] [--capture-headers] [--capture-bodies] [--var key=value]");
+                    Console.Error.WriteLine("usage: anima scripts run <script.yaml> [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>] [--base-url <url>] [--headless] [--events|--events-errors] [--capture-headers] [--capture-bodies] [--var key=value]");
                     return 2;
                 }
 
@@ -381,7 +383,9 @@ static async Task<int> ScriptsAsync(string[] args)
                     ?? "chrome";
 
                 var baseUrl = OptionValue(args, "--base-url");
-                var headless = !args.Contains("--headed", StringComparer.Ordinal);
+                // Headed is the default; --headless opts out. --headed is still
+                // accepted so existing invocations keep working.
+                var headless = args.Contains("--headless", StringComparer.Ordinal);
                 var variables = ParseVariables(args);
 
                 var driver = new PlaywrightBrowserDriver(
