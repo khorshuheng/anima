@@ -15,6 +15,61 @@ public sealed record BrowserClickOptions
     public BrowserPosition? Position { get; init; }
 }
 
+/// <summary>
+/// One field of a form: free text, a toggle (switch/checkbox/radio), or a set of
+/// choices (select, multi-select, antd Select).
+/// </summary>
+public sealed record FormFieldValue
+{
+    public string? Text { get; init; }
+
+    public bool? Toggle { get; init; }
+
+    public IReadOnlyList<string>? Choices { get; init; }
+
+    public static FormFieldValue FromText(string value) => new() { Text = value };
+
+    public static FormFieldValue FromToggle(bool value) => new() { Toggle = value };
+
+    public static FormFieldValue FromChoices(IEnumerable<string> values)
+        => new() { Choices = [.. values] };
+
+    public override string ToString()
+        => Toggle is { } toggle
+            ? (toggle ? "true" : "false")
+            : Choices is { } choices
+                ? $"[{string.Join(", ", choices)}]"
+                : Text ?? "<empty>";
+}
+
+/// <summary>
+/// Current state of one form control, keyed for diffing against source data:
+/// <see cref="Key"/> is the id, falling back to the name or aria-label.
+/// </summary>
+public sealed record FormFieldState(
+    string Key,
+    string? Id,
+    string? Name,
+    string? Label,
+    string Control,
+    string Tag,
+    string? Value,
+    bool? Toggle,
+    IReadOnlyList<string>? Choices,
+    IReadOnlyList<string>? Labels = null);
+
+/// <summary>
+/// What <see cref="IBrowserSession.FillFormAsync"/> did for one field. Only returned
+/// fields are in the result: a field that could not be applied or verified throws, so
+/// there is no per-field success flag to misread.
+/// </summary>
+public sealed record FormFieldResult(
+    string Selector,
+    string Control,
+    string Requested,
+    string? Actual,
+    string? Label = null);
+
 /// <summary>Offset in CSS pixels from the element's top-left corner.</summary>
 public sealed record BrowserPosition(double X, double Y);
 
@@ -211,6 +266,26 @@ public interface IBrowserSession : IAsyncDisposable
         WaitState state = WaitState.Visible,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Fills several fields by selector, choosing the interaction from the control
+    /// itself: text inputs and textareas, native selects (single and multiple),
+    /// checkboxes, radios, and the antd equivalents (Select, Switch, Checkbox,
+    /// Radio). Each field is verified after it is set; the first failure throws with
+    /// the selector, the value and the reason.
+    /// </summary>
+    Task<IReadOnlyList<FormFieldResult>> FillFormAsync(
+        IReadOnlyDictionary<string, FormFieldValue> fields,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads every form control under <paramref name="root"/> (default: the page) with
+    /// its current value, so a filled form can be diffed against the expected data in
+    /// one call. Controls are classified the same way <see cref="FillFormAsync"/> does.
+    /// </summary>
+    Task<IReadOnlyList<FormFieldState>> GetFormStateAsync(
+        string? root = null,
+        CancellationToken cancellationToken = default);
+
     Task<string?> GetTextAsync(string target, CancellationToken cancellationToken = default);
 
     Task<string?> GetAttributeAsync(
@@ -266,11 +341,17 @@ public interface IBrowserSession : IAsyncDisposable
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Timeout applied to everything this session waits on, in milliseconds. Written
-    /// so a caller can narrow it for one action and restore it; each action sets it
-    /// from the request's <c>timeoutMs</c>.
+    /// Base timeout in milliseconds: the session default, used by waits and, when no
+    /// override is set, by interactions.
     /// </summary>
     double DefaultTimeoutMs { get; set; }
+
+    /// <summary>
+    /// Per-action timeout in milliseconds, applied to every operation until cleared.
+    /// A caller narrows it for one action and restores it afterwards; interactions
+    /// fall back to the driver's short interaction default when this is null.
+    /// </summary>
+    double? TimeoutOverrideMs { get; set; }
 
     /// <summary>Raw Chrome DevTools Protocol channel, when the driver supports it.</summary>
     ICdpTransport? Cdp { get; }

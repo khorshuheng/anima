@@ -240,6 +240,21 @@ on Chromium-family engines.
   (`index`, `action`, `success`, `durationMs`, `output`, `error`); `stopOnError`
   defaults to true and the batch is capped at 200 steps. This is the multi-step
   path when you don't want to write YAML.
+- `fillForm` fills several fields in one call and picks the interaction from each
+  control: text inputs and textareas, native selects (value or label, single or
+  multiple), checkboxes, radios, antd Select (single/multi, searchable), antd Switch,
+  antd Checkbox and antd Radio. Every field is verified after it is set; the first
+  failure names the selector, the value, the detected control and what the control
+  actually reported. JSON values: a string is text, a boolean is a toggle, an array is
+  a set of choices. `formstate` reads every control under `target` and returns both the
+  full records and a flat `values` map keyed by id/name/aria-label, so diffing against
+  source data is one call. A root that matches nothing is an error rather than a silent
+  fall-back to the whole page, values keep their type (bools for toggles, arrays for
+  several choices), and radios report per control - use `items` for group semantics.
+- Selector-based interactions fail fast: `InteractionTimeoutMs` defaults to 4s
+  (per-action `timeoutMs` overrides it) instead of the full session timeout, and the
+  error leads with **near matches** derived from ids, aria-labels, names and
+  placeholders — including edit-distance suggestions for typos.
 - `timeoutMs` applies to every action, not just the waiting ones: the driver narrows
   the session's default timeout for the duration of the action, so a click on a
   missing element honours it too.

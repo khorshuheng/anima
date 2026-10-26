@@ -449,6 +449,37 @@ static async Task<ActionOutcome> ExecuteActionAsync(
                 },
                 cancellationToken);
             break;
+        case "fillform":
+            {
+                if (request.Fields is not { Count: > 0 } fields)
+                {
+                    throw new InvalidOperationException("fillform requires a non-empty fields map");
+                }
+
+                var results = await session.FillFormAsync(ToFormFields(fields), cancellationToken);
+
+                return new ActionOutcome(new { Fields = results }, $"{results.Count} field(s) filled");
+            }
+        case "formstate":
+            {
+                var state = await session.GetFormStateAsync(request.Target, cancellationToken);
+
+                // A flat key -> value map makes diffing against source data a one-call
+                // check. Values keep their kind (bool for toggles, an array for several
+                // choices) and a repeated key - a radio group, typically - reports every
+                // entry instead of silently keeping the last.
+                var values = state
+                    .Where(field => field.Key.Length > 0)
+                    .GroupBy(field => field.Key, StringComparer.Ordinal)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => group.Count() == 1
+                            ? FlatValue(group.First())
+                            : group.Select(FlatValue).ToArray(),
+                        StringComparer.Ordinal);
+
+                return new ActionOutcome(new { Items = state, Values = values }, $"{state.Count} control(s)");
+            }
         case "screenshot":
             {
                 if (request.Height is <= 0)
@@ -564,44 +595,52 @@ static async Task<ActionOutcome> ExecuteActionAsync(
 
 app.MapPost("/api/sessions/{id}/actions/batch", async (
     string id,
-    BatchActionRequest request,
+    HttpRequest http,
     SessionRegistry registry,
     CancellationToken cancellationToken) =>
 {
+    // Accepts a bare array of actions or {"steps":[...],"stopOnError":false}.
+    var parsed = await BatchBodyReader.ReadAsync(http, cancellationToken);
+
+    if (parsed.Error is { } bodyError)
+    {
+        return Results.BadRequest(new { message = bodyError });
+    }
+
     if (registry.Get(id) is not { } entry)
     {
         return Results.NotFound(new { message = $"session '{id}' does not exist" });
     }
 
-    if (request.Steps is null || request.Steps.Count == 0)
+    if (parsed.Steps is not { Count: > 0 } request)
     {
         return Results.BadRequest(new { message = "batch requires at least one step" });
     }
 
-    if (request.Steps.Count > MaxBatchSteps)
+    if (request.Count > MaxBatchSteps)
     {
         return Results.BadRequest(new
         {
-            message = $"batch accepts at most {MaxBatchSteps} steps, got {request.Steps.Count}",
+            message = $"batch accepts at most {MaxBatchSteps} steps, got {request.Count}",
         });
     }
 
-    for (var index = 0; index < request.Steps.Count; index++)
+    for (var index = 0; index < request.Count; index++)
     {
-        if (request.Steps[index] is null)
+        if (request[index] is null)
         {
             return Results.BadRequest(new { message = $"step {index} is null" });
         }
     }
 
-    var stopOnError = request.StopOnError ?? true;
-    var results = new List<object>(request.Steps.Count);
+    var stopOnError = parsed.StopOnError ?? true;
+    var results = new List<object>(request.Count);
     var success = true;
     string? error = null;
 
-    for (var index = 0; index < request.Steps.Count; index++)
+    for (var index = 0; index < request.Count; index++)
     {
-        var step = request.Steps[index];
+        var step = request[index];
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         try
@@ -698,8 +737,8 @@ static async Task<T> WithTimeoutAsync<T>(IBrowserSession session, int? timeoutMs
         throw new InvalidOperationException("timeoutMs must be greater than zero");
     }
 
-    var previous = session.DefaultTimeoutMs;
-    session.DefaultTimeoutMs = requested;
+    var previous = session.TimeoutOverrideMs;
+    session.TimeoutOverrideMs = requested;
 
     try
     {
@@ -707,8 +746,50 @@ static async Task<T> WithTimeoutAsync<T>(IBrowserSession session, int? timeoutMs
     }
     finally
     {
-        session.DefaultTimeoutMs = previous;
+        session.TimeoutOverrideMs = previous;
     }
+}
+
+// A field's value in the diff-friendly form: booleans for toggles, a single string
+// for one choice, an array for several, otherwise the raw value.
+static object? FlatValue(FormFieldState field)
+{
+    if (field.Toggle is { } toggle)
+    {
+        return toggle;
+    }
+
+    if (field.Control is "select-multiple" or "antd-select")
+    {
+        return field.Choices is { Count: 1 } single ? single[0] : field.Choices;
+    }
+
+    return field.Value;
+}
+
+static Dictionary<string, FormFieldValue> ToFormFields(
+    Dictionary<string, System.Text.Json.JsonElement> fields)
+{
+    var converted = new Dictionary<string, FormFieldValue>(fields.Count, StringComparer.Ordinal);
+
+    foreach (var (selector, value) in fields)
+    {
+        converted[selector] = value.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.String => FormFieldValue.FromText(value.GetString() ?? string.Empty),
+            System.Text.Json.JsonValueKind.True => FormFieldValue.FromToggle(true),
+            System.Text.Json.JsonValueKind.False => FormFieldValue.FromToggle(false),
+            System.Text.Json.JsonValueKind.Number => FormFieldValue.FromText(value.GetRawText()),
+            System.Text.Json.JsonValueKind.Array => FormFieldValue.FromChoices(
+                value.EnumerateArray().Select(item => item.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? item.GetString() ?? string.Empty
+                    : item.GetRawText())),
+            _ => throw new InvalidOperationException(
+                $"fillform value for '{selector}' must be a string, boolean or array of strings"),
+        };
+    }
+
+    return converted;
 }
 
 static BrowserPosition? ToBrowserPosition(ActionPosition? position)

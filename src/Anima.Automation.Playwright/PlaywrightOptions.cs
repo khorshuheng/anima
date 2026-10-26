@@ -47,6 +47,14 @@ public sealed class PlaywrightOptions
     public double SlowMoMs { get; set; }
 
     /// <summary>
+    /// How long a selector-based interaction (click, fill, type, check, select, ...)
+    /// waits for its element. Short on purpose: a wrong selector should fail in
+    /// seconds, not after the full session timeout, and a slow page should wait with
+    /// an explicit waitFor instead. Per-action <c>timeoutMs</c> overrides it.
+    /// </summary>
+    public double InteractionTimeoutMs { get; set; } = 4_000;
+
+    /// <summary>
     /// Launch Chrome without a window. Off by default: a headed browser is visible,
     /// watchable and matches what the operator sees, at the cost of needing a
     /// display. Set this (or the HOST env var) for CI, headless servers and agent

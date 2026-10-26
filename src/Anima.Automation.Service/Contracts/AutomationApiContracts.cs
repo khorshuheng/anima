@@ -10,16 +10,20 @@ public sealed record ValidateScriptRequest(string Source);
 /// <summary>
 /// One session action. Not every field applies to every action:
 /// <list type="bullet">
-/// <item><c>Target</c>: a selector, or a URL glob for <c>waitforurl</c>/<c>waitforresponse</c>.</item>
+/// <item><c>Target</c>: a selector, a URL glob for <c>waitforurl</c>/<c>waitforresponse</c>,
+/// or the root selector for <c>formstate</c> (default: the whole page).</item>
 /// <item><c>Value</c>: text to type/fill, an attribute name, a load state, the mouse
 /// button for <c>click</c>, or <c>fullpage</c> for <c>screenshot</c>.</item>
 /// <item><c>Modifiers</c>: held during <c>click</c> (<c>["Control","Shift"]</c>).</item>
 /// <item><c>Method</c>/<c>Status</c>/<c>IncludeBody</c>: <c>waitforresponse</c> only.</item>
-/// <item><c>TimeoutMs</c>: any waiting action.</item>
+/// <item><c>TimeoutMs</c>: any action; it narrows the session's default (waits) and
+/// the short interaction timeout alike for the duration of that action.</item>
 /// <item><c>X</c>/<c>Y</c>: <c>scroll</c> deltas. <c>Width</c>/<c>Height</c>:
 /// <c>setviewport</c>, and <c>Height</c> also caps a <c>screenshot</c>.</item>
 /// <item><c>DelayMs</c>: <c>type</c>. <c>Checked</c>: <c>check</c>. <c>Count</c>:
 /// <c>waitforcount</c> expected count, or <c>click</c> click count.</item>
+/// <item><c>Fields</c>: <c>fillform</c> selector-to-value map; a string is text, a
+/// boolean is a toggle, an array is a set of choices.</item>
 /// <item><c>Name</c>: <c>screenshot</c> file name. <c>Values</c>: <c>select</c> options.
 /// <c>State</c>: <c>waitfor</c> state (<c>visible</c>/<c>hidden</c>/<c>attached</c>/<c>detached</c>).
 /// <c>Position</c>: <c>click</c>/<c>dblclick</c> offset. <c>Clear</c>: <c>type</c>
@@ -43,6 +47,7 @@ public sealed record ActionRequest(
     int? Count = null,
     string[]? Modifiers = null,
     string? Name = null,
+    Dictionary<string, System.Text.Json.JsonElement>? Fields = null,
     string[]? Values = null,
     string? State = null,
     ActionPosition? Position = null,

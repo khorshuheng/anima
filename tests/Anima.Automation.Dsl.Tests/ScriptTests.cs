@@ -321,6 +321,45 @@ public sealed class ScriptTests
     }
 
     [Fact]
+    public void Parser_infers_form_value_kinds()
+    {
+        var result = new AutomationScriptParser().Parse(
+            """
+            steps:
+              - fillForm:
+                  "#name": alice
+                  "#agree": true
+                  "#roles": [admin, editor]
+            """);
+
+        Assert.True(result.IsValid);
+
+        var fields = Assert.IsType<FillFormStep>(result.Script!.Steps[0]).Fields;
+        Assert.Equal("alice", fields["#name"].Text);
+        Assert.True(fields["#agree"].Toggle);
+        Assert.Equal(["admin", "editor"], fields["#roles"].Choices);
+    }
+
+    [Fact]
+    public async Task Fill_form_reaches_the_session_with_typed_values()
+    {
+        var session = new FakeSession();
+        var runner = new YamlAutomationScriptRunner(new AutomationScriptParser());
+
+        var result = await runner.RunAsync(
+            """
+            steps:
+              - fillForm:
+                  "#name": alice
+                  "#agree": false
+            """,
+            session);
+
+        Assert.True(result.Success);
+        Assert.Equal(["fillForm:#name=alice,#agree=false"], session.Calls);
+    }
+
+    [Fact]
     public void Parser_documents_which_field_is_wrong()
     {
         var result = new AutomationScriptParser().Parse("steps:\n  - scroll: { target: \"#grid\", y: abc }\n");
@@ -404,6 +443,22 @@ public sealed class ScriptTests
         }
 
         public double DefaultTimeoutMs { get; set; } = 30_000;
+
+        public double? TimeoutOverrideMs { get; set; }
+
+        public Task<IReadOnlyList<FormFieldResult>> FillFormAsync(
+            IReadOnlyDictionary<string, FormFieldValue> fields,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"fillForm:{string.Join(",", fields.Select(pair => $"{pair.Key}={pair.Value}"))}");
+            return Task.FromResult<IReadOnlyList<FormFieldResult>>(
+                [.. fields.Select(pair => new FormFieldResult(pair.Key, "text", pair.Value.ToString(), pair.Value.ToString()))]);
+        }
+
+        public Task<IReadOnlyList<FormFieldState>> GetFormStateAsync(
+            string? root = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<FormFieldState>>([]);
 
         public Task DoubleClickAsync(
             string target,

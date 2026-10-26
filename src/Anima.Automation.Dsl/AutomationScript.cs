@@ -66,6 +66,12 @@ public sealed record ScrollIntoViewStep(string Target) : AutomationStep;
 
 public sealed record DragToStep(string Source, string Target) : AutomationStep;
 
+/// <summary>
+/// Fills several fields at once. The parser infers each value's kind: scalars are
+/// text, YAML booleans are toggles, sequences are choices.
+/// </summary>
+public sealed record FillFormStep(IReadOnlyDictionary<string, FormFieldValue> Fields) : AutomationStep;
+
 public sealed record ExtractStep(string Name, string Target, string? Attribute = null) : AutomationStep;
 
 public sealed record EvaluateStep(string Expression) : AutomationStep;

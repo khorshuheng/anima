@@ -387,6 +387,46 @@ public sealed class AutomationScriptParser
 
                 return waitResponse;
 
+            case "fillform":
+                if (value is not YamlMappingNode form)
+                {
+                    diagnostics.Add(new ScriptDiagnostic(
+                        "script.fill_form",
+                        "fillForm requires a mapping of selector to value",
+                        index));
+                    return null;
+                }
+
+                var fields = new Dictionary<string, FormFieldValue>(StringComparer.Ordinal);
+                var valid = true;
+
+                foreach (var pair in form.Children)
+                {
+                    var selector = Scalar(pair.Key);
+                    if (string.IsNullOrWhiteSpace(selector))
+                    {
+                        diagnostics.Add(new ScriptDiagnostic(
+                            "script.fill_form",
+                            "fillForm selectors must be non-empty strings",
+                            index));
+                        valid = false;
+                        continue;
+                    }
+
+                    fields[selector] = pair.Value switch
+                    {
+                        YamlSequenceNode sequence => FormFieldValue.FromChoices(
+                            sequence.Children.Select(Scalar).Where(item => item is not null).Select(item => item!)),
+                        // An unquoted true/false is a toggle; a quoted one stays text.
+                        YamlScalarNode { Style: ScalarStyle.Plain } plain
+                            when bool.TryParse(plain.Value, out var toggle) => FormFieldValue.FromToggle(toggle),
+                        YamlScalarNode scalar => FormFieldValue.FromText(scalar.Value ?? string.Empty),
+                        _ => FormFieldValue.FromText(string.Empty),
+                    };
+                }
+
+                return valid ? new FillFormStep(fields) : null;
+
             case "extract":
                 return RequireFields(value, index, diagnostics, "name", "target") is { } extract
                     ? new ExtractStep(extract["name"], extract["target"], Field(value, "attribute"))

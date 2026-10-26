@@ -265,6 +265,21 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 await ExpectAsync(expect, session, resolve, cancellationToken);
                 return null;
 
+            case FillFormStep fillForm:
+                {
+                    var resolvedFields = fillForm.Fields.ToDictionary(
+                        pair => resolve(pair.Key),
+                        pair => pair.Value.Text is { } text
+                            ? FormFieldValue.FromText(resolve(text))
+                            : pair.Value.Choices is { } choices
+                                ? FormFieldValue.FromChoices(choices.Select(resolve))
+                                : pair.Value,
+                        StringComparer.Ordinal);
+
+                    var filled = await session.FillFormAsync(resolvedFields, cancellationToken);
+                    return $"{filled.Count} field(s) filled";
+                }
+
             case ExtractStep extract:
                 var name = resolve(extract.Name);
                 var target = resolve(extract.Target);
@@ -443,6 +458,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
         PressStep => "press",
         SelectStep => "select",
         PressKeyStep => "pressKey",
+        FillFormStep => "fillForm",
         WaitStep => "waitFor",
         WaitForTextStep => "waitForText",
         WaitForResponseStep => "waitForResponse",

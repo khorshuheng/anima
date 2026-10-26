@@ -33,6 +33,12 @@ execution should not require an agent in the loop.
   url glob, status) rather than by scraping a confirmation banner; response
   events carry a request id so each wait consumes one exchange. Closing a session completes its log, so SSE clients see
   `event: closed` instead of a connection that never speaks again.
+- Forms are filled by control type, not by selector shape: `fillForm` classifies each
+  target (text, native select, checkbox, radio, antd Select/Switch/Checkbox/Radio),
+  applies the matching interaction and verifies the result, and `formState` reads the
+  same classification back so a filled form can be diffed against its source data.
+  Interactions carry a short timeout (4s by default) with near-match suggestions, so a
+  wrong selector fails in seconds and names what probably exists.
 - Session actions include the interaction verbs that real UIs need (double click,
   per-keystroke typing, hover, check, wheel scroll, drag, file upload, click
   modifiers) and state reads (text, value, count, html, accessibility snapshot,

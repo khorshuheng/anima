@@ -93,7 +93,7 @@ public sealed class PlaywrightBrowserDriver : IBrowserDriver, IAsyncDisposable
 
             var cdpSession = await TryCreateCdpSessionAsync(host, context, page);
             LogSessionStarted(host, options, cdpSession);
-            return new PlaywrightBrowserSession(context, page, cdpSession, options, _options.EventBufferSize, _options.ScreenshotDirectory, _options.UploadDirectory);
+            return new PlaywrightBrowserSession(context, page, cdpSession, options, _options.EventBufferSize, _options.ScreenshotDirectory, _options.UploadDirectory, _options.InteractionTimeoutMs);
         }
         catch (Exception)
         {
@@ -121,7 +121,7 @@ public sealed class PlaywrightBrowserDriver : IBrowserDriver, IAsyncDisposable
             page.SetDefaultTimeout((float)options.TimeoutMs);
             var cdpSession = await TryCreateCdpSessionAsync(host, context, page);
             LogSessionStarted(host, options, cdpSession);
-            return new PlaywrightBrowserSession(ownedContext: null, page, cdpSession, options, _options.EventBufferSize, _options.ScreenshotDirectory, _options.UploadDirectory);
+            return new PlaywrightBrowserSession(ownedContext: null, page, cdpSession, options, _options.EventBufferSize, _options.ScreenshotDirectory, _options.UploadDirectory, _options.InteractionTimeoutMs);
         }
         catch (Exception)
         {
@@ -380,6 +380,9 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     private readonly string? _screenshotDirectory;
     private readonly string? _uploadDirectory;
     private double _defaultTimeoutMs;
+    private double? _timeoutOverrideMs;
+    private int _interactionDepth;
+    private readonly double _interactionTimeoutMs;
     private readonly PlaywrightCdpTransport? _cdpTransport;
 
     /// <summary>
@@ -394,7 +397,8 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         SessionOptions options,
         int eventBufferSize,
         string? screenshotDirectory,
-        string? uploadDirectory)
+        string? uploadDirectory,
+        double interactionTimeoutMs)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(options);
@@ -405,6 +409,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         _defaultTimeoutMs = options.TimeoutMs;
         _screenshotDirectory = screenshotDirectory;
         _uploadDirectory = uploadDirectory;
+        _interactionTimeoutMs = interactionTimeoutMs;
         _events = new BrowserEventLog(eventBufferSize);
         _responseWaiter = new BrowserResponseWaiter(_events);
         _cdpTransport = cdpSession is null ? null : new PlaywrightCdpTransport(cdpSession);
@@ -428,7 +433,124 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         set
         {
             _defaultTimeoutMs = value;
-            _page.SetDefaultTimeout((float)value);
+            ApplyPageTimeout();
+        }
+    }
+
+    public double? TimeoutOverrideMs
+    {
+        get => _timeoutOverrideMs;
+        set
+        {
+            _timeoutOverrideMs = value;
+            ApplyPageTimeout();
+        }
+    }
+
+    /// <summary>
+    /// A selector-based interaction waits at most the override or the driver's short
+    /// interaction default, so a wrong selector fails in seconds; waits opt out of
+    /// this scope and use their own timeout.
+    /// </summary>
+    private double EffectivePageTimeout
+        => _timeoutOverrideMs ?? (_interactionDepth > 0 ? _interactionTimeoutMs : _defaultTimeoutMs);
+
+    private void ApplyPageTimeout() => _page.SetDefaultTimeout((float)EffectivePageTimeout);
+
+    private InteractionScope BeginInteraction()
+    {
+        _interactionDepth++;
+        ApplyPageTimeout();
+        return new InteractionScope(this);
+    }
+
+    private readonly struct InteractionScope : IDisposable
+    {
+        private readonly PlaywrightBrowserSession _session;
+
+        public InteractionScope(PlaywrightBrowserSession session) => _session = session;
+
+        public void Dispose()
+        {
+            _session._interactionDepth--;
+            _session._interactionDepth = Math.Max(0, _session._interactionDepth);
+            _session.ApplyPageTimeout();
+        }
+    }
+
+    /// <summary>
+    /// Runs a locator action inside the interaction timeout and, when it times out,
+    /// names the elements that look like what the caller meant.
+    /// </summary>
+    /// <summary>
+    /// Explains a timed-out interaction: a selector that matched nothing gets
+    /// near-match suggestions, while one that matched but could not be acted on says
+    /// so, so nobody hunts for a typo that is not there.
+    /// </summary>
+    private async Task<string> DescribeFailureHintAsync(string selector)
+    {
+        try
+        {
+            var matched = await _page.Locator(selector).CountAsync().ConfigureAwait(false);
+
+            return matched > 0
+                ? $"matched {matched} element(s), but the action never became possible " +
+                    "(not visible, enabled, stable, or not receiving events)\n"
+                : await DescribeNearMatchesAsync(selector).ConfigureAwait(false);
+        }
+        catch (PlaywrightException)
+        {
+            return string.Empty;
+        }
+    }
+
+    private async Task InteractAsync(string selector, Func<Task> action)
+    {
+        using var scope = BeginInteraction();
+
+        try
+        {
+            await action().ConfigureAwait(false);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new TimeoutException(
+                $"{await DescribeFailureHintAsync(selector).ConfigureAwait(false)}{exception.Message}");
+        }
+    }
+
+    private async Task<T> InteractAsync<T>(string selector, Func<Task<T>> action)
+    {
+        using var scope = BeginInteraction();
+
+        try
+        {
+            return await action().ConfigureAwait(false);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new TimeoutException(
+                $"{await DescribeFailureHintAsync(selector).ConfigureAwait(false)}{exception.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Looks for elements whose id, name, aria-label or placeholder resembles a token
+    /// of the failed selector, so "element not found" also says what probably exists.
+    /// </summary>
+    private async Task<string> DescribeNearMatchesAsync(string selector)
+    {
+        try
+        {
+            var matches = await _page.EvaluateAsync<string[]>(NearMatchScript, selector).ConfigureAwait(false);
+            return matches.Length == 0
+                ? string.Empty
+                : $"near matches: {string.Join(", ", matches)}\n";
+        }
+        catch (PlaywrightException)
+        {
+            // Diagnostics must never mask the original failure.
+            return string.Empty;
         }
     }
 
@@ -491,13 +613,13 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        await _page.Locator(target).ClickAsync(new LocatorClickOptions
+        await InteractAsync(target, () => _page.Locator(target).ClickAsync(new LocatorClickOptions
         {
             Button = options?.Button is { } button ? ParseMouseButton(button) : null,
             ClickCount = options is null ? null : options.ClickCount,
             Modifiers = options?.Modifiers?.Select(ParseModifier).ToArray(),
             Position = ToPosition(options?.Position),
-        });
+        }));
     }
 
     private static Position? ToPosition(BrowserPosition? position)
@@ -513,12 +635,12 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        await _page.Locator(target).DblClickAsync(new LocatorDblClickOptions
+        await InteractAsync(target, () => _page.Locator(target).DblClickAsync(new LocatorDblClickOptions
         {
             Button = options?.Button is { } button ? ParseMouseButton(button) : null,
             Modifiers = options?.Modifiers?.Select(ParseModifier).ToArray(),
             Position = ToPosition(options?.Position),
-        });
+        }));
     }
 
     public async Task TypeAsync(
@@ -539,21 +661,21 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             await locator.ClearAsync();
         }
 
-        await locator.PressSequentiallyAsync(
+        await InteractAsync(target, () => locator.PressSequentiallyAsync(
             value,
-            new LocatorPressSequentiallyOptions { Delay = options?.DelayMs });
+            new LocatorPressSequentiallyOptions { Delay = options?.DelayMs }));
     }
 
     public async Task ClearAsync(string target, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).ClearAsync();
+        await InteractAsync(target, () => _page.Locator(target).ClearAsync());
     }
 
     public async Task HoverAsync(string target, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).HoverAsync();
+        await InteractAsync(target, () => _page.Locator(target).HoverAsync());
     }
 
     public async Task CheckAsync(
@@ -562,7 +684,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).SetCheckedAsync(isChecked);
+        await InteractAsync(target, () => _page.Locator(target).SetCheckedAsync(isChecked));
     }
 
     public async Task ScrollAsync(
@@ -577,7 +699,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         // scroll containers listen to; scrollTop assignment often does nothing.
         if (!string.IsNullOrWhiteSpace(target))
         {
-            await _page.Locator(target).HoverAsync();
+            await InteractAsync(target, () => _page.Locator(target).HoverAsync());
         }
 
         await _page.Mouse.WheelAsync(deltaX, deltaY);
@@ -586,14 +708,14 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     public async Task ScrollIntoViewAsync(string target, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).ScrollIntoViewIfNeededAsync();
+        await InteractAsync(target, () => _page.Locator(target).ScrollIntoViewIfNeededAsync());
     }
 
     public async Task DragToAsync(string source, string target, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(target);
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(source).DragToAsync(_page.Locator(target));
+        await InteractAsync(source, () => _page.Locator(source).DragToAsync(_page.Locator(target)));
     }
 
     public async Task SetInputFilesAsync(string target, string path, CancellationToken cancellationToken = default)
@@ -622,7 +744,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             }
         }
 
-        await _page.Locator(target).SetInputFilesAsync(path);
+        await InteractAsync(target, () => _page.Locator(target).SetInputFilesAsync(path));
     }
 
     public async Task ReloadAsync(CancellationToken cancellationToken = default)
@@ -666,13 +788,13 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     public async Task FillAsync(string target, string value, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).FillAsync(value);
+        await InteractAsync(target, () => _page.Locator(target).FillAsync(value));
     }
 
     public async Task PressAsync(string target, string key, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).PressAsync(key);
+        await InteractAsync(target, () => _page.Locator(target).PressAsync(key));
     }
 
     public async Task PressKeyAsync(string key, CancellationToken cancellationToken = default)
@@ -685,7 +807,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     public async Task SelectAsync(string target, string value, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).SelectOptionAsync(value);
+        await InteractAsync(target, () => _page.Locator(target).SelectOptionAsync(value));
     }
 
     public async Task SelectAsync(
@@ -781,6 +903,518 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         var value = await _page.EvaluateAsync(expression);
         return value?.ToString() ?? string.Empty;
     }
+
+    public async Task<IReadOnlyList<FormFieldResult>> FillFormAsync(
+        IReadOnlyDictionary<string, FormFieldValue> fields,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(fields);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var results = new List<FormFieldResult>(fields.Count);
+
+        foreach (var (selector, value) in fields)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                results.Add(await FillFieldAsync(selector, value).ConfigureAwait(false));
+            }
+            catch (Exception exception) when (
+                exception is TimeoutException or InvalidOperationException or PlaywrightException)
+            {
+                var done = results.Count == 0
+                    ? "no earlier fields were changed"
+                    : $"already set: {string.Join(", ", results.Select(field => field.Selector))}";
+
+                throw new InvalidOperationException(
+                    $"fillForm failed on '{selector}' ({value}): {exception.Message} ({done})",
+                    exception);
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<FormFieldResult> FillFieldAsync(string selector, FormFieldValue value)
+    {
+        using var scope = BeginInteraction();
+
+        var before = await ReadFieldAsync(selector).ConfigureAwait(false);
+
+        // A boolean aimed at a text control is text: normalise once so the action and
+        // the verification compare the same thing.
+        if (before.control == "text" && value.Text is null && value.Toggle is { } asToggle)
+        {
+            value = FormFieldValue.FromText(asToggle ? "true" : "false");
+        }
+
+        switch (before.control)
+        {
+            case "text":
+                // A boolean aimed at a text control is still fillable ("true"/"false"),
+                // so the parser's kind inference cannot make a field unfillable.
+                var text = value.Text
+                    ?? (value.Toggle is { } toggle ? (toggle ? "true" : "false") : null);
+
+                if (text is null)
+                {
+                    throw new InvalidOperationException("a text control needs a text value");
+                }
+
+                await _page.Locator(selector).FillAsync(text).ConfigureAwait(false);
+                break;
+
+            case "checkbox":
+            case "radio":
+            case "antd-checkbox":
+            case "antd-radio":
+                if (value.Toggle is not { } checkedWanted)
+                {
+                    throw new InvalidOperationException($"{before.control} needs a boolean value");
+                }
+
+                await CheckAsync(selector, checkedWanted).ConfigureAwait(false);
+                break;
+
+            case "antd-switch":
+                await FillSwitchAsync(selector, value).ConfigureAwait(false);
+                break;
+
+            case "select":
+            case "select-multiple":
+                await FillNativeSelectAsync(selector, value).ConfigureAwait(false);
+                break;
+
+            case "antd-select":
+                await FillAntdSelectAsync(selector, value).ConfigureAwait(false);
+                break;
+
+            case "file":
+                throw new InvalidOperationException("use setinputfiles for a file input, not fillForm");
+
+            default:
+                throw new InvalidOperationException(
+                    $"unsupported control '{before.control}' ({before.tag}). Supported: text inputs, " +
+                    "textareas, native selects, checkboxes, radios, antd Select, antd Switch, " +
+                    "antd Checkbox and antd Radio.");
+        }
+
+        var after = await ReadFieldAsync(selector).ConfigureAwait(false);
+        var verified = Matches(value, after);
+
+        if (!verified)
+        {
+            throw new InvalidOperationException(
+                $"the control reported '{after.value}' (control '{after.control}') after setting it");
+        }
+
+        return new FormFieldResult(
+            selector,
+            after.control,
+            value.ToString(),
+            after.value,
+            after.label);
+    }
+
+    private async Task FillSwitchAsync(string selector, FormFieldValue value)
+    {
+        if (value.Toggle is not { } wanted)
+        {
+            throw new InvalidOperationException("antd switch needs a boolean value");
+        }
+
+        var state = await ReadFieldAsync(selector).ConfigureAwait(false);
+
+        if (state.toggle == wanted)
+        {
+            return;
+        }
+
+        // Clicking the switch toggles it; only click when the state differs.
+        await ClickAsync(selector).ConfigureAwait(false);
+    }
+
+    private async Task FillNativeSelectAsync(string selector, FormFieldValue value)
+    {
+        if (value.Choices is { Count: > 0 } choices)
+        {
+            await SelectAsync(selector, choices).ConfigureAwait(false);
+            return;
+        }
+
+        if (value.Text is not { } text)
+        {
+            throw new InvalidOperationException("a select needs a text value or a list of choices");
+        }
+
+        await SelectAsync(selector, text).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// antd Select is not a native control: it opens a portalled dropdown, filters as
+    /// you type, and keeps the dropdown open while choosing several options.
+    /// </summary>
+    private async Task FillAntdSelectAsync(string selector, FormFieldValue value)
+    {
+        var choices = value.Choices ?? (value.Text is { } single ? [single] : []);
+
+        if (choices.Count == 0)
+        {
+            throw new InvalidOperationException("antd select needs a text value or a list of choices");
+        }
+
+        await _page.Locator(selector).First.ClickAsync().ConfigureAwait(false);
+
+        var dropdown = _page.Locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden)").Last;
+
+        foreach (var choice in choices)
+        {
+            // Clear the filter first: antd usually resets the search input on select,
+            // but relying on that would concatenate filters where it does not.
+            var search = _page.Locator(".ant-select-focused .ant-select-selection-search-input").First;
+
+            if (await search.CountAsync().ConfigureAwait(false) > 0)
+            {
+                await search.FillAsync(string.Empty).ConfigureAwait(false);
+            }
+
+            // Typing filters the list; rc-select ignores input when not searchable.
+            await _page.Keyboard.TypeAsync(choice, new KeyboardTypeOptions { Delay = 20 }).ConfigureAwait(false);
+
+            var option = dropdown.GetByText(choice, new LocatorGetByTextOptions { Exact = true });
+
+            if (await option.CountAsync().ConfigureAwait(false) == 0)
+            {
+                option = dropdown.Locator(".ant-select-item-option").Filter(
+                    new LocatorFilterOptions { HasTextString = choice });
+            }
+
+            if (await option.CountAsync().ConfigureAwait(false) == 0)
+            {
+                var visible = await dropdown.Locator(".ant-select-item-option").AllTextContentsAsync().ConfigureAwait(false);
+
+                throw new InvalidOperationException(
+                    $"no option matches '{choice}' (visible: {string.Join(", ", visible.Select(title => title.Trim()))})");
+            }
+
+            await option.First.ClickAsync().ConfigureAwait(false);
+        }
+
+        if (choices.Count > 1)
+        {
+            await _page.Keyboard.PressAsync("Escape").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>Reads every form control under a root, keyed for diffing.</summary>
+    public async Task<IReadOnlyList<FormFieldState>> GetFormStateAsync(
+        string? root = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!string.IsNullOrWhiteSpace(root))
+        {
+            var matched = await _page.Locator(root).CountAsync().ConfigureAwait(false);
+
+            if (matched == 0)
+            {
+                throw new InvalidOperationException($"formstate root '{root}' matched no element");
+            }
+        }
+
+        // Returned as JSON text: Playwright's object mapping does not preserve the
+        // classifier's shape reliably for an array of objects.
+        var elements = await _page.EvaluateAsync<string[]>(
+            $"rootSelector => {{ const classify = {ClassifyScript}; " +
+            "const root = document.querySelector(rootSelector) || document.body; " +
+            "return [...root.querySelectorAll(" +
+            "'input, textarea, select, [contenteditable=true], .ant-switch, .ant-checkbox-wrapper, " +
+            ".ant-radio-wrapper, .ant-select')]" +
+            // one entry per control: skip the inputs antd hides inside its wrappers,
+            // and prefer the ant-select root over its inner search input
+            ".filter(element => !(element.tagName === 'INPUT' && " +
+            "(element.closest('.ant-checkbox-wrapper') || element.closest('.ant-radio-wrapper'))))" +
+            ".filter(element => !element.closest('.ant-select') || element.matches('.ant-select'))" +
+            ".map(element => JSON.stringify(classify(element))); }",
+            string.IsNullOrWhiteSpace(root) ? "body" : root).ConfigureAwait(false);
+
+        return [.. elements.Select(text =>
+        {
+            using var document = JsonDocument.Parse(text);
+            return ToState(document.RootElement.Clone());
+        })];
+    }
+
+    /// <summary>Reads one control, used for verification and for single-field checks.</summary>
+    private async Task<FormElementState> ReadFieldAsync(string selector)
+    {
+        var element = await _page.Locator(selector).First.EvaluateAsync<JsonElement>(ClassifyScript).ConfigureAwait(false);
+        return ToElementState(element);
+    }
+
+    /// <summary>
+    /// Classifies one element and reads its current state. Shared by the single-field
+    /// read and the whole-form read so they cannot disagree.
+    /// </summary>
+    private const string ClassifyScript = """
+        (element) => {
+            const tag = element.tagName.toLowerCase();
+            const type = (element.getAttribute('type') || '').toLowerCase();
+            const root = (selector) => element.closest(selector);
+            const textOf = (node) => (node ? (node.getAttribute('title') || node.textContent || '').trim() : '');
+            const inputIn = (scope) => scope ? scope.querySelector('input[type=checkbox], input[type=radio]') : null;
+            const label =
+                element.getAttribute('aria-label') ||
+                (element.labels && element.labels[0] ? element.labels[0].textContent.trim() : '') ||
+                textOf(element.closest('label')) ||
+                null;
+            const key = element.id || element.getAttribute('name') || element.getAttribute('aria-label') || '';
+
+            let control = 'unknown';
+            let value = null;
+            let toggle = null;
+            let choices = null;
+            let labels = null;
+
+            if (type === 'file') {
+                control = 'file';
+            } else if (tag === 'select') {
+                control = element.multiple ? 'select-multiple' : 'select';
+                choices = [...element.selectedOptions].map(option => option.value);
+                labels = [...element.selectedOptions].map(option => (option.label || option.textContent || '').trim());
+                value = choices.join(',');
+            } else if (type === 'checkbox') {
+                control = 'checkbox';
+                toggle = element.checked;
+                value = String(element.checked);
+            } else if (type === 'radio') {
+                control = 'radio';
+                toggle = element.checked;
+                value = String(element.checked);
+            } else if (root('.ant-select')) {
+                control = 'antd-select';
+                choices = [...root('.ant-select').querySelectorAll('.ant-select-selection-item')].map(textOf);
+                labels = choices;
+                value = choices.join(',');
+            } else if (root('.ant-switch')) {
+                control = 'antd-switch';
+                toggle = root('.ant-switch').getAttribute('aria-checked') === 'true';
+                value = String(toggle);
+            } else if (root('.ant-checkbox-wrapper') || element.matches('.ant-checkbox')) {
+                control = 'antd-checkbox';
+                const input = inputIn(root('.ant-checkbox-wrapper')) || element.querySelector('input[type=checkbox]');
+                toggle = input ? input.checked : false;
+                value = String(toggle);
+            } else if (root('.ant-radio-wrapper') || element.matches('.ant-radio')) {
+                control = 'antd-radio';
+                const input = inputIn(root('.ant-radio-wrapper')) || element.querySelector('input[type=radio]');
+                toggle = input ? input.checked : false;
+                value = String(toggle);
+            } else if (root('.ant-picker')) {
+                control = 'antd-picker';
+                value = element.value ?? null;
+            } else if (root('.ant-cascader')) {
+                control = 'antd-cascader';
+            } else if (tag === 'input' || tag === 'textarea' || element.isContentEditable) {
+                control = 'text';
+                value = element.isContentEditable ? element.textContent : element.value;
+            }
+
+            return {
+                key,
+                id: element.id || null,
+                name: element.getAttribute('name'),
+                label,
+                tag,
+                type,
+                control,
+                value,
+                toggle,
+                choices,
+                labels
+            };
+        }
+        """;
+
+    /// <summary>
+    /// Finds elements whose id, name, aria-label or placeholder resembles a token of
+    /// the selector that matched nothing, so the error can name them.
+    /// </summary>
+    private const string NearMatchScript = """
+        (selector) => {
+            const tokens = String(selector)
+                .split(/[^A-Za-z0-9_-]+/)
+                .map(token => token.trim())
+                .filter(token => token.length >= 3)
+                .filter(token => !['input', 'select', 'textarea', 'div', 'span', 'button', 'text', 'true', 'false', 'type', 'class', 'aria', 'data'].includes(token.toLowerCase()))
+                .map(token => token.toLowerCase());
+
+            if (tokens.length === 0) {
+                return [];
+            }
+
+            // Edit distance catches typos (transpositions, one wrong letter) that a
+            // substring test misses; bounded so it cannot get expensive.
+            const distance = (left, right) => {
+                if (Math.abs(left.length - right.length) > 3) {
+                    return 99;
+                }
+
+                const row = [...Array(right.length + 1).keys()];
+                for (let i = 1; i <= left.length; i++) {
+                    let previous = row[0];
+                    row[0] = i;
+                    for (let j = 1; j <= right.length; j++) {
+                        const current = row[j];
+                        row[j] = Math.min(
+                            row[j] + 1,
+                            row[j - 1] + 1,
+                            previous + (left[i - 1] === right[j - 1] ? 0 : 1));
+                        previous = current;
+                    }
+                }
+
+                return row[right.length];
+            };
+
+            const words = (value) => value.toLowerCase().split(/[^A-Za-z0-9]+/).filter(word => word.length >= 3);
+
+            const resembles = (value, token) =>
+                value.toLowerCase().includes(token) ||
+                words(value).some(word => distance(word, token) <= 2);
+
+            const described = new Map();
+
+            for (const element of document.querySelectorAll('[id], [aria-label], [name], [placeholder]')) {
+                const fields = [
+                    ['id', element.id],
+                    ['aria-label', element.getAttribute('aria-label')],
+                    ['name', element.getAttribute('name')],
+                    ['placeholder', element.getAttribute('placeholder')]
+                ].filter(([, value]) => value && value.length > 0);
+
+                for (const [attribute, value] of fields) {
+                    if (!tokens.some(token => resembles(value, token))) {
+                        continue;
+                    }
+
+                    const label = element.id ? `#${element.id}` : `<${element.tagName.toLowerCase()}>`;
+                    const detail = attribute === 'id' ? '' : ` ${attribute}="${value}"`;
+                    described.set(label, `${label} (${element.tagName.toLowerCase()}${detail})`);
+                    break;
+                }
+
+                if (described.size >= 5) {
+                    break;
+                }
+            }
+
+            return [...described.values()];
+        }
+        """;
+
+    private static bool TryRead(JsonElement element, string name, out JsonElement value)
+    {
+        value = default;
+
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static string? Field(JsonElement element, string name)
+        => TryRead(element, name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static FormFieldState ToState(JsonElement element) => new(
+        Field(element, "key") ?? string.Empty,
+        Field(element, "id"),
+        Field(element, "name"),
+        Field(element, "label"),
+        Field(element, "control") ?? "unknown",
+        Field(element, "tag") ?? string.Empty,
+        Field(element, "value"),
+        Toggle(element, "toggle"),
+        Choices(element, "choices"),
+        Choices(element, "labels"));
+
+    private static FormElementState ToElementState(JsonElement element) => new(
+        Field(element, "control") ?? "unknown",
+        Field(element, "tag"),
+        Field(element, "value"),
+        Toggle(element, "toggle"),
+        Field(element, "label"),
+        Choices(element, "labels"));
+
+    private static bool? Toggle(JsonElement element, string name)
+    {
+        if (!TryRead(element, name, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null,
+        };
+    }
+
+    private static string[]? Choices(JsonElement element, string name)
+        => TryRead(element, name, out var value) && value.ValueKind == JsonValueKind.Array
+            ? [.. value.EnumerateArray().Where(item => item.ValueKind == JsonValueKind.String).Select(item => item.GetString()!)]
+            : null;
+
+    /// <summary>One control's state, as the filler sees it.</summary>
+    private sealed record FormElementState(
+        string control,
+        string? tag,
+        string? value,
+        bool? toggle,
+        string? label,
+        IReadOnlyList<string>? labels);
+
+    private static bool Matches(FormFieldValue value, FormElementState state)
+    {
+        if (value.Toggle is { } toggle)
+        {
+            return state.toggle == toggle;
+        }
+
+        if (value.Choices is { Count: > 0 } choices)
+        {
+            return choices.All(choice => Selected(state, choice));
+        }
+
+        return value.Text is not { } text
+            || string.Equals(state.value?.Trim(), text.Trim(), StringComparison.Ordinal)
+            || Selected(state, text);
+    }
+
+    /// <summary>
+    /// True when the control currently holds the requested value or label. Selects
+    /// report option values, so a request by label must compare against the labels.
+    /// </summary>
+    private static bool Selected(FormElementState state, string requested)
+        => (state.value?.Contains(requested, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (state.labels?.Any(label => string.Equals(label.Trim(), requested.Trim(), StringComparison.OrdinalIgnoreCase)) ?? false);
 
     public async Task<string?> GetValueAsync(string target, CancellationToken cancellationToken = default)
     {
