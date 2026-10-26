@@ -93,7 +93,7 @@ public sealed class PlaywrightBrowserDriver : IBrowserDriver, IAsyncDisposable
 
             var cdpSession = await TryCreateCdpSessionAsync(host, context, page);
             LogSessionStarted(host, options, cdpSession);
-            return new PlaywrightBrowserSession(context, page, cdpSession, options, _options.EventBufferSize);
+            return new PlaywrightBrowserSession(context, page, cdpSession, options, _options.EventBufferSize, _options.ScreenshotDirectory, _options.UploadDirectory);
         }
         catch (Exception)
         {
@@ -121,7 +121,7 @@ public sealed class PlaywrightBrowserDriver : IBrowserDriver, IAsyncDisposable
             page.SetDefaultTimeout((float)options.TimeoutMs);
             var cdpSession = await TryCreateCdpSessionAsync(host, context, page);
             LogSessionStarted(host, options, cdpSession);
-            return new PlaywrightBrowserSession(ownedContext: null, page, cdpSession, options, _options.EventBufferSize);
+            return new PlaywrightBrowserSession(ownedContext: null, page, cdpSession, options, _options.EventBufferSize, _options.ScreenshotDirectory, _options.UploadDirectory);
         }
         catch (Exception)
         {
@@ -377,6 +377,8 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     private readonly BrowserEventLog _events;
     private readonly BrowserResponseWaiter _responseWaiter;
     private readonly PageEventCapture _capture;
+    private readonly string? _screenshotDirectory;
+    private readonly string? _uploadDirectory;
     private readonly PlaywrightCdpTransport? _cdpTransport;
 
     /// <summary>
@@ -389,7 +391,9 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         IPage page,
         ICDPSession? cdpSession,
         SessionOptions options,
-        int eventBufferSize)
+        int eventBufferSize,
+        string? screenshotDirectory,
+        string? uploadDirectory)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(options);
@@ -397,12 +401,18 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         _ownedContext = ownedContext;
         _page = page;
         _options = options;
+        _screenshotDirectory = screenshotDirectory;
+        _uploadDirectory = uploadDirectory;
         _events = new BrowserEventLog(eventBufferSize);
         _responseWaiter = new BrowserResponseWaiter(_events);
         _cdpTransport = cdpSession is null ? null : new PlaywrightCdpTransport(cdpSession);
 
         _capture = PlaywrightEventCapture.Attach(page, _events, options);
     }
+
+    /// <summary>Absolute default so a service working directory cannot swallow artifacts.</summary>
+    private static string DefaultScreenshotDirectory
+        => Path.Combine(Path.GetTempPath(), "anima", "screenshots");
 
     public string Id { get; } = Guid.NewGuid().ToString("n");
 
@@ -462,11 +472,162 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
     }
 
-    public async Task ClickAsync(string target, CancellationToken cancellationToken = default)
+    public async Task ClickAsync(
+        string target,
+        BrowserClickOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).ClickAsync();
+
+        await _page.Locator(target).ClickAsync(new LocatorClickOptions
+        {
+            Button = options?.Button is { } button ? ParseMouseButton(button) : null,
+            ClickCount = options is null ? null : options.ClickCount,
+            Modifiers = options?.Modifiers?.Select(ParseModifier).ToArray(),
+        });
     }
+
+    /// <summary>Double click. Grid cells (ag-grid) open their editor on this.</summary>
+    public async Task DoubleClickAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.Locator(target).DblClickAsync();
+    }
+
+    public async Task TypeAsync(
+        string target,
+        string value,
+        int? delayMs = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Character by character: widgets such as antd Select filter on every
+        // keystroke, which a single fill() never triggers.
+        await _page.Locator(target).PressSequentiallyAsync(
+            value,
+            new LocatorPressSequentiallyOptions { Delay = delayMs });
+    }
+
+    public async Task ClearAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.Locator(target).ClearAsync();
+    }
+
+    public async Task HoverAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.Locator(target).HoverAsync();
+    }
+
+    public async Task CheckAsync(
+        string target,
+        bool isChecked = true,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.Locator(target).SetCheckedAsync(isChecked);
+    }
+
+    public async Task ScrollAsync(
+        int deltaX,
+        int deltaY,
+        string? target = null,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // A wheel event over the element is what virtualised grids (ag-grid) and
+        // scroll containers listen to; scrollTop assignment often does nothing.
+        if (!string.IsNullOrWhiteSpace(target))
+        {
+            await _page.Locator(target).HoverAsync();
+        }
+
+        await _page.Mouse.WheelAsync(deltaX, deltaY);
+    }
+
+    public async Task ScrollIntoViewAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.Locator(target).ScrollIntoViewIfNeededAsync();
+    }
+
+    public async Task DragToAsync(string source, string target, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(target);
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.Locator(source).DragToAsync(_page.Locator(target));
+    }
+
+    public async Task SetInputFilesAsync(string target, string path, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"upload source '{path}' does not exist on the service host", path);
+        }
+
+        // The path comes from the caller, so a configured root limits the read to
+        // an operator-chosen directory.
+        if (!string.IsNullOrWhiteSpace(_uploadDirectory))
+        {
+            var root = Path.GetFullPath(_uploadDirectory);
+            var candidate = Path.GetFullPath(path);
+
+            if (!candidate.StartsWith(
+                    root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar,
+                    StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"upload source '{path}' is outside the configured upload directory '{root}'");
+            }
+        }
+
+        await _page.Locator(target).SetInputFilesAsync(path);
+    }
+
+    public async Task ReloadAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.ReloadAsync();
+    }
+
+    public async Task GoBackAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.GoBackAsync();
+    }
+
+    public async Task SetViewportAsync(int width, int height, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.SetViewportSizeAsync(width, height);
+    }
+
+    private static MouseButton ParseMouseButton(string button) => button.ToLowerInvariant() switch
+    {
+        "right" => MouseButton.Right,
+        "middle" => MouseButton.Middle,
+        "left" => MouseButton.Left,
+        _ => throw new InvalidOperationException($"Unknown mouse button '{button}'. Use left, right or middle."),
+    };
+
+    private static KeyboardModifier ParseModifier(string modifier) => modifier.ToLowerInvariant() switch
+    {
+        "alt" => KeyboardModifier.Alt,
+        "control" or "ctrl" => KeyboardModifier.Control,
+        "meta" or "cmd" or "command" => KeyboardModifier.Meta,
+        "shift" => KeyboardModifier.Shift,
+        _ => throw new InvalidOperationException(
+            $"Unknown click modifier '{modifier}'. Use Alt, Control, Meta or Shift."),
+    };
 
     public async Task FillAsync(string target, string value, CancellationToken cancellationToken = default)
     {
@@ -536,15 +697,213 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         return value?.ToString() ?? string.Empty;
     }
 
-    public async Task<string> TakeScreenshotAsync(
-        string? path = null,
+    public async Task<string?> GetValueAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _page.Locator(target).InputValueAsync();
+    }
+
+    public async Task<int> CountAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _page.Locator(target).CountAsync();
+    }
+
+    public async Task<string?> GetHtmlAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _page.Locator(target).InnerHTMLAsync();
+    }
+
+    public async Task<string> AriaSnapshotAsync(
+        string? target = null,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var resolved = path ?? $"screenshot-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}.png";
-        await _page.ScreenshotAsync(new PageScreenshotOptions { Path = resolved, FullPage = true });
-        return resolved;
+        var locator = string.IsNullOrWhiteSpace(target) ? _page.Locator("body") : _page.Locator(target);
+        return await locator.AriaSnapshotAsync();
     }
+
+    public async Task<bool> IsVisibleAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _page.Locator(target).IsVisibleAsync();
+    }
+
+    public async Task<bool> IsEnabledAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _page.Locator(target).IsEnabledAsync();
+    }
+
+    public async Task<bool> IsCheckedAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _page.Locator(target).IsCheckedAsync();
+    }
+
+    public async Task<BrowserBox?> GetBoxAsync(string target, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var box = await _page.Locator(target).BoundingBoxAsync();
+        return box is null ? null : new BrowserBox(box.X, box.Y, box.Width, box.Height);
+    }
+
+    public async Task WaitForUrlAsync(
+        string urlPattern,
+        int? timeoutMs = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(urlPattern);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Cursor first: a navigation that commits between the check below and the
+        // subscription must still be replayed, otherwise the wait misses its wakeup.
+        var cursor = _events.LatestSequence;
+
+        if (GlobPattern.IsMatch(_page.Url, urlPattern))
+        {
+            return;
+        }
+
+        var timeout = ResolveTimeout(timeoutMs);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(timeout);
+
+        try
+        {
+            // Driven by the captured navigation events, so the glob semantics match
+            // waitForResponse instead of Playwright's URL matcher.
+            await foreach (var item in _events.SubscribeAsync(cursor, deadline.Token))
+            {
+                if (item.Kind == BrowserEventKind.Navigation && GlobPattern.IsMatch(item.Url, urlPattern))
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"URL did not match '{urlPattern}' within {timeout.TotalSeconds:0.#}s " +
+                $"(current: {_page.Url}).");
+        }
+
+        throw new InvalidOperationException(
+            $"The session event log ended before the URL matched '{urlPattern}'.");
+    }
+
+    public async Task WaitForCountAsync(
+        string target,
+        int count,
+        int? timeoutMs = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var timeout = ResolveTimeout(timeoutMs);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        while (true)
+        {
+            if (await _page.Locator(target).CountAsync() == count)
+            {
+                return;
+            }
+
+            if (stopwatch.Elapsed >= timeout)
+            {
+                var actual = await _page.Locator(target).CountAsync();
+                throw new TimeoutException(
+                    $"'{target}' had {actual} match(es) after {timeout.TotalSeconds:0.#}s, expected {count}.");
+            }
+
+            await Task.Delay(100, cancellationToken);
+        }
+    }
+
+    public async Task WaitForLoadStateAsync(
+        BrowserLoadState state = BrowserLoadState.Load,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await _page.WaitForLoadStateAsync(state switch
+        {
+            BrowserLoadState.NetworkIdle => Microsoft.Playwright.LoadState.NetworkIdle,
+            BrowserLoadState.DomContentLoaded => Microsoft.Playwright.LoadState.DOMContentLoaded,
+            _ => Microsoft.Playwright.LoadState.Load,
+        });
+    }
+
+    public async Task<BrowserScreenshot> TakeScreenshotAsync(
+        BrowserScreenshotOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        options ??= new BrowserScreenshotOptions();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (options.MaxHeight is { } requestedCap)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(requestedCap);
+        }
+
+        var directory = _screenshotDirectory ?? DefaultScreenshotDirectory;
+        Directory.CreateDirectory(directory);
+
+        var path = options.Path ?? Path.Combine(
+            directory,
+            (options.Name ?? $"shot-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}") + ".png");
+
+        var documentHeight = await _page.EvaluateAsync<int>("document.documentElement.scrollHeight");
+        byte[] content;
+
+        if (!string.IsNullOrWhiteSpace(options.Target))
+        {
+            content = await _page.Locator(options.Target).ScreenshotAsync(
+                new LocatorScreenshotOptions { Path = path });
+        }
+        else if (!options.FullPage)
+        {
+            content = await _page.ScreenshotAsync(new PageScreenshotOptions { Path = path });
+        }
+        else
+        {
+            // Clip rather than scale: without an image library the only way to keep a
+            // long page inside a vision budget is to bound the captured height.
+            var width = await _page.EvaluateAsync<int>("window.innerWidth");
+            var height = options.MaxHeight is { } cap ? Math.Min(documentHeight, cap) : documentHeight;
+
+            // Clip only reaches past the viewport when fullPage is set as well;
+            // without it the capture silently came back viewport-sized.
+            content = await _page.ScreenshotAsync(new PageScreenshotOptions
+            {
+                Path = path,
+                FullPage = true,
+                Clip = new Clip { X = 0, Y = 0, Width = width, Height = height },
+            });
+        }
+
+        var read = PngSize.TryRead(content, out var pixelWidth, out var pixelHeight);
+
+        return new BrowserScreenshot
+        {
+            Path = path,
+            Width = read ? pixelWidth : 0,
+            Height = read ? pixelHeight : 0,
+            Bytes = content.Length,
+            FullPage = options.FullPage,
+            DocumentHeight = documentHeight,
+            // Only a full-page capture can be truncated by the height cap.
+            Truncated = options.FullPage && read && documentHeight > pixelHeight,
+        };
+    }
+
+    private TimeSpan ResolveTimeout(int? timeoutMs)
+        => timeoutMs is { } ms
+            ? TimeSpan.FromMilliseconds(ms)
+            : TimeSpan.FromMilliseconds(_options.TimeoutMs);
 
     public async ValueTask DisposeAsync()
     {

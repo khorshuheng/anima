@@ -153,7 +153,9 @@ public sealed class ScriptTests
         Assert.False(result.IsValid);
         Assert.Contains(result.Diagnostics, diagnostic =>
             diagnostic.Code == "script.wait_for_response"
-            && diagnostic.Message.Contains(expected, StringComparison.Ordinal));
+            && (diagnostic.Message.Contains(expected, StringComparison.Ordinal)
+                // A non-numeric value reports "must be an integer" instead.
+                || diagnostic.Message.Contains("must be an integer", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -204,6 +206,99 @@ public sealed class ScriptTests
     }
 
     [Fact]
+    public void Parser_reads_the_interaction_verbs()
+    {
+        var result = new AutomationScriptParser().Parse(
+            """
+            steps:
+              - dblclick: "#cell-1-1"
+              - type: { target: "#search", value: "aba", delay: 25 }
+              - clear: "#search"
+              - hover: "#menu"
+              - check: { target: "#agree" }
+              - check: { target: "#news", checked: false }
+              - scroll: { target: "#grid", y: 400 }
+              - scrollIntoView: "#row-40"
+              - dragTo: { from: "#card-1", to: "#done" }
+              - click: { target: "#row-2", modifiers: [Control, Shift] }
+            """);
+
+        Assert.True(result.IsValid);
+
+        var steps = result.Script!.Steps;
+        Assert.Equal("#cell-1-1", Assert.IsType<DoubleClickStep>(steps[0]).Target);
+
+        var type = Assert.IsType<TypeStep>(steps[1]);
+        Assert.Equal(("#search", "aba", 25), (type.Target, type.Value, type.DelayMs));
+
+        Assert.IsType<ClearStep>(steps[2]);
+        Assert.IsType<HoverStep>(steps[3]);
+        Assert.True(Assert.IsType<CheckStep>(steps[4]).IsChecked);
+        Assert.False(Assert.IsType<CheckStep>(steps[5]).IsChecked);
+
+        var scroll = Assert.IsType<ScrollStep>(steps[6]);
+        Assert.Equal(("#grid", 0, 400), (scroll.Target, scroll.DeltaX, scroll.DeltaY));
+
+        Assert.IsType<ScrollIntoViewStep>(steps[7]);
+        Assert.Equal(("#card-1", "#done"), (Assert.IsType<DragToStep>(steps[8]).Source, ((DragToStep)steps[8]).Target));
+
+        var click = Assert.IsType<ClickStep>(steps[9]);
+        Assert.Equal(["Control", "Shift"], click.Modifiers);
+    }
+
+    [Theory]
+    [InlineData("- type: { target: \"#x\" }")]
+    [InlineData("- dragTo: { from: \"#a\" }")]
+    [InlineData("- scroll: 400")]
+    [InlineData("- scroll: { target: \"#grid\" }")]
+    [InlineData("- scroll: { y: 0 }")]
+    [InlineData("- scroll: { target: \"#grid\", y: abc }")]
+    [InlineData("- type: { target: \"#q\", value: \"a\", delay: soon }")]
+    [InlineData("- type: { target: \"#q\", value: \"a\", delay: -5 }")]
+    [InlineData("- waitFor: { target: \"#q\", timeout: later }")]
+    public void Parser_rejects_malformed_interaction_steps(string step)
+    {
+        var result = new AutomationScriptParser().Parse($"steps:\n  {step}\n");
+
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void Parser_documents_which_field_is_wrong()
+    {
+        var result = new AutomationScriptParser().Parse("steps:\n  - scroll: { target: \"#grid\", y: abc }\n");
+
+        Assert.False(result.IsValid);
+        var diagnostic = Assert.Single(result.Diagnostics);
+        Assert.Equal("script.scroll", diagnostic.Code);
+        Assert.Contains("y must be an integer", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Interaction_verbs_reach_the_session_in_order()
+    {
+        var session = new FakeSession();
+        var runner = new YamlAutomationScriptRunner(new AutomationScriptParser());
+
+        var result = await runner.RunAsync(
+            """
+            steps:
+              - dblclick: "#cell"
+              - type: { target: "#search", value: "ab" }
+              - hover: "#menu"
+              - check: { target: "#agree" }
+              - scroll: { target: "#grid", y: 300 }
+              - click: { target: "#row", modifiers: "Control" }
+            """,
+            session);
+
+        Assert.True(result.Success);
+        Assert.Equal(
+            ["dblclick:#cell", "type:#search=ab", "hover:#menu", "check:#agree=True", "scroll:#grid:0,300", "click:#row+Control"],
+            session.Calls.Where(call => !call.StartsWith("goto:", StringComparison.Ordinal)));
+    }
+
+    [Fact]
     public async Task Expect_mismatch_fails_the_run()
     {
         var session = new FakeSession();
@@ -244,6 +339,111 @@ public sealed class ScriptTests
 
         public string? ResponseBody { get; init; } = "{\"id\":42}";
 
+        // Interaction verbs record their call so scripts can be asserted.
+        public Task ClickAsync(string target, BrowserClickOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"click:{target}" + (options?.Modifiers is { } mods ? $"+{string.Join("+", mods)}" : string.Empty));
+            return Task.CompletedTask;
+        }
+
+        public Task DoubleClickAsync(string target, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"dblclick:{target}");
+            return Task.CompletedTask;
+        }
+
+        public Task TypeAsync(string target, string value, int? delayMs = null, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"type:{target}={value}");
+            return Task.CompletedTask;
+        }
+
+        public Task ClearAsync(string target, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"clear:{target}");
+            return Task.CompletedTask;
+        }
+
+        public Task HoverAsync(string target, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"hover:{target}");
+            return Task.CompletedTask;
+        }
+
+        public Task CheckAsync(string target, bool isChecked = true, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"check:{target}={isChecked}");
+            return Task.CompletedTask;
+        }
+
+        public Task ScrollAsync(int deltaX, int deltaY, string? target = null, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"scroll:{target ?? "-"}:{deltaX},{deltaY}");
+            return Task.CompletedTask;
+        }
+
+        public Task ScrollIntoViewAsync(string target, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"scrollintoview:{target}");
+            return Task.CompletedTask;
+        }
+
+        public Task DragToAsync(string source, string target, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"dragto:{source}->{target}");
+            return Task.CompletedTask;
+        }
+
+        public Task SetInputFilesAsync(string target, string path, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task ReloadAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task GoBackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task SetViewportAsync(int width, int height, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<string?> GetValueAsync(string target, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
+
+        public Task<int> CountAsync(string target, CancellationToken cancellationToken = default) => Task.FromResult(0);
+
+        public Task<string?> GetHtmlAsync(string target, CancellationToken cancellationToken = default)
+            => Task.FromResult<string?>(null);
+
+        public Task<string> AriaSnapshotAsync(string? target = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Empty);
+
+        public Task<bool> IsVisibleAsync(string target, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<bool> IsEnabledAsync(string target, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<bool> IsCheckedAsync(string target, CancellationToken cancellationToken = default) => Task.FromResult(true);
+
+        public Task<BrowserBox?> GetBoxAsync(string target, CancellationToken cancellationToken = default)
+            => Task.FromResult<BrowserBox?>(null);
+
+        public Task WaitForUrlAsync(string urlPattern, int? timeoutMs = null, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task WaitForCountAsync(string target, int count, int? timeoutMs = null, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task WaitForLoadStateAsync(BrowserLoadState state = BrowserLoadState.Load, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task<BrowserScreenshot> TakeScreenshotAsync(
+            BrowserScreenshotOptions? options = null,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new BrowserScreenshot
+            {
+                Path = options?.Path ?? "/tmp/shot.png",
+                Width = 1280,
+                Height = 720,
+                Bytes = 1024,
+                FullPage = options?.FullPage ?? false,
+            });
+
         public Task<BrowserEvent> WaitForResponseAsync(
             ResponseMatcher matcher,
             CancellationToken cancellationToken = default)
@@ -271,12 +471,6 @@ public sealed class ScriptTests
         {
             Calls.Add($"goto:{url}");
             CurrentUrl = url;
-            return Task.CompletedTask;
-        }
-
-        public Task ClickAsync(string target, CancellationToken cancellationToken = default)
-        {
-            Calls.Add($"click:{target}");
             return Task.CompletedTask;
         }
 
@@ -323,11 +517,6 @@ public sealed class ScriptTests
 
         public Task<string> EvaluateAsync(string expression, CancellationToken cancellationToken = default)
             => Task.FromResult(expression);
-
-        public Task<string> TakeScreenshotAsync(
-            string? path = null,
-            CancellationToken cancellationToken = default)
-            => Task.FromResult(path ?? "screenshot.png");
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

@@ -149,8 +149,106 @@ public sealed class AutomationScriptParser
                     : null;
 
             case "click":
+                if (value is YamlMappingNode clickMapping)
+                {
+                    if (RequireFields(value, index, diagnostics, "target") is not { } clickFields)
+                    {
+                        return null;
+                    }
+
+                    // Accept both `modifiers: [Control, Shift]` and "Control,Shift";
+                    // an unquoted comma in flow style would parse as two mapping keys.
+                    var modifiersNode = GetNode(clickMapping, "modifiers");
+                    IReadOnlyList<string>? modifiers = modifiersNode switch
+                    {
+                        YamlSequenceNode sequence => [.. sequence.Children
+                            .Select(Scalar)
+                            .Where(modifier => !string.IsNullOrWhiteSpace(modifier))
+                            .Select(modifier => modifier!)],
+                        YamlScalarNode => Scalar(modifiersNode)?.Split(
+                            ',',
+                            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                        _ => null,
+                    };
+
+                    return new ClickStep(clickFields["target"], modifiers);
+                }
+
                 return RequireScalar(value, verb, index, diagnostics) is { } clickTarget
                     ? new ClickStep(clickTarget)
+                    : null;
+
+            case "dblclick":
+            case "doubleclick":
+                return RequireScalar(value, verb, index, diagnostics) is { } doubleTarget
+                    ? new DoubleClickStep(doubleTarget)
+                    : null;
+
+            case "type":
+                if (RequireFields(value, index, diagnostics, "target", "value") is not { } typeFields)
+                {
+                    return null;
+                }
+
+                if (!TryIntField(value, "delay", "type", index, diagnostics, 0, out var typeDelay))
+                {
+                    return null;
+                }
+
+                return new TypeStep(typeFields["target"], typeFields["value"], typeDelay);
+
+            case "clear":
+                return RequireScalar(value, verb, index, diagnostics) is { } clearTarget
+                    ? new ClearStep(clearTarget)
+                    : null;
+
+            case "hover":
+                return RequireScalar(value, verb, index, diagnostics) is { } hoverTarget
+                    ? new HoverStep(hoverTarget)
+                    : null;
+
+            case "check":
+                return RequireFields(value, index, diagnostics, "target") is { } checkFields
+                    ? new CheckStep(
+                        checkFields["target"],
+                        !string.Equals(Field(value, "checked"), "false", StringComparison.OrdinalIgnoreCase))
+                    : null;
+
+            case "scroll":
+                if (value is not YamlMappingNode)
+                {
+                    diagnostics.Add(new ScriptDiagnostic(
+                        "script.scroll",
+                        "scroll requires a mapping with x, y or target",
+                        index));
+                    return null;
+                }
+
+                if (!TryIntField(value, "x", "scroll", index, diagnostics, null, out var scrollX)
+                    || !TryIntField(value, "y", "scroll", index, diagnostics, null, out var scrollY))
+                {
+                    return null;
+                }
+
+                if (scrollX is null or 0 && scrollY is null or 0)
+                {
+                    diagnostics.Add(new ScriptDiagnostic(
+                        "script.scroll",
+                        "scroll requires a non-zero x or y",
+                        index));
+                    return null;
+                }
+
+                return new ScrollStep(scrollX ?? 0, scrollY ?? 0, Field(value, "target"));
+
+            case "scrollintoview":
+                return RequireScalar(value, verb, index, diagnostics) is { } scrollTarget
+                    ? new ScrollIntoViewStep(scrollTarget)
+                    : null;
+
+            case "dragto":
+                return RequireFields(value, index, diagnostics, "from", "to") is { } dragFields
+                    ? new DragToStep(dragFields["from"], dragFields["to"])
                     : null;
 
             case "fill":
@@ -176,9 +274,11 @@ public sealed class AutomationScriptParser
                 }
 
                 var state = ParseWaitState(Field(value, "state"), index, diagnostics);
-                int? timeout = int.TryParse(Field(value, "timeout"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTimeout)
-                    ? parsedTimeout
-                    : null;
+                if (!TryIntField(value, "timeout", "waitFor", index, diagnostics, 1, out var timeout))
+                {
+                    return null;
+                }
+
                 return new WaitStep(wait["target"], state, timeout);
 
             case "waitfortext":
@@ -187,9 +287,11 @@ public sealed class AutomationScriptParser
                     return null;
                 }
 
-                int? textTimeout = int.TryParse(Field(value, "timeout"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedTextTimeout)
-                    ? parsedTextTimeout
-                    : null;
+                if (!TryIntField(value, "timeout", "waitForText", index, diagnostics, 1, out var textTimeout))
+                {
+                    return null;
+                }
+
                 return new WaitForTextStep(waitText["target"], waitText["text"], textTimeout);
 
             case "expect":
@@ -220,39 +322,10 @@ public sealed class AutomationScriptParser
                 return expect;
 
             case "waitforresponse":
-                // A field that is present but unparseable must not silently widen the
-                // matcher: "status: nope" would otherwise mean "any status" and let a
-                // script confirm a write that failed.
-                var statusText = Field(value, "status");
-                if (statusText is not null
-                    && !int.TryParse(statusText, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                if (!TryIntField(value, "status", "waitForResponse", index, diagnostics, null, out var status)
+                    || !TryIntField(value, "timeout", "waitForResponse", index, diagnostics, 1, out var responseTimeout))
                 {
-                    diagnostics.Add(new ScriptDiagnostic(
-                        "script.wait_for_response",
-                        $"waitForResponse status must be an integer, not '{statusText}'",
-                        index));
                     return null;
-                }
-
-                int? status = statusText is null
-                    ? null
-                    : int.Parse(statusText, NumberStyles.Integer, CultureInfo.InvariantCulture);
-
-                var responseTimeoutText = Field(value, "timeout");
-                int? responseTimeout = null;
-                if (responseTimeoutText is not null)
-                {
-                    if (!int.TryParse(responseTimeoutText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedResponseTimeout)
-                        || parsedResponseTimeout <= 0)
-                    {
-                        diagnostics.Add(new ScriptDiagnostic(
-                            "script.wait_for_response",
-                            $"waitForResponse timeout must be a positive integer number of milliseconds, not '{responseTimeoutText}'",
-                            index));
-                        return null;
-                    }
-
-                    responseTimeout = parsedResponseTimeout;
                 }
 
                 var waitResponse = new WaitForResponseStep(
@@ -369,6 +442,69 @@ public sealed class AutomationScriptParser
             $"step '{verb}' requires a scalar value",
             index));
         return null;
+    }
+
+    /// <summary>
+    /// Reads an optional integer field. Returns false only when the field is present
+    /// but unusable, so callers fail the step instead of silently substituting a
+    /// default (a mistyped status used to widen a matcher, a mistyped delay a no-op).
+    /// </summary>
+    private static bool TryIntField(
+        YamlNode value,
+        string field,
+        string verb,
+        int index,
+        List<ScriptDiagnostic> diagnostics,
+        int? minimum,
+        out int? parsed)
+    {
+        parsed = null;
+        var text = Field(value, field);
+        if (text is null)
+        {
+            return true;
+        }
+
+        if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+        {
+            diagnostics.Add(new ScriptDiagnostic(
+                DiagnosticCode(verb),
+                $"{verb} {field} must be an integer, not '{text}'",
+                index));
+            return false;
+        }
+
+        if (minimum is { } min && number < min)
+        {
+            diagnostics.Add(new ScriptDiagnostic(
+                DiagnosticCode(verb),
+                min == 1
+                    ? $"{verb} {field} must be a positive integer, not '{text}'"
+                    : $"{verb} {field} must be at least {min}, not '{text}'",
+                index));
+            return false;
+        }
+
+        parsed = number;
+        return true;
+    }
+
+    /// <summary>script.waitForResponse -> script.wait_for_response, matching existing codes.</summary>
+    private static string DiagnosticCode(string verb)
+    {
+        var builder = new System.Text.StringBuilder("script.");
+
+        foreach (var character in verb)
+        {
+            if (char.IsUpper(character) && builder.Length > "script.".Length)
+            {
+                builder.Append('_');
+            }
+
+            builder.Append(char.ToLowerInvariant(character));
+        }
+
+        return builder.ToString();
     }
 
     private static string? Field(YamlNode node, string name)

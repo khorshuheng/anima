@@ -1,5 +1,70 @@
 namespace Anima.Automation;
 
+/// <summary>Click modifiers and button, for grids that multi-select on Ctrl-click.</summary>
+public sealed record BrowserClickOptions
+{
+    /// <summary><c>left</c> (default), <c>right</c> or <c>middle</c>.</summary>
+    public string? Button { get; init; }
+
+    public int ClickCount { get; init; } = 1;
+
+    /// <summary>Held during the click: <c>Control</c>, <c>Shift</c>, <c>Alt</c>, <c>Meta</c>.</summary>
+    public IReadOnlyList<string>? Modifiers { get; init; }
+}
+
+/// <summary>Page load states that can be awaited.</summary>
+public enum BrowserLoadState
+{
+    Load,
+    DomContentLoaded,
+    NetworkIdle,
+}
+
+/// <summary>Rendered geometry of an element, in CSS pixels.</summary>
+public sealed record BrowserBox(double X, double Y, double Width, double Height);
+
+public sealed record BrowserScreenshotOptions
+{
+    /// <summary>Explicit output file; otherwise derived from <see cref="Name"/> or a timestamp.</summary>
+    public string? Path { get; init; }
+
+    /// <summary>Stable file name (no extension), for callers that re-capture the same view.</summary>
+    public string? Name { get; init; }
+
+    /// <summary>Capture the whole scrollable page instead of the viewport.</summary>
+    public bool FullPage { get; init; }
+
+    /// <summary>Cap the captured height in CSS pixels; null means uncapped.</summary>
+    public int? MaxHeight { get; init; }
+
+    /// <summary>Capture only this element instead of the page.</summary>
+    public string? Target { get; init; }
+}
+
+/// <summary>
+/// A captured screenshot. The path is the primary handle - a vision-capable agent
+/// loads the file - while the dimensions and size let it decide whether to look.
+/// </summary>
+public sealed record BrowserScreenshot
+{
+    public required string Path { get; init; }
+
+    public required int Width { get; init; }
+
+    public required int Height { get; init; }
+
+    /// <summary>Size of the PNG on disk.</summary>
+    public required long Bytes { get; init; }
+
+    public bool FullPage { get; init; }
+
+    /// <summary>Scroll height of the page; greater than <see cref="Height"/> when clipped.</summary>
+    public int DocumentHeight { get; init; }
+
+    /// <summary>True when the requested height cap clipped the capture.</summary>
+    public bool Truncated { get; init; }
+}
+
 public sealed record SessionOptions
 {
     /// <summary>Base URL used to resolve relative navigations.</summary>
@@ -57,7 +122,52 @@ public interface IBrowserSession : IAsyncDisposable
 
     Task NavigateAsync(string url, CancellationToken cancellationToken = default);
 
-    Task ClickAsync(string target, CancellationToken cancellationToken = default);
+    Task ClickAsync(
+        string target,
+        BrowserClickOptions? options = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Double click, for grids and cells whose editor opens on dblclick.</summary>
+    Task DoubleClickAsync(string target, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Types character by character, firing a keydown/input per character. Needed by
+    /// widgets that filter on each keystroke (antd Select, comboboxes); use
+    /// <see cref="FillAsync"/> for plain inputs.
+    /// </summary>
+    Task TypeAsync(
+        string target,
+        string value,
+        int? delayMs = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Empties an input.</summary>
+    Task ClearAsync(string target, CancellationToken cancellationToken = default);
+
+    Task HoverAsync(string target, CancellationToken cancellationToken = default);
+
+    /// <summary>Sets a checkbox or radio to a state, asserting the result.</summary>
+    Task CheckAsync(string target, bool isChecked = true, CancellationToken cancellationToken = default);
+
+    /// <summary>Wheel scrolling; with a target the wheel is sent over that element.</summary>
+    Task ScrollAsync(
+        int deltaX,
+        int deltaY,
+        string? target = null,
+        CancellationToken cancellationToken = default);
+
+    Task ScrollIntoViewAsync(string target, CancellationToken cancellationToken = default);
+
+    Task DragToAsync(string source, string target, CancellationToken cancellationToken = default);
+
+    /// <summary>Uploads files from a path on the service host.</summary>
+    Task SetInputFilesAsync(string target, string path, CancellationToken cancellationToken = default);
+
+    Task ReloadAsync(CancellationToken cancellationToken = default);
+
+    Task GoBackAsync(CancellationToken cancellationToken = default);
+
+    Task SetViewportAsync(int width, int height, CancellationToken cancellationToken = default);
 
     Task FillAsync(string target, string value, CancellationToken cancellationToken = default);
 
@@ -83,7 +193,46 @@ public interface IBrowserSession : IAsyncDisposable
 
     Task<string> EvaluateAsync(string expression, CancellationToken cancellationToken = default);
 
-    Task<string> TakeScreenshotAsync(string? path = null, CancellationToken cancellationToken = default);
+    Task<string?> GetValueAsync(string target, CancellationToken cancellationToken = default);
+
+    Task<int> CountAsync(string target, CancellationToken cancellationToken = default);
+
+    Task<string?> GetHtmlAsync(string target, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Accessibility snapshot as text: roles, names and structure instead of pixels.
+    /// Usually a better first look than a screenshot for a vision-capable agent.
+    /// </summary>
+    Task<string> AriaSnapshotAsync(string? target = null, CancellationToken cancellationToken = default);
+
+    Task<bool> IsVisibleAsync(string target, CancellationToken cancellationToken = default);
+
+    Task<bool> IsEnabledAsync(string target, CancellationToken cancellationToken = default);
+
+    Task<bool> IsCheckedAsync(string target, CancellationToken cancellationToken = default);
+
+    Task<BrowserBox?> GetBoxAsync(string target, CancellationToken cancellationToken = default);
+
+    /// <summary>Waits until the page URL matches a glob.</summary>
+    Task WaitForUrlAsync(
+        string urlPattern,
+        int? timeoutMs = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Waits until a selector matches exactly <paramref name="count"/> elements.</summary>
+    Task WaitForCountAsync(
+        string target,
+        int count,
+        int? timeoutMs = null,
+        CancellationToken cancellationToken = default);
+
+    Task WaitForLoadStateAsync(
+        BrowserLoadState state = BrowserLoadState.Load,
+        CancellationToken cancellationToken = default);
+
+    Task<BrowserScreenshot> TakeScreenshotAsync(
+        BrowserScreenshotOptions? options = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Raw Chrome DevTools Protocol channel, when the driver supports it.</summary>
     ICdpTransport? Cdp { get; }

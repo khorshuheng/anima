@@ -33,6 +33,12 @@ execution should not require an agent in the loop.
   url glob, status) rather than by scraping a confirmation banner; response
   events carry a request id so each wait consumes one exchange. Closing a session completes its log, so SSE clients see
   `event: closed` instead of a connection that never speaks again.
+- Session actions include the interaction verbs that real UIs need (double click,
+  per-keystroke typing, hover, check, wheel scroll, drag, file upload, click
+  modifiers) and state reads (text, value, count, html, accessibility snapshot,
+  element state). Screenshots are returned as a path plus dimensions, and also as
+  `image/png` bytes, because a vision-capable agent loads the file while a remote
+  harness needs the bytes.
 - Deploy scripts are launched by explicit interpreter rules: `.cmd`/`.bat` ->
   `cmd.exe /c`, `.exe` direct, `.sh` -> `bash`, `.ps1` only when
   `PowerShellExecutable` is configured. `Shell` overrides inference.

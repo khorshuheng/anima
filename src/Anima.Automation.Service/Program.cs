@@ -6,6 +6,10 @@ using Anima.Automation.Service;
 using Anima.Automation.Service.Contracts;
 using Anima.Hosting;
 
+// Long-edge cap for captures taken through HTTP: above this, vision providers
+// downscale anyway and text stops being legible, so bytes buy no information.
+const int ScreenshotMaxHeight = 1568;
+
 var builder = WebApplication.CreateBuilder(args);
 builder.AddAnimaServiceDefaults("automation", AnimaPorts.Automation);
 builder.Services.AddPlaywrightAutomation();
@@ -169,19 +173,92 @@ app.MapGet("/api/scripts", (ScriptCatalog catalog) => Results.Ok(new
     }),
 }));
 
+app.MapGet("/api/sessions/{id}/screenshot", async (
+    string id,
+    bool? fullPage,
+    string? target,
+    SessionRegistry registry,
+    CancellationToken cancellationToken) =>
+{
+    if (registry.Get(id) is not { } entry)
+    {
+        return Results.NotFound(new { message = $"session '{id}' does not exist" });
+    }
+
+    BrowserScreenshot shot;
+
+    try
+    {
+        shot = await entry.Session.TakeScreenshotAsync(
+            new BrowserScreenshotOptions
+            {
+                FullPage = fullPage ?? false,
+                Target = target,
+                MaxHeight = ScreenshotMaxHeight,
+                // Unique name: concurrent GETs must not race on one path, and the
+                // file is deleted once its bytes are in hand.
+                Name = $"get-{Guid.NewGuid():n}",
+            },
+            cancellationToken);
+    }
+    catch (TimeoutException exception)
+    {
+        return Results.Json(
+            new { message = exception.Message },
+            statusCode: StatusCodes.Status408RequestTimeout);
+    }
+
+    try
+    {
+        var content = await File.ReadAllBytesAsync(shot.Path, cancellationToken);
+        return Results.File(content, "image/png", $"session-{id}.png");
+    }
+    finally
+    {
+        TryDelete(shot.Path);
+    }
+});
+
 app.MapPost("/api/sessions/{id}/actions", async (
     string id,
     ActionRequest request,
     SessionRegistry registry,
     CancellationToken cancellationToken) =>
 {
-    var entry = registry.Get(id);
-    if (entry is null)
+    if (registry.Get(id) is not { } entry)
     {
         return Results.NotFound(new { message = $"session '{id}' does not exist" });
     }
 
-    var session = entry.Session;
+    try
+    {
+        return await ExecuteActionAsync(id, entry.Session, request, cancellationToken);
+    }
+    catch (TimeoutException exception)
+    {
+        // Playwright reports its own waits as TimeoutException; a caller that ran
+        // out of time is not a server fault.
+        return Results.Json(
+            new { message = exception.Message },
+            statusCode: StatusCodes.Status408RequestTimeout);
+    }
+    catch (Exception exception) when (
+        (exception is InvalidOperationException and not ObjectDisposedException)
+        || exception is ArgumentException
+        || exception is NotSupportedException)
+    {
+        // Bad action input (missing field, unknown button, negative count) is a
+        // client error and its message is the whole point.
+        return Results.BadRequest(new { message = exception.Message });
+    }
+});
+
+static async Task<IResult> ExecuteActionAsync(
+    string id,
+    IBrowserSession session,
+    ActionRequest request,
+    CancellationToken cancellationToken)
+{
     switch (request.Action.ToLowerInvariant())
     {
         case "goto":
@@ -189,8 +266,150 @@ app.MapPost("/api/sessions/{id}/actions", async (
             await session.NavigateAsync(Require(request.Target), cancellationToken);
             break;
         case "click":
-            await session.ClickAsync(Require(request.Target), cancellationToken);
+            await session.ClickAsync(
+                Require(request.Target),
+                new BrowserClickOptions
+                {
+                    // Value is the mouse button; Modifiers is its own field, so one
+                    // cannot be mistaken for the other.
+                    Button = request.Value,
+                    ClickCount = request.Count is > 0 ? request.Count.Value : 1,
+                    Modifiers = request.Modifiers,
+                },
+                cancellationToken);
             break;
+        case "dblclick":
+        case "doubleclick":
+            await session.DoubleClickAsync(Require(request.Target), cancellationToken);
+            break;
+        case "type":
+            await session.TypeAsync(
+                Require(request.Target),
+                Require(request.Value),
+                request.DelayMs,
+                cancellationToken);
+            break;
+        case "clear":
+            await session.ClearAsync(Require(request.Target), cancellationToken);
+            break;
+        case "hover":
+            await session.HoverAsync(Require(request.Target), cancellationToken);
+            break;
+        case "check":
+            await session.CheckAsync(
+                Require(request.Target),
+                request.Checked ?? true,
+                cancellationToken);
+            break;
+        case "scroll":
+            {
+                var deltaX = request.X ?? 0;
+                var deltaY = request.Y ?? 0;
+
+                if (deltaX == 0 && deltaY == 0)
+                {
+                    return Results.BadRequest(new { message = "scroll requires a non-zero x or y" });
+                }
+
+                await session.ScrollAsync(deltaX, deltaY, request.Target, cancellationToken);
+                break;
+            }
+        case "scrollintoview":
+            await session.ScrollIntoViewAsync(Require(request.Target), cancellationToken);
+            break;
+        case "dragto":
+            await session.DragToAsync(Require(request.Target), Require(request.Value), cancellationToken);
+            break;
+        case "setinputfiles":
+            await session.SetInputFilesAsync(Require(request.Target), Require(request.Value), cancellationToken);
+            break;
+        case "reload":
+            await session.ReloadAsync(cancellationToken);
+            break;
+        case "back":
+        case "goback":
+            await session.GoBackAsync(cancellationToken);
+            break;
+        case "setviewport":
+            await session.SetViewportAsync(
+                request.Width ?? throw new InvalidOperationException("setviewport requires width"),
+                request.Height ?? throw new InvalidOperationException("setviewport requires height"),
+                cancellationToken);
+            break;
+        case "text":
+            return Results.Ok(new { Output = await session.GetTextAsync(Require(request.Target), cancellationToken) });
+        case "attribute":
+            return Results.Ok(new
+            {
+                Output = await session.GetAttributeAsync(
+                    Require(request.Target),
+                    Require(request.Value),
+                    cancellationToken),
+            });
+        case "value":
+            return Results.Ok(new { Output = await session.GetValueAsync(Require(request.Target), cancellationToken) });
+        case "texts":
+            return Results.Ok(new { Items = await session.QueryAllTextAsync(Require(request.Target), cancellationToken) });
+        case "count":
+            return Results.Ok(new { Count = await session.CountAsync(Require(request.Target), cancellationToken) });
+        case "html":
+            return Results.Ok(new { Output = await session.GetHtmlAsync(Require(request.Target), cancellationToken) });
+        case "aria":
+            return Results.Ok(new { Output = await session.AriaSnapshotAsync(request.Target, cancellationToken) });
+        case "isvisible":
+            return Results.Ok(new { Value = await session.IsVisibleAsync(Require(request.Target), cancellationToken) });
+        case "isenabled":
+            return Results.Ok(new { Value = await session.IsEnabledAsync(Require(request.Target), cancellationToken) });
+        case "ischecked":
+            return Results.Ok(new { Value = await session.IsCheckedAsync(Require(request.Target), cancellationToken) });
+        case "box":
+            return Results.Ok(new { Box = await session.GetBoxAsync(Require(request.Target), cancellationToken) });
+        case "waitforurl":
+            await session.WaitForUrlAsync(Require(request.Target), request.TimeoutMs, cancellationToken);
+            break;
+        case "waitforcount":
+            await session.WaitForCountAsync(
+                Require(request.Target),
+                request.Count ?? throw new InvalidOperationException("waitforcount requires count"),
+                request.TimeoutMs,
+                cancellationToken);
+            break;
+        case "waitforloadstate":
+            await session.WaitForLoadStateAsync(
+                (request.Value ?? "load").ToLowerInvariant() switch
+                {
+                    "networkidle" => BrowserLoadState.NetworkIdle,
+                    "domcontentloaded" => BrowserLoadState.DomContentLoaded,
+                    "load" => BrowserLoadState.Load,
+                    _ => throw new InvalidOperationException(
+                        $"Unknown load state '{request.Value}'. Use load, domcontentloaded or networkidle."),
+                },
+                cancellationToken);
+            break;
+        case "screenshot":
+            {
+                if (request.Height is <= 0)
+                {
+                    return Results.BadRequest(new { message = "height must be greater than zero" });
+                }
+
+                var fullPage = string.Equals(request.Value, "fullpage", StringComparison.OrdinalIgnoreCase);
+                var shot = await session.TakeScreenshotAsync(
+                    new BrowserScreenshotOptions
+                    {
+                        FullPage = fullPage,
+                        Target = request.Target,
+                        // Stable per session/view by default so repeated captures
+                        // overwrite instead of filling the directory; Name opts into
+                        // keeping distinct files.
+                        Name = request.Name ?? StableCaptureName(id, fullPage, request.Target),
+                        // Keep a full-page capture inside a vision budget by default.
+                        MaxHeight = request.Height ?? ScreenshotMaxHeight,
+                    },
+                    cancellationToken);
+
+                return Results.Ok(shot);
+            }
         case "fill":
             await session.FillAsync(Require(request.Target), Require(request.Value), cancellationToken);
             break;
@@ -265,7 +484,7 @@ app.MapPost("/api/sessions/{id}/actions", async (
     }
 
     return Results.Ok(new { Url = session.CurrentUrl });
-});
+}
 
 app.MapPost("/api/sessions/{id}/cdp", async (
     string id,
@@ -289,6 +508,48 @@ app.MapPost("/api/sessions/{id}/cdp", async (
 });
 
 app.Run();
+
+// Bounded capture names: one file per session and view, so polling a screenshot
+// does not grow the artifact directory without limit.
+static string StableCaptureName(string sessionId, bool fullPage, string? target)
+{
+    var mode = target is not null ? "element" : fullPage ? "full" : "viewport";
+    var suffix = target is null ? string.Empty : "-" + Slug(target);
+    return $"session-{sessionId}-{mode}{suffix}";
+}
+
+static string Slug(string value)
+{
+    var builder = new System.Text.StringBuilder(Math.Min(value.Length, 24));
+
+    foreach (var character in value)
+    {
+        if (builder.Length == 24)
+        {
+            break;
+        }
+
+        builder.Append(char.IsLetterOrDigit(character) ? character : '-');
+    }
+
+    return builder.ToString();
+}
+
+static void TryDelete(string path)
+{
+    try
+    {
+        File.Delete(path);
+    }
+    catch (IOException)
+    {
+        // Best effort: the capture is already delivered.
+    }
+    catch (UnauthorizedAccessException)
+    {
+        // Same: a leftover file is not worth failing the response.
+    }
+}
 
 static string Require(string? value) => string.IsNullOrWhiteSpace(value)
     ? throw new InvalidOperationException("action requires a target/value")

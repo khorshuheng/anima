@@ -223,6 +223,27 @@ on Chromium-family engines.
   that navigates straight after the response invalidates it (`captureBodies` does
   not help there — Chrome drops the body once the document changes), and the step
   then fails instead of storing an empty string.
+- Server-side actions cover interaction (`click` with `modifiers: ["Control","Shift"]`
+  and `value` as the mouse button, `dblclick`,
+  `type` for per-keystroke filters, `clear`, `hover`, `check`, `scroll`/`scrollintoview`,
+  `dragto`, `setinputfiles`), state reads (`text`, `attribute`, `value`, `texts`,
+  `count`, `html`, `aria`, `isvisible`, `isenabled`, `ischecked`, `box`),
+  synchronisation (`waitforurl`, `waitforcount`, `waitforloadstate`), navigation
+  (`reload`, `back`, `setviewport`) and `screenshot` (viewport, full page or a
+  single element). `POST /api/sessions/{id}/actions`.
+- `GET /api/sessions/{id}/screenshot?fullPage=&target=` returns the same capture as
+  `image/png` for harnesses that cannot read the service filesystem. The action
+  response returns the file path plus dimensions, size and whether a height cap
+  truncated it — a vision-capable agent loads the file, and `aria` is usually the
+  cheaper first look. Screenshots land in an absolute directory
+  (`Anima:Automation:Playwright:ScreenshotDirectory`, default
+  `<temp>/anima/screenshots`). The action reuses one file per session and view
+  unless `name` is given, so polling does not fill the directory; the GET captures
+  to a unique file and deletes it after reading.
+- `setinputfiles` reads a path on the service host. Set
+  `Anima:Automation:Playwright:UploadDirectory` to confine uploads to one
+  directory; without it any path the service user can read is allowed, which is
+  only acceptable because the service binds to localhost by default.
 - Scripts are `anima-yaml/v1` data in `specs/`; validate then run:
 
 ```bash

@@ -132,7 +132,50 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 return session.CurrentUrl;
 
             case ClickStep click:
-                await session.ClickAsync(resolve(click.Target), cancellationToken);
+                await session.ClickAsync(
+                    resolve(click.Target),
+                    click.Modifiers is { } clickModifiers ? new BrowserClickOptions { Modifiers = clickModifiers } : null,
+                    cancellationToken);
+                return null;
+
+            case DoubleClickStep doubleClick:
+                await session.DoubleClickAsync(resolve(doubleClick.Target), cancellationToken);
+                return null;
+
+            case TypeStep type:
+                await session.TypeAsync(
+                    resolve(type.Target),
+                    resolve(type.Value),
+                    type.DelayMs,
+                    cancellationToken);
+                return null;
+
+            case ClearStep clear:
+                await session.ClearAsync(resolve(clear.Target), cancellationToken);
+                return null;
+
+            case HoverStep hover:
+                await session.HoverAsync(resolve(hover.Target), cancellationToken);
+                return null;
+
+            case CheckStep check:
+                await session.CheckAsync(resolve(check.Target), check.IsChecked, cancellationToken);
+                return null;
+
+            case ScrollStep scroll:
+                await session.ScrollAsync(
+                    scroll.DeltaX,
+                    scroll.DeltaY,
+                    scroll.Target is null ? null : resolve(scroll.Target),
+                    cancellationToken);
+                return null;
+
+            case ScrollIntoViewStep scrollIntoView:
+                await session.ScrollIntoViewAsync(resolve(scrollIntoView.Target), cancellationToken);
+                return null;
+
+            case DragToStep drag:
+                await session.DragToAsync(resolve(drag.Source), resolve(drag.Target), cancellationToken);
                 return null;
 
             case FillStep fill:
@@ -212,9 +255,15 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 return await session.EvaluateAsync(resolve(evaluate.Expression), cancellationToken);
 
             case ScreenshotStep screenshot:
-                return await session.TakeScreenshotAsync(
-                    screenshot.Path is null ? null : resolve(screenshot.Path),
+                var captured = await session.TakeScreenshotAsync(
+                    new BrowserScreenshotOptions
+                    {
+                        Path = screenshot.Path is null ? null : resolve(screenshot.Path),
+                        FullPage = true,
+                    },
                     cancellationToken);
+
+                return captured.Path;
 
             default:
                 throw new InvalidOperationException($"unsupported step '{step.GetType().Name}'");
@@ -359,6 +408,14 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
     {
         NavigateStep => "goto",
         ClickStep => "click",
+        DoubleClickStep => "dblclick",
+        TypeStep => "type",
+        ClearStep => "clear",
+        HoverStep => "hover",
+        CheckStep => "check",
+        ScrollStep => "scroll",
+        ScrollIntoViewStep => "scrollIntoView",
+        DragToStep => "dragTo",
         FillStep => "fill",
         PressStep => "press",
         SelectStep => "select",

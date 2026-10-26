@@ -57,6 +57,21 @@ public sealed class PlaywrightOptions
     /// </summary>
     public bool IgnoreHttpsErrors { get; set; } = true;
 
+    /// <summary>
+    /// Directory for captured screenshots. Absolute by default (the temp directory),
+    /// because a service's working directory is not a reliable place to write; set
+    /// an absolute path to keep artifacts with the repo or a volume. A relative
+    /// value resolves against the service's working directory.
+    /// </summary>
+    public string? ScreenshotDirectory { get; set; }
+
+    /// <summary>
+    /// Directory that <c>setinputfiles</c> may read from. When set, uploads outside
+    /// it are rejected; when empty, any path the service user can read is allowed,
+    /// which is only appropriate because this service is localhost-only.
+    /// </summary>
+    public string? UploadDirectory { get; set; }
+
     /// <summary>Browser download directory override used by install scripts.</summary>
     public string? BrowserCacheDirectory { get; set; }
 
