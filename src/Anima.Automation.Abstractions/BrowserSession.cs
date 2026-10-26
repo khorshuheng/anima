@@ -10,6 +10,22 @@ public sealed record BrowserClickOptions
 
     /// <summary>Held during the click: <c>Control</c>, <c>Shift</c>, <c>Alt</c>, <c>Meta</c>.</summary>
     public IReadOnlyList<string>? Modifiers { get; init; }
+
+    /// <summary>Offset inside the element, for clicks on a grid cell edge or handle.</summary>
+    public BrowserPosition? Position { get; init; }
+}
+
+/// <summary>Offset in CSS pixels from the element's top-left corner.</summary>
+public sealed record BrowserPosition(double X, double Y);
+
+/// <summary>Options for <see cref="IBrowserSession.TypeAsync(string, string, BrowserTypeOptions?, CancellationToken)"/>.</summary>
+public sealed record BrowserTypeOptions
+{
+    /// <summary>Milliseconds between keystrokes; useful for debounced filters.</summary>
+    public int? DelayMs { get; init; }
+
+    /// <summary>Empty the field first, so a filter starts from scratch.</summary>
+    public bool ClearFirst { get; init; }
 }
 
 /// <summary>Page load states that can be awaited.</summary>
@@ -128,7 +144,10 @@ public interface IBrowserSession : IAsyncDisposable
         CancellationToken cancellationToken = default);
 
     /// <summary>Double click, for grids and cells whose editor opens on dblclick.</summary>
-    Task DoubleClickAsync(string target, CancellationToken cancellationToken = default);
+    Task DoubleClickAsync(
+        string target,
+        BrowserClickOptions? options = null,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Types character by character, firing a keydown/input per character. Needed by
@@ -138,7 +157,7 @@ public interface IBrowserSession : IAsyncDisposable
     Task TypeAsync(
         string target,
         string value,
-        int? delayMs = null,
+        BrowserTypeOptions? options = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>Empties an input.</summary>
@@ -173,7 +192,19 @@ public interface IBrowserSession : IAsyncDisposable
 
     Task PressAsync(string target, string key, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Presses a key on the page itself, with no target: Escape to dismiss a modal,
+    /// Enter to submit, PageDown to scroll.
+    /// </summary>
+    Task PressKeyAsync(string key, CancellationToken cancellationToken = default);
+
     Task SelectAsync(string target, string value, CancellationToken cancellationToken = default);
+
+    /// <summary>Selects several options at once, for a native multiple-select list.</summary>
+    Task SelectAsync(
+        string target,
+        IReadOnlyList<string> values,
+        CancellationToken cancellationToken = default);
 
     Task WaitForAsync(
         string target,
@@ -233,6 +264,13 @@ public interface IBrowserSession : IAsyncDisposable
     Task<BrowserScreenshot> TakeScreenshotAsync(
         BrowserScreenshotOptions? options = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Timeout applied to everything this session waits on, in milliseconds. Written
+    /// so a caller can narrow it for one action and restore it; each action sets it
+    /// from the request's <c>timeoutMs</c>.
+    /// </summary>
+    double DefaultTimeoutMs { get; set; }
 
     /// <summary>Raw Chrome DevTools Protocol channel, when the driver supports it.</summary>
     ICdpTransport? Cdp { get; }

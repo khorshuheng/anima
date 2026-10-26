@@ -15,7 +15,11 @@ public sealed record FillStep(string Target, string Value) : AutomationStep;
 
 public sealed record PressStep(string Target, string Key) : AutomationStep;
 
-public sealed record SelectStep(string Target, string Value) : AutomationStep;
+/// <summary>Selects one option, or several when <paramref name="Values"/> is set.</summary>
+public sealed record SelectStep(string Target, string? Value, IReadOnlyList<string>? Values = null) : AutomationStep;
+
+/// <summary>Presses a key on the page itself, with no target.</summary>
+public sealed record PressKeyStep(string Key) : AutomationStep;
 
 public sealed record WaitStep(string Target, WaitState State, int? TimeoutMs = null) : AutomationStep;
 
@@ -40,10 +44,14 @@ public sealed record WaitForResponseStep(
     string? Extract = null) : AutomationStep;
 
 /// <summary>Double click, for cells whose editor opens on dblclick.</summary>
-public sealed record DoubleClickStep(string Target) : AutomationStep;
+public sealed record DoubleClickStep(string Target, IReadOnlyList<string>? Modifiers = null) : AutomationStep;
 
 /// <summary>Types character by character, for widgets that filter per keystroke.</summary>
-public sealed record TypeStep(string Target, string Value, int? DelayMs = null) : AutomationStep;
+public sealed record TypeStep(
+    string Target,
+    string Value,
+    int? DelayMs = null,
+    bool ClearFirst = false) : AutomationStep;
 
 public sealed record ClearStep(string Target) : AutomationStep;
 

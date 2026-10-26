@@ -379,6 +379,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     private readonly PageEventCapture _capture;
     private readonly string? _screenshotDirectory;
     private readonly string? _uploadDirectory;
+    private double _defaultTimeoutMs;
     private readonly PlaywrightCdpTransport? _cdpTransport;
 
     /// <summary>
@@ -401,6 +402,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         _ownedContext = ownedContext;
         _page = page;
         _options = options;
+        _defaultTimeoutMs = options.TimeoutMs;
         _screenshotDirectory = screenshotDirectory;
         _uploadDirectory = uploadDirectory;
         _events = new BrowserEventLog(eventBufferSize);
@@ -420,6 +422,16 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
 
     public ICdpTransport? Cdp => _cdpTransport;
 
+    public double DefaultTimeoutMs
+    {
+        get => _defaultTimeoutMs;
+        set
+        {
+            _defaultTimeoutMs = value;
+            _page.SetDefaultTimeout((float)value);
+        }
+    }
+
     public long DroppedEventCount => _events.DroppedCount;
 
     public IReadOnlyList<BrowserEvent> ReadEvents(long afterSequence = 0, int limit = 200)
@@ -436,7 +448,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     {
         ArgumentNullException.ThrowIfNull(matcher);
 
-        var timeout = matcher.Timeout ?? TimeSpan.FromMilliseconds(_options.TimeoutMs);
+        var timeout = matcher.Timeout ?? TimeSpan.FromMilliseconds(_defaultTimeoutMs);
         var response = await _responseWaiter.WaitAsync(matcher, timeout, cancellationToken).ConfigureAwait(false);
 
         // A caller that asks for the body gets it even when the session did not opt
@@ -484,30 +496,52 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             Button = options?.Button is { } button ? ParseMouseButton(button) : null,
             ClickCount = options is null ? null : options.ClickCount,
             Modifiers = options?.Modifiers?.Select(ParseModifier).ToArray(),
+            Position = ToPosition(options?.Position),
         });
     }
 
+    private static Position? ToPosition(BrowserPosition? position)
+        => position is null
+            ? null
+            : new Position { X = (float)position.X, Y = (float)position.Y };
+
     /// <summary>Double click. Grid cells (ag-grid) open their editor on this.</summary>
-    public async Task DoubleClickAsync(string target, CancellationToken cancellationToken = default)
+    public async Task DoubleClickAsync(
+        string target,
+        BrowserClickOptions? options = null,
+        CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _page.Locator(target).DblClickAsync();
+
+        await _page.Locator(target).DblClickAsync(new LocatorDblClickOptions
+        {
+            Button = options?.Button is { } button ? ParseMouseButton(button) : null,
+            Modifiers = options?.Modifiers?.Select(ParseModifier).ToArray(),
+            Position = ToPosition(options?.Position),
+        });
     }
 
     public async Task TypeAsync(
         string target,
         string value,
-        int? delayMs = null,
+        BrowserTypeOptions? options = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var locator = _page.Locator(target);
+
         // Character by character: widgets such as antd Select filter on every
         // keystroke, which a single fill() never triggers.
-        await _page.Locator(target).PressSequentiallyAsync(
+        if (options?.ClearFirst == true)
+        {
+            await locator.ClearAsync();
+        }
+
+        await locator.PressSequentiallyAsync(
             value,
-            new LocatorPressSequentiallyOptions { Delay = delayMs });
+            new LocatorPressSequentiallyOptions { Delay = options?.DelayMs });
     }
 
     public async Task ClearAsync(string target, CancellationToken cancellationToken = default)
@@ -641,10 +675,61 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         await _page.Locator(target).PressAsync(key);
     }
 
+    public async Task PressKeyAsync(string key, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        cancellationToken.ThrowIfCancellationRequested();
+        await _page.Keyboard.PressAsync(key);
+    }
+
     public async Task SelectAsync(string target, string value, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         await _page.Locator(target).SelectOptionAsync(value);
+    }
+
+    public async Task SelectAsync(
+        string target,
+        IReadOnlyList<string> values,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(values);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var locator = _page.Locator(target);
+
+        // Resolve each requested value against option values first, then labels, so
+        // the multiple form accepts exactly what the single form accepts. Doing it in
+        // one evaluate also turns "no such option" into an immediate error instead of
+        // a 30s selection timeout that blames the locator.
+        var resolved = await locator.EvaluateAsync<string?[]>(
+            """
+            (element, wanted) => {
+                const options = Array.from(element.options || []);
+                return wanted.map(value => {
+                    const byValue = options.find(option => option.value === value);
+                    if (byValue) return byValue.value;
+                    const byLabel = options.find(option => (option.label || option.textContent || '') === value);
+                    return byLabel ? byLabel.value : null;
+                });
+            }
+            """,
+            values.ToArray());
+
+        var missing = values.Where((value, index) => resolved[index] is null).ToArray();
+
+        if (missing.Length > 0)
+        {
+            var available = await locator.EvaluateAllAsync<string[]>(
+                "elements => elements.flatMap(element => Array.from(element.options || []).map(option => option.value))");
+
+            throw new InvalidOperationException(
+                $"select: no option matches {string.Join(", ", missing.Select(value => $"'{value}'"))} " +
+                $"(available: {string.Join(", ", available)}).");
+        }
+
+        await locator.SelectOptionAsync(
+            resolved.Select(value => new SelectOptionValue { Value = value! }).ToArray());
     }
 
     public async Task WaitForAsync(
@@ -900,10 +985,14 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         };
     }
 
+    /// <summary>
+    /// Explicit value wins; otherwise the session default, which per-action narrowing
+    /// writes, so one rule covers waits and interactions alike.
+    /// </summary>
     private TimeSpan ResolveTimeout(int? timeoutMs)
         => timeoutMs is { } ms
             ? TimeSpan.FromMilliseconds(ms)
-            : TimeSpan.FromMilliseconds(_options.TimeoutMs);
+            : TimeSpan.FromMilliseconds(_defaultTimeoutMs);
 
     public async ValueTask DisposeAsync()
     {

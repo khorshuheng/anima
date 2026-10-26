@@ -180,6 +180,13 @@ public sealed class AutomationScriptParser
 
             case "dblclick":
             case "doubleclick":
+                if (value is YamlMappingNode)
+                {
+                    return RequireFields(value, index, diagnostics, "target") is { } doubleFields
+                        ? new DoubleClickStep(doubleFields["target"], Modifiers(value))
+                        : null;
+                }
+
                 return RequireScalar(value, verb, index, diagnostics) is { } doubleTarget
                     ? new DoubleClickStep(doubleTarget)
                     : null;
@@ -195,7 +202,11 @@ public sealed class AutomationScriptParser
                     return null;
                 }
 
-                return new TypeStep(typeFields["target"], typeFields["value"], typeDelay);
+                return new TypeStep(
+                    typeFields["target"],
+                    typeFields["value"],
+                    typeDelay,
+                    string.Equals(Field(value, "clear"), "true", StringComparison.OrdinalIgnoreCase));
 
             case "clear":
                 return RequireScalar(value, verb, index, diagnostics) is { } clearTarget
@@ -257,14 +268,44 @@ public sealed class AutomationScriptParser
                     : null;
 
             case "press":
-                return RequireFields(value, index, diagnostics, "target", "key") is { } press
-                    ? new PressStep(press["target"], press["key"])
+                // GetNode matches field names case-insensitively, so `Key:` works too.
+                if (value is YamlMappingNode mapping && GetNode(mapping, "key") is not null)
+                {
+                    return RequireFields(value, index, diagnostics, "target", "key") is { } press
+                        ? new PressStep(press["target"], press["key"])
+                        : null;
+                }
+
+                // `press: Escape` presses on the page, with no target.
+                return RequireScalar(value, verb, index, diagnostics) is { } pageKey
+                    ? new PressKeyStep(pageKey)
                     : null;
 
             case "select":
-                return RequireFields(value, index, diagnostics, "target", "value") is { } select
-                    ? new SelectStep(select["target"], select["value"])
+                if (RequireFields(value, index, diagnostics, "target") is not { } select)
+                {
+                    return null;
+                }
+
+                string[]? selectValues = GetNode((YamlMappingNode)value, "values") is YamlSequenceNode selectList
+                    ? [.. selectList.Children
+                        .Select(Scalar)
+                        .Where(item => !string.IsNullOrWhiteSpace(item))
+                        .Select(item => item!)]
                     : null;
+
+                var singleValue = Field(value, "value");
+
+                if (selectValues is null && singleValue is null)
+                {
+                    diagnostics.Add(new ScriptDiagnostic(
+                        "script.select",
+                        "select requires either value or values",
+                        index));
+                    return null;
+                }
+
+                return new SelectStep(select["target"], singleValue, selectValues);
 
             case "waitfor":
             case "wait":
@@ -487,6 +528,27 @@ public sealed class AutomationScriptParser
 
         parsed = number;
         return true;
+    }
+
+    /// <summary>
+    /// Reads a modifier list: `[Control, Shift]` or "Control,Shift". A sequence is
+    /// preferred because an unquoted comma in flow style parses as two mapping keys.
+    /// </summary>
+    private static string[]? Modifiers(YamlNode value)
+    {
+        var node = value is YamlMappingNode mapping ? GetNode(mapping, "modifiers") : null;
+
+        return node switch
+        {
+            YamlSequenceNode sequence => [.. sequence.Children
+                .Select(Scalar)
+                .Where(modifier => !string.IsNullOrWhiteSpace(modifier))
+                .Select(modifier => modifier!)],
+            YamlScalarNode => Scalar(node)?.Split(
+                ',',
+                StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            _ => null,
+        };
     }
 
     /// <summary>script.waitForResponse -> script.wait_for_response, matching existing codes.</summary>

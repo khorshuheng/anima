@@ -264,6 +264,63 @@ public sealed class ScriptTests
     }
 
     [Fact]
+    public void Parser_reads_multi_select_page_press_and_clear_first()
+    {
+        var result = new AutomationScriptParser().Parse(
+            """
+            steps:
+              - select: { target: "#roles", values: [admin, editor] }
+              - select: { target: "#role", value: admin }
+              - press: Escape
+              - type: { target: "#q", value: "ab", clear: true }
+              - dblclick: { target: "#cell", modifiers: [Control] }
+            """);
+
+        Assert.True(result.IsValid);
+
+        var steps = result.Script!.Steps;
+        var multi = Assert.IsType<SelectStep>(steps[0]);
+        Assert.Equal(["admin", "editor"], multi.Values);
+
+        var single = Assert.IsType<SelectStep>(steps[1]);
+        Assert.Equal("admin", single.Value);
+        Assert.Null(single.Values);
+
+        Assert.Equal("Escape", Assert.IsType<PressKeyStep>(steps[2]).Key);
+        Assert.True(Assert.IsType<TypeStep>(steps[3]).ClearFirst);
+        Assert.Equal(["Control"], Assert.IsType<DoubleClickStep>(steps[4]).Modifiers);
+    }
+
+    [Fact]
+    public async Task Multi_select_and_page_press_reach_the_session()
+    {
+        var session = new FakeSession();
+        var runner = new YamlAutomationScriptRunner(new AutomationScriptParser());
+
+        var result = await runner.RunAsync(
+            """
+            steps:
+              - select: { target: "#roles", values: [admin, editor] }
+              - press: Escape
+            """,
+            session);
+
+        Assert.True(result.Success);
+        Assert.Equal(["select:#roles=[admin,editor]", "pressKey:Escape"], session.Calls);
+    }
+
+    [Theory]
+    [InlineData("press: { key: Escape }")]
+    [InlineData("press: { Key: Escape }")]
+    public void Parser_reports_the_missing_target_the_same_way_regardless_of_case(string step)
+    {
+        var result = new AutomationScriptParser().Parse($"steps:\n  - {step}\n");
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Message.Contains("target", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Parser_documents_which_field_is_wrong()
     {
         var result = new AutomationScriptParser().Parse("steps:\n  - scroll: { target: \"#grid\", y: abc }\n");
@@ -346,15 +403,30 @@ public sealed class ScriptTests
             return Task.CompletedTask;
         }
 
-        public Task DoubleClickAsync(string target, CancellationToken cancellationToken = default)
+        public double DefaultTimeoutMs { get; set; } = 30_000;
+
+        public Task DoubleClickAsync(
+            string target,
+            BrowserClickOptions? options = null,
+            CancellationToken cancellationToken = default)
         {
             Calls.Add($"dblclick:{target}");
             return Task.CompletedTask;
         }
 
-        public Task TypeAsync(string target, string value, int? delayMs = null, CancellationToken cancellationToken = default)
+        public Task TypeAsync(
+            string target,
+            string value,
+            BrowserTypeOptions? options = null,
+            CancellationToken cancellationToken = default)
         {
             Calls.Add($"type:{target}={value}");
+            return Task.CompletedTask;
+        }
+
+        public Task PressKeyAsync(string key, CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"pressKey:{key}");
             return Task.CompletedTask;
         }
 
@@ -489,6 +561,15 @@ public sealed class ScriptTests
         public Task SelectAsync(string target, string value, CancellationToken cancellationToken = default)
         {
             Calls.Add($"select:{target}={value}");
+            return Task.CompletedTask;
+        }
+
+        public Task SelectAsync(
+            string target,
+            IReadOnlyList<string> values,
+            CancellationToken cancellationToken = default)
+        {
+            Calls.Add($"select:{target}=[{string.Join(",", values)}]");
             return Task.CompletedTask;
         }
 

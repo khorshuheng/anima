@@ -139,14 +139,19 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 return null;
 
             case DoubleClickStep doubleClick:
-                await session.DoubleClickAsync(resolve(doubleClick.Target), cancellationToken);
+                await session.DoubleClickAsync(
+                    resolve(doubleClick.Target),
+                    doubleClick.Modifiers is { } doubleModifiers
+                        ? new BrowserClickOptions { Modifiers = doubleModifiers }
+                        : null,
+                    cancellationToken);
                 return null;
 
             case TypeStep type:
                 await session.TypeAsync(
                     resolve(type.Target),
                     resolve(type.Value),
-                    type.DelayMs,
+                    new BrowserTypeOptions { DelayMs = type.DelayMs, ClearFirst = type.ClearFirst },
                     cancellationToken);
                 return null;
 
@@ -186,8 +191,26 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 await session.PressAsync(resolve(press.Target), resolve(press.Key), cancellationToken);
                 return null;
 
+            case PressKeyStep pressKey:
+                await session.PressKeyAsync(resolve(pressKey.Key), cancellationToken);
+                return null;
+
             case SelectStep select:
-                await session.SelectAsync(resolve(select.Target), resolve(select.Value), cancellationToken);
+                if (select.Values is { Count: > 0 })
+                {
+                    await session.SelectAsync(
+                        resolve(select.Target),
+                        [.. select.Values.Select(resolve)],
+                        cancellationToken);
+                    return null;
+                }
+
+                if (select.Value is not { } singleValue)
+                {
+                    throw new InvalidOperationException("select requires either value or values");
+                }
+
+                await session.SelectAsync(resolve(select.Target), resolve(singleValue), cancellationToken);
                 return null;
 
             case WaitStep wait:
@@ -419,6 +442,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
         FillStep => "fill",
         PressStep => "press",
         SelectStep => "select",
+        PressKeyStep => "pressKey",
         WaitStep => "waitFor",
         WaitForTextStep => "waitForText",
         WaitForResponseStep => "waitForResponse",

@@ -231,6 +231,20 @@ on Chromium-family engines.
   synchronisation (`waitforurl`, `waitforcount`, `waitforloadstate`), navigation
   (`reload`, `back`, `setviewport`) and `screenshot` (viewport, full page or a
   single element). `POST /api/sessions/{id}/actions`.
+- `POST /api/sessions/{id}/actions/batch` runs `{"steps":[...]}` sequentially and
+  returns a per-step result shaped like a script run
+  (`index`, `action`, `success`, `durationMs`, `output`, `error`); `stopOnError`
+  defaults to true and the batch is capped at 200 steps. This is the multi-step
+  path when you don't want to write YAML.
+- `timeoutMs` applies to every action, not just the waiting ones: the driver narrows
+  the session's default timeout for the duration of the action, so a click on a
+  missing element honours it too.
+- `press` without a `target` presses on the page itself (Escape closes a modal);
+  `select` takes `value` or `values: [...]` for a multiple-select; `waitfor` takes
+  `state: visible|hidden|attached|detached`; `type` takes `clear: true`; `click` and
+  `dblclick` take `position: {x, y}` as well as `modifiers`. `select` accepts an
+  option's value or its label, in both the single and the `values` form, and reports
+  the available values when nothing matches instead of waiting out the timeout.
 - `GET /api/sessions/{id}/screenshot?fullPage=&target=` returns the same capture as
   `image/png` for harnesses that cannot read the service filesystem. The action
   response returns the file path plus dimensions, size and whether a height cap

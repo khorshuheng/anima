@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Threading.Channels;
 using Anima.Automation;
 using Anima.Automation.Dsl;
@@ -9,6 +10,10 @@ using Anima.Hosting;
 // Long-edge cap for captures taken through HTTP: above this, vision providers
 // downscale anyway and text stops being legible, so bytes buy no information.
 const int ScreenshotMaxHeight = 1568;
+
+// A batch runs sequentially and each step may wait, so bound it the way a script is
+// bounded; anything larger belongs in a script or several batches.
+const int MaxBatchSteps = 200;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddAnimaServiceDefaults("automation", AnimaPorts.Automation);
@@ -232,7 +237,14 @@ app.MapPost("/api/sessions/{id}/actions", async (
 
     try
     {
-        return await ExecuteActionAsync(id, entry.Session, request, cancellationToken);
+        var outcome = await WithTimeoutAsync(
+            entry.Session,
+            request.TimeoutMs,
+            () => ExecuteActionAsync(id, entry.Session, request, cancellationToken));
+
+        return outcome.Payload is null
+            ? Results.Ok(new { Url = entry.Session.CurrentUrl })
+            : Results.Ok(outcome.Payload);
     }
     catch (TimeoutException exception)
     {
@@ -241,6 +253,12 @@ app.MapPost("/api/sessions/{id}/actions", async (
         return Results.Json(
             new { message = exception.Message },
             statusCode: StatusCodes.Status408RequestTimeout);
+    }
+    catch (SessionClosedException exception)
+    {
+        return Results.Json(
+            new { message = exception.Message },
+            statusCode: StatusCodes.Status409Conflict);
     }
     catch (Exception exception) when (
         (exception is InvalidOperationException and not ObjectDisposedException)
@@ -253,11 +271,12 @@ app.MapPost("/api/sessions/{id}/actions", async (
     }
 });
 
-static async Task<IResult> ExecuteActionAsync(
+static async Task<ActionOutcome> ExecuteActionAsync(
     string id,
     IBrowserSession session,
     ActionRequest request,
-    CancellationToken cancellationToken)
+    CancellationToken cancellationToken,
+    int? stepIndex = null)
 {
     switch (request.Action.ToLowerInvariant())
     {
@@ -275,18 +294,31 @@ static async Task<IResult> ExecuteActionAsync(
                     Button = request.Value,
                     ClickCount = request.Count is > 0 ? request.Count.Value : 1,
                     Modifiers = request.Modifiers,
+                    Position = ToBrowserPosition(request.Position),
                 },
                 cancellationToken);
             break;
         case "dblclick":
         case "doubleclick":
-            await session.DoubleClickAsync(Require(request.Target), cancellationToken);
+            await session.DoubleClickAsync(
+                Require(request.Target),
+                new BrowserClickOptions
+                {
+                    Button = request.Value,
+                    Modifiers = request.Modifiers,
+                    Position = ToBrowserPosition(request.Position),
+                },
+                cancellationToken);
             break;
         case "type":
             await session.TypeAsync(
                 Require(request.Target),
                 Require(request.Value),
-                request.DelayMs,
+                new BrowserTypeOptions
+                {
+                    DelayMs = request.DelayMs,
+                    ClearFirst = request.Clear ?? false,
+                },
                 cancellationToken);
             break;
         case "clear":
@@ -308,7 +340,7 @@ static async Task<IResult> ExecuteActionAsync(
 
                 if (deltaX == 0 && deltaY == 0)
                 {
-                    return Results.BadRequest(new { message = "scroll requires a non-zero x or y" });
+                    throw new InvalidOperationException("scroll requires a non-zero x or y");
                 }
 
                 await session.ScrollAsync(deltaX, deltaY, request.Target, cancellationToken);
@@ -337,33 +369,64 @@ static async Task<IResult> ExecuteActionAsync(
                 cancellationToken);
             break;
         case "text":
-            return Results.Ok(new { Output = await session.GetTextAsync(Require(request.Target), cancellationToken) });
-        case "attribute":
-            return Results.Ok(new
             {
-                Output = await session.GetAttributeAsync(
+                var text = await session.GetTextAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Output = text }, text);
+            }
+        case "attribute":
+            {
+                var attribute = await session.GetAttributeAsync(
                     Require(request.Target),
                     Require(request.Value),
-                    cancellationToken),
-            });
+                    cancellationToken);
+
+                return new ActionOutcome(new { Output = attribute }, attribute);
+            }
         case "value":
-            return Results.Ok(new { Output = await session.GetValueAsync(Require(request.Target), cancellationToken) });
+            {
+                var inputValue = await session.GetValueAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Output = inputValue }, inputValue);
+            }
         case "texts":
-            return Results.Ok(new { Items = await session.QueryAllTextAsync(Require(request.Target), cancellationToken) });
+            {
+                var texts = await session.QueryAllTextAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Items = texts }, string.Join(" | ", texts));
+            }
         case "count":
-            return Results.Ok(new { Count = await session.CountAsync(Require(request.Target), cancellationToken) });
+            {
+                var count = await session.CountAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Count = count }, count.ToString(CultureInfo.InvariantCulture));
+            }
         case "html":
-            return Results.Ok(new { Output = await session.GetHtmlAsync(Require(request.Target), cancellationToken) });
+            {
+                var html = await session.GetHtmlAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Output = html }, html);
+            }
         case "aria":
-            return Results.Ok(new { Output = await session.AriaSnapshotAsync(request.Target, cancellationToken) });
+            {
+                var snapshot = await session.AriaSnapshotAsync(request.Target, cancellationToken);
+                return new ActionOutcome(new { Output = snapshot }, snapshot);
+            }
         case "isvisible":
-            return Results.Ok(new { Value = await session.IsVisibleAsync(Require(request.Target), cancellationToken) });
+            {
+                var visible = await session.IsVisibleAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Value = visible }, visible.ToString());
+            }
         case "isenabled":
-            return Results.Ok(new { Value = await session.IsEnabledAsync(Require(request.Target), cancellationToken) });
+            {
+                var enabled = await session.IsEnabledAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Value = enabled }, enabled.ToString());
+            }
         case "ischecked":
-            return Results.Ok(new { Value = await session.IsCheckedAsync(Require(request.Target), cancellationToken) });
+            {
+                var checkedState = await session.IsCheckedAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Value = checkedState }, checkedState.ToString());
+            }
         case "box":
-            return Results.Ok(new { Box = await session.GetBoxAsync(Require(request.Target), cancellationToken) });
+            {
+                var box = await session.GetBoxAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Box = box }, box?.ToString());
+            }
         case "waitforurl":
             await session.WaitForUrlAsync(Require(request.Target), request.TimeoutMs, cancellationToken);
             break;
@@ -390,7 +453,7 @@ static async Task<IResult> ExecuteActionAsync(
             {
                 if (request.Height is <= 0)
                 {
-                    return Results.BadRequest(new { message = "height must be greater than zero" });
+                    throw new InvalidOperationException("height must be greater than zero");
                 }
 
                 var fullPage = string.Equals(request.Value, "fullpage", StringComparison.OrdinalIgnoreCase);
@@ -402,41 +465,60 @@ static async Task<IResult> ExecuteActionAsync(
                         // Stable per session/view by default so repeated captures
                         // overwrite instead of filling the directory; Name opts into
                         // keeping distinct files.
-                        Name = request.Name ?? StableCaptureName(id, fullPage, request.Target),
+                        Name = request.Name
+                            ?? StableCaptureName(id, fullPage, request.Target)
+                            + (stepIndex is { } index ? $"-{index}" : string.Empty),
                         // Keep a full-page capture inside a vision budget by default.
                         MaxHeight = request.Height ?? ScreenshotMaxHeight,
                     },
                     cancellationToken);
 
-                return Results.Ok(shot);
+                return new ActionOutcome(shot, shot.Path);
             }
         case "fill":
             await session.FillAsync(Require(request.Target), Require(request.Value), cancellationToken);
             break;
         case "press":
-            await session.PressAsync(Require(request.Target), Require(request.Value), cancellationToken);
+            if (string.IsNullOrWhiteSpace(request.Target))
+            {
+                // No usable target: press on the page, so Escape closes a modal.
+                await session.PressKeyAsync(Require(request.Value), cancellationToken);
+                break;
+            }
+
+            await session.PressAsync(request.Target, Require(request.Value), cancellationToken);
             break;
         case "select":
+            if (request.Values is { Length: > 0 })
+            {
+                await session.SelectAsync(Require(request.Target), request.Values, cancellationToken);
+                break;
+            }
+
             await session.SelectAsync(Require(request.Target), Require(request.Value), cancellationToken);
             break;
         case "waitfor":
-            await session.WaitForAsync(Require(request.Target), WaitState.Visible, cancellationToken);
+            await session.WaitForAsync(
+                Require(request.Target),
+                ParseWaitState(request.State),
+                cancellationToken);
             break;
         case "eval":
-            return Results.Ok(new { Output = await session.EvaluateAsync(Require(request.Target), cancellationToken) });
+            {
+                var value = await session.EvaluateAsync(Require(request.Target), cancellationToken);
+                return new ActionOutcome(new { Output = value }, value);
+            }
         case "waitforresponse":
             {
                 if (request.Method is null && request.Target is null && request.Status is null)
                 {
-                    return Results.BadRequest(new
-                    {
-                        message = "waitforresponse requires at least one of target (url pattern), method or status",
-                    });
+                    throw new InvalidOperationException(
+                        "waitforresponse requires at least one of target (url pattern), method or status");
                 }
 
                 if (request.TimeoutMs is <= 0)
                 {
-                    return Results.BadRequest(new { message = "timeoutMs must be greater than zero" });
+                    throw new InvalidOperationException("timeoutMs must be greater than zero");
                 }
 
                 try
@@ -454,37 +536,129 @@ static async Task<IResult> ExecuteActionAsync(
                         },
                         cancellationToken);
 
-                    return Results.Ok(new
-                    {
-                        response.RequestId,
-                        response.Method,
-                        response.Status,
-                        response.Url,
-                        response.DurationMs,
-                        response.Body,
-                    });
-                }
-                catch (TimeoutException exception)
-                {
-                    return Results.Json(
-                        new { message = exception.Message },
-                        statusCode: StatusCodes.Status408RequestTimeout);
+                    return new ActionOutcome(
+                        new
+                        {
+                            response.RequestId,
+                            response.Method,
+                            response.Status,
+                            response.Url,
+                            response.DurationMs,
+                            response.Body,
+                        },
+                        $"{response.Method} {response.Status} {response.Url}");
                 }
                 catch (InvalidOperationException exception)
                 {
-                    // The session's event log closed while waiting, so waiting again is
-                    // a conflict rather than a server fault.
-                    return Results.Json(
-                        new { message = exception.Message },
-                        statusCode: StatusCodes.Status409Conflict);
+                    // The session's event log closed while waiting: retrying cannot
+                    // help, so it is a conflict rather than a bad request.
+                    throw new SessionClosedException(exception.Message);
                 }
             }
         default:
-            return Results.BadRequest(new { message = $"unknown action '{request.Action}'" });
+            throw new InvalidOperationException($"unknown action '{request.Action}'");
     }
 
-    return Results.Ok(new { Url = session.CurrentUrl });
+    return new ActionOutcome(null, session.CurrentUrl);
 }
+
+app.MapPost("/api/sessions/{id}/actions/batch", async (
+    string id,
+    BatchActionRequest request,
+    SessionRegistry registry,
+    CancellationToken cancellationToken) =>
+{
+    if (registry.Get(id) is not { } entry)
+    {
+        return Results.NotFound(new { message = $"session '{id}' does not exist" });
+    }
+
+    if (request.Steps is null || request.Steps.Count == 0)
+    {
+        return Results.BadRequest(new { message = "batch requires at least one step" });
+    }
+
+    if (request.Steps.Count > MaxBatchSteps)
+    {
+        return Results.BadRequest(new
+        {
+            message = $"batch accepts at most {MaxBatchSteps} steps, got {request.Steps.Count}",
+        });
+    }
+
+    for (var index = 0; index < request.Steps.Count; index++)
+    {
+        if (request.Steps[index] is null)
+        {
+            return Results.BadRequest(new { message = $"step {index} is null" });
+        }
+    }
+
+    var stopOnError = request.StopOnError ?? true;
+    var results = new List<object>(request.Steps.Count);
+    var success = true;
+    string? error = null;
+
+    for (var index = 0; index < request.Steps.Count; index++)
+    {
+        var step = request.Steps[index];
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        try
+        {
+            var outcome = await WithTimeoutAsync(
+                entry.Session,
+                step.TimeoutMs,
+                () => ExecuteActionAsync(
+                    id,
+                    entry.Session,
+                    step,
+                    cancellationToken,
+                    // Distinguish captures taken inside one batch.
+                    stepIndex: index));
+
+            results.Add(new
+            {
+                Index = index,
+                step.Action,
+                Success = true,
+                DurationMs = stopwatch.ElapsedMilliseconds,
+                Output = outcome.Output,
+                Error = (string?)null,
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException
+            || !cancellationToken.IsCancellationRequested)
+        {
+            // Same result shape as a script run: the step that failed carries the
+            // message, and the remaining steps are simply absent.
+            results.Add(new
+            {
+                Index = index,
+                step.Action,
+                Success = false,
+                DurationMs = stopwatch.ElapsedMilliseconds,
+                Output = (string?)null,
+                Error = exception.Message,
+            });
+
+            success = false;
+            error = exception.Message;
+
+            if (stopOnError)
+            {
+                break;
+            }
+        }
+    }
+
+    return Results.Ok(new
+    {
+        Success = success,
+        Steps = results,
+        Error = error,
+    });
+});
 
 app.MapPost("/api/sessions/{id}/cdp", async (
     string id,
@@ -508,6 +682,47 @@ app.MapPost("/api/sessions/{id}/cdp", async (
 });
 
 app.Run();
+
+// Per-action timeout: narrow the session's default for the duration of one action,
+// so every verb (including composite waits) honours timeoutMs without threading a
+// parameter through each method.
+static async Task<T> WithTimeoutAsync<T>(IBrowserSession session, int? timeoutMs, Func<Task<T>> action)
+{
+    if (timeoutMs is not { } requested)
+    {
+        return await action();
+    }
+
+    if (requested <= 0)
+    {
+        throw new InvalidOperationException("timeoutMs must be greater than zero");
+    }
+
+    var previous = session.DefaultTimeoutMs;
+    session.DefaultTimeoutMs = requested;
+
+    try
+    {
+        return await action();
+    }
+    finally
+    {
+        session.DefaultTimeoutMs = previous;
+    }
+}
+
+static BrowserPosition? ToBrowserPosition(ActionPosition? position)
+    => position is null ? null : new BrowserPosition(position.X, position.Y);
+
+static WaitState ParseWaitState(string? state) => (state ?? "visible").ToLowerInvariant() switch
+{
+    "visible" => WaitState.Visible,
+    "hidden" => WaitState.Hidden,
+    "attached" => WaitState.Attached,
+    "detached" => WaitState.Detached,
+    _ => throw new InvalidOperationException(
+        $"Unknown wait state '{state}'. Use visible, hidden, attached or detached."),
+};
 
 // Bounded capture names: one file per session and view, so polling a screenshot
 // does not grow the artifact directory without limit.
