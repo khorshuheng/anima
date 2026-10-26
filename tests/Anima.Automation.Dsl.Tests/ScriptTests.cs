@@ -113,6 +113,97 @@ public sealed class ScriptTests
     }
 
     [Fact]
+    public void Parser_reads_wait_for_response_fields()
+    {
+        var result = new AutomationScriptParser().Parse(
+            """
+            steps:
+              - waitForResponse: { method: POST, url: "*/api/orders", status: 201, timeout: 5000, extract: created }
+            """);
+
+        Assert.True(result.IsValid);
+        var step = Assert.IsType<WaitForResponseStep>(result.Script!.Steps[0]);
+        Assert.Equal("POST", step.Method);
+        Assert.Equal("*/api/orders", step.Url);
+        Assert.Equal(201, step.Status);
+        Assert.Equal(5000, step.TimeoutMs);
+        Assert.Equal("created", step.Extract);
+    }
+
+    [Theory]
+    [InlineData("status: nope", "status must be an integer")]
+    [InlineData("timesout: 500", "")]                       // unknown field, but method keeps it valid
+    [InlineData("timeout: -5", "timeout must be a positive integer")]
+    [InlineData("timeout: 0", "timeout must be a positive integer")]
+    [InlineData("timeout: soon", "timeout must be a positive integer")]
+    public void Parser_rejects_unparseable_wait_for_response_fields(string field, string expected)
+    {
+        var result = new AutomationScriptParser().Parse(
+            $$"""
+            steps:
+              - waitForResponse: { method: POST, {{field}} }
+            """);
+
+        if (expected.Length == 0)
+        {
+            Assert.True(result.IsValid);
+            return;
+        }
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Diagnostics, diagnostic =>
+            diagnostic.Code == "script.wait_for_response"
+            && diagnostic.Message.Contains(expected, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Parser_rejects_a_wait_for_response_without_a_selector()
+    {
+        var result = new AutomationScriptParser().Parse("steps:\n  - waitForResponse: { timeout: 500 }\n");
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Diagnostics, diagnostic => diagnostic.Code == "script.wait_for_response");
+    }
+
+    [Fact]
+    public async Task Wait_for_response_confirms_the_write_and_extracts_the_body()
+    {
+        var session = new FakeSession();
+        var runner = new YamlAutomationScriptRunner(new AutomationScriptParser());
+
+        var result = await runner.RunAsync(
+            """
+            steps:
+              - waitForResponse: { method: POST, status: 201, extract: created }
+              - expect: { target: "#token", text: abc }
+            """,
+            session);
+
+        Assert.True(result.Success);
+        Assert.Equal("waitForResponse", result.Steps[0].Action);
+        Assert.Equal("POST 201 http://uat.local/api/orders", result.Steps[0].Output);
+        Assert.Equal("{\"id\":42}", result.Variables["created"]);
+    }
+
+    [Fact]
+    public async Task Extracting_an_unreadable_body_fails_instead_of_storing_nothing()
+    {
+        var session = new FakeSession { ResponseBody = null };
+        var runner = new YamlAutomationScriptRunner(new AutomationScriptParser());
+
+        var result = await runner.RunAsync(
+            """
+            steps:
+              - waitForResponse: { method: POST, status: 201, extract: created }
+            """,
+            session);
+
+        Assert.False(result.Success);
+        Assert.Contains("no readable body", result.Error, StringComparison.Ordinal);
+        Assert.False(result.Variables.ContainsKey("created"));
+    }
+
+    [Fact]
     public async Task Expect_mismatch_fails_the_run()
     {
         var session = new FakeSession();
@@ -146,6 +237,35 @@ public sealed class ScriptTests
         public List<string> Calls { get; } = [];
 
         public ICdpTransport? Cdp => null;
+
+        public long DroppedEventCount => 0;
+
+        public IReadOnlyList<BrowserEvent> ReadEvents(long afterSequence = 0, int limit = 200) => [];
+
+        public string? ResponseBody { get; init; } = "{\"id\":42}";
+
+        public Task<BrowserEvent> WaitForResponseAsync(
+            ResponseMatcher matcher,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new BrowserEvent
+            {
+                Kind = BrowserEventKind.Response,
+                Sequence = 1,
+                Method = matcher.Method ?? "POST",
+                Status = matcher.Status ?? 201,
+                Url = matcher.UrlPattern ?? "http://uat.local/api/orders",
+                Body = ResponseBody,
+            });
+
+        public IAsyncEnumerable<BrowserEvent> SubscribeEventsAsync(
+            long afterSequence = 0,
+            CancellationToken cancellationToken = default) => EmptyEvents();
+
+        private static async IAsyncEnumerable<BrowserEvent> EmptyEvents()
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
 
         public Task NavigateAsync(string url, CancellationToken cancellationToken = default)
         {

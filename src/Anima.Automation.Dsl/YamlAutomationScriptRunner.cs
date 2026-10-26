@@ -160,6 +160,41 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                     cancellationToken);
                 return null;
 
+            case WaitForResponseStep waitResponse:
+                var response = await session.WaitForResponseAsync(
+                    new ResponseMatcher
+                    {
+                        Method = waitResponse.Method is null ? null : resolve(waitResponse.Method),
+                        UrlPattern = waitResponse.Url is null ? null : resolve(waitResponse.Url),
+                        Status = waitResponse.Status,
+                        Timeout = waitResponse.TimeoutMs is { } timeoutMs
+                            ? TimeSpan.FromMilliseconds(timeoutMs)
+                            : null,
+                        IncludeBody = waitResponse.Extract is not null,
+                    },
+                    cancellationToken);
+
+                if (waitResponse.Extract is not null)
+                {
+                    if (response.Body is null)
+                    {
+                        // An empty string here would silently hide a write whose
+                        // response was never readable.
+                        var reason = response.Detail is { } detail
+                            ? $"the body was not retained ({detail})"
+                            : "the response was empty, or the page navigated before the body could be read";
+
+                        throw new InvalidOperationException(
+                            $"Response {response.Status} from {response.Url} had no readable body: {reason}. " +
+                            "Confirm the write with method/url/status instead, or read the body before the " +
+                            "page navigates.");
+                    }
+
+                    variables[resolve(waitResponse.Extract)] = response.Body;
+                }
+
+                return $"{response.Method} {response.Status} {response.Url}";
+
             case ExpectStep expect:
                 await ExpectAsync(expect, session, resolve, cancellationToken);
                 return null;
@@ -329,6 +364,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
         SelectStep => "select",
         WaitStep => "waitFor",
         WaitForTextStep => "waitForText",
+        WaitForResponseStep => "waitForResponse",
         ExpectStep => "expect",
         ExtractStep => "extract",
         EvaluateStep => "eval",

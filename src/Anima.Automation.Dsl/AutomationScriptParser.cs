@@ -219,6 +219,60 @@ public sealed class AutomationScriptParser
 
                 return expect;
 
+            case "waitforresponse":
+                // A field that is present but unparseable must not silently widen the
+                // matcher: "status: nope" would otherwise mean "any status" and let a
+                // script confirm a write that failed.
+                var statusText = Field(value, "status");
+                if (statusText is not null
+                    && !int.TryParse(statusText, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                {
+                    diagnostics.Add(new ScriptDiagnostic(
+                        "script.wait_for_response",
+                        $"waitForResponse status must be an integer, not '{statusText}'",
+                        index));
+                    return null;
+                }
+
+                int? status = statusText is null
+                    ? null
+                    : int.Parse(statusText, NumberStyles.Integer, CultureInfo.InvariantCulture);
+
+                var responseTimeoutText = Field(value, "timeout");
+                int? responseTimeout = null;
+                if (responseTimeoutText is not null)
+                {
+                    if (!int.TryParse(responseTimeoutText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedResponseTimeout)
+                        || parsedResponseTimeout <= 0)
+                    {
+                        diagnostics.Add(new ScriptDiagnostic(
+                            "script.wait_for_response",
+                            $"waitForResponse timeout must be a positive integer number of milliseconds, not '{responseTimeoutText}'",
+                            index));
+                        return null;
+                    }
+
+                    responseTimeout = parsedResponseTimeout;
+                }
+
+                var waitResponse = new WaitForResponseStep(
+                    Method: Field(value, "method"),
+                    Url: Field(value, "url"),
+                    Status: status,
+                    TimeoutMs: responseTimeout,
+                    Extract: Field(value, "extract"));
+
+                if (waitResponse.Method is null && waitResponse.Url is null && waitResponse.Status is null)
+                {
+                    diagnostics.Add(new ScriptDiagnostic(
+                        "script.wait_for_response",
+                        "waitForResponse requires at least one of method, url or status",
+                        index));
+                    return null;
+                }
+
+                return waitResponse;
+
             case "extract":
                 return RequireFields(value, index, diagnostics, "name", "target") is { } extract
                     ? new ExtractStep(extract["name"], extract["target"], Field(value, "attribute"))

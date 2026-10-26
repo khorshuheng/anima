@@ -6,7 +6,8 @@
       "src/Anima.Automation.Dsl/Anima.Automation.Dsl.csproj",
       "src/Anima.Automation.Playwright/Anima.Automation.Playwright.csproj",
       "src/Anima.Automation.Service/Anima.Automation.Service.csproj",
-      "tests/Anima.Automation.Dsl.Tests/Anima.Automation.Dsl.Tests.csproj"
+      "tests/Anima.Automation.Dsl.Tests/Anima.Automation.Dsl.Tests.csproj",
+      "tests/Anima.Automation.Playwright.Tests/Anima.Automation.Playwright.Tests.csproj"
     ]
   }
 }

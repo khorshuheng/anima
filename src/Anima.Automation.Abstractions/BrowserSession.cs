@@ -13,6 +13,18 @@ public sealed record SessionOptions
 
     /// <summary>Optional Playwright trace output path.</summary>
     public string? TracePath { get; init; }
+
+    /// <summary>
+    /// Capture request/response headers in the session event log. Secrets
+    /// (authorization, cookie, set-cookie) are redacted even when enabled.
+    /// </summary>
+    public bool CaptureHeaders { get; init; }
+
+    /// <summary>Capture request and response bodies in the session event log, truncated.</summary>
+    public bool CaptureBodies { get; init; }
+
+    /// <summary>How a dialog is answered when no script step handled it.</summary>
+    public BrowserDialogBehavior DialogBehavior { get; init; } = BrowserDialogBehavior.Dismiss;
 }
 
 public enum WaitState
@@ -75,6 +87,32 @@ public interface IBrowserSession : IAsyncDisposable
 
     /// <summary>Raw Chrome DevTools Protocol channel, when the driver supports it.</summary>
     ICdpTransport? Cdp { get; }
+
+    /// <summary>Page/network events captured so far, oldest first.</summary>
+    IReadOnlyList<BrowserEvent> ReadEvents(long afterSequence = 0, int limit = 200);
+
+    /// <summary>
+    /// Replays buffered events after <paramref name="afterSequence"/>, then streams
+    /// live ones for as long as the caller reads.
+    /// </summary>
+    IAsyncEnumerable<BrowserEvent> SubscribeEventsAsync(
+        long afterSequence = 0,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Events evicted because the session buffer was full.</summary>
+    long DroppedEventCount { get; }
+
+    /// <summary>
+    /// Waits for a network response matching <paramref name="matcher"/> and returns
+    /// its event (status, url, headers/body when captured). A response already
+    /// recorded before the call counts, which is what makes "click then confirm the
+    /// write" work; each response satisfies at most one wait. Throws
+    /// <see cref="TimeoutException"/> when nothing matches in time, and
+    /// <see cref="InvalidOperationException"/> when the session closes first.
+    /// </summary>
+    Task<BrowserEvent> WaitForResponseAsync(
+        ResponseMatcher matcher,
+        CancellationToken cancellationToken = default);
 }
 
 public interface ICdpTransport

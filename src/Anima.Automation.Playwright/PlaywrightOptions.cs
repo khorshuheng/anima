@@ -8,6 +8,14 @@ public sealed class PlaywrightOptions
     /// </summary>
     public string? BrowserName { get; set; } = "chrome";
 
+    /// <summary>
+    /// How the driver obtains Chrome: <c>launch</c> (throwaway profile, one
+    /// context per session), <c>profile</c> (persistent user data directory
+    /// shared by all sessions) or <c>connect</c> (attach to a running Chrome over
+    /// CDP). Empty falls back to ANIMA_BROWSER_MODE, then <c>launch</c>.
+    /// </summary>
+    public string? Mode { get; set; }
+
     /// <summary>Optional channel such as <c>chrome</c> or <c>msedge</c>.</summary>
     public string? Channel { get; set; }
 
@@ -18,12 +26,43 @@ public sealed class PlaywrightOptions
     /// </summary>
     public string? ExecutablePath { get; set; }
 
+    /// <summary>
+    /// Persistent user data directory used by mode <c>profile</c>; cookies and
+    /// logins survive restarts. Empty falls back to ANIMA_CHROME_PROFILE, then to
+    /// an Anima-owned directory (never the user's real Chrome profile). A leading
+    /// <c>~/</c> is expanded. Ignored by the other modes.
+    /// </summary>
+    public string? UserDataDirectory { get; set; }
+
+    /// <summary>
+    /// CDP endpoint used by mode <c>connect</c>, for example
+    /// <c>http://127.0.0.1:9222</c>. Empty falls back to ANIMA_CDP_ENDPOINT, then
+    /// to <c>http://127.0.0.1:9222</c>. The target Chrome must be started with
+    /// <c>--remote-debugging-port</c> and, on Chrome 136+, a non-default
+    /// <c>--user-data-dir</c>.
+    /// </summary>
+    public string? ConnectEndpoint { get; set; }
+
     /// <summary>Slows down operations; useful when debugging a script.</summary>
     public double SlowMoMs { get; set; }
 
     /// <summary>Browser launch mode. Sessions cannot override this per-session.</summary>
     public bool Headless { get; set; } = true;
 
+    /// <summary>
+    /// Accept invalid or self-signed certificates for contexts the driver creates
+    /// (launch and profile modes). Connect mode attaches to an existing context, so
+    /// there the certificate policy belongs to the Chrome that was started; the
+    /// driver logs a warning instead of silently ignoring this value.
+    /// </summary>
+    public bool IgnoreHttpsErrors { get; set; } = true;
+
     /// <summary>Browser download directory override used by install scripts.</summary>
     public string? BrowserCacheDirectory { get; set; }
+
+    /// <summary>
+    /// Page/network events kept per session before the oldest are evicted. Polling
+    /// and the SSE stream both read this buffer, so it bounds request-log memory.
+    /// </summary>
+    public int EventBufferSize { get; set; } = 500;
 }

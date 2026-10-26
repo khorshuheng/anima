@@ -23,6 +23,18 @@ public sealed record ExpectStep(
     string? Text = null,
     string? Value = null) : AutomationStep;
 
+/// <summary>
+/// Waits for a network response, which is how a script confirms that a write
+/// actually reached the server. Any field left null matches anything;
+/// <paramref name="Extract"/> stores the response body in a variable.
+/// </summary>
+public sealed record WaitForResponseStep(
+    string? Method = null,
+    string? Url = null,
+    int? Status = null,
+    int? TimeoutMs = null,
+    string? Extract = null) : AutomationStep;
+
 public sealed record ExtractStep(string Name, string Target, string? Attribute = null) : AutomationStep;
 
 public sealed record EvaluateStep(string Expression) : AutomationStep;

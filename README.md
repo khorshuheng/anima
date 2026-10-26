@@ -172,11 +172,72 @@ on Chromium-family engines.
   `ANIMA_CHROME_PATH` overrides). No browser download is required.
 - `--browser chromium|msedge|firefox|webkit` switches engines; Firefox/WebKit need
   `make playwright-install BROWSERS='firefox'`.
+- `--mode` (or `ANIMA_BROWSER_MODE`) picks how Chrome is obtained:
+  - `launch` (default) spawns a throwaway Chrome; each session gets its own
+    context, base URL and optional trace.
+  - `profile` spawns Chrome on a persistent user data directory
+    (`--profile-dir`, `ANIMA_CHROME_PROFILE`, or the `anima/automation/
+    chrome-profile` directory under `~/.local/share` on Linux and
+    `%LOCALAPPDATA%` on Windows) so logins and cookies survive restarts. All
+    sessions share one context, so tracing needs `launch` mode. Nothing prunes
+    that directory; delete it to reset the logged-in state.
+  - `connect` attaches over CDP (`--connect`, `ANIMA_CDP_ENDPOINT`, default
+    `http://127.0.0.1:9222`) to a Chrome you already started; Anima never closes
+    it. The endpoint may be an http URL or the `ws://` browser endpoint that
+    `/json/version` reports. Start it with a non-default profile dir, e.g.
+    `google-chrome --user-data-dir=/tmp/anima-chrome --remote-debugging-port=9222`
+    (Chrome 136+ refuses remote debugging on the default profile). Certificates
+    are that browser's policy, so `IgnoreHttpsErrors` does not apply.
+- `IgnoreHttpsErrors` (default `true`) applies to the contexts Anima creates, so
+  `launch` and `profile` modes accept dev/UAT certificates; in `connect` mode the
+  attached Chrome decides and the setting is ignored with a log line.
+- Every session keeps an event log: console messages, unhandled page errors,
+  requests, responses, request failures, main-frame navigations and JS dialogs.
+  Metadata is always captured; `captureHeaders`/`captureBodies` (or
+  `--capture-headers`/`--capture-bodies`) add headers and bodies.
+  `authorization`/`cookie`/`set-cookie` headers and credential query parameters
+  (`token`, `code`, `api_key`, ...) are always redacted, and responses above
+  256 KiB are logged without their body. Dialogs are answered
+  with `dialogBehavior` (`dismiss`, the default, or `accept`).
+  - Poll: `GET /api/sessions/{id}/events?after=<seq>&limit=<n>` returns
+    `{ items, dropped }`; `limit` must be greater than zero.
+  - Stream: `GET /api/sessions/{id}/events/stream?after=<seq>` replays the buffer,
+    then emits `event: browser-event` frames like `/api/bus/stream`, `: keepalive`
+    comments while idle, and a final `event: closed` when the session ends. A
+    cursor beyond the session's latest sequence resumes at the next event instead
+    of going silent, so a persisted or foreign cursor is safe.
+  - The buffer holds `Anima:Automation:Playwright:EventBufferSize` events
+    (default 500) per session; `dropped` counts evictions, and a slow stream
+    subscriber drops its own backlog rather than stalling the page.
+  - `anima scripts run ... --events` prints the log afterwards;
+    `--events-errors` keeps only console warnings/errors, page errors, failed
+    requests, dialogs and 4xx/5xx responses.
+- `waitForResponse` confirms a write from the network instead of the DOM: it
+  matches method/url glob/status against the session event log (including a
+  response that arrived before the step ran), returns the status and optionally
+  stores the body in a variable. Each response satisfies at most one wait, so two
+  identical writes can be confirmed separately. `status` must be an integer and
+  `timeout` a positive number of milliseconds (both are rejected otherwise, so a
+  typo cannot widen the match). The body is read on demand, so
+  extracting works without `captureBodies` while the document stays put; a page
+  that navigates straight after the response invalidates it (`captureBodies` does
+  not help there — Chrome drops the body once the document changes), and the step
+  then fails instead of storing an empty string.
 - Scripts are `anima-yaml/v1` data in `specs/`; validate then run:
 
 ```bash
 anima scripts validate specs/login-smoke.yaml
 anima scripts run specs/login-smoke.yaml --base-url http://uat.local
+```
+
+```yaml
+name: order-write
+steps:
+  - goto: /orders/new
+  - fill: { target: "#amount", value: "12.00" }
+  - click: "#save"
+  - waitForResponse: { method: POST, url: "*/api/orders", status: 201, extract: created }
+  - expect: { url: /orders/42 }
 ```
 
 ## Deploy sink

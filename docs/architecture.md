@@ -145,8 +145,13 @@ fallback.
 ## Automation and deploy
 
 Automation keeps Playwright behind `IBrowserDriver`/`IBrowserSession`; Chrome is
-system-installed and CDP is only available on Chromium-family engines. Scripts are
-declarative `anima-yaml/v1`.
+system-installed and CDP is only available on Chromium-family engines. The driver
+runs in one of three modes: `launch` (throwaway Chrome, one context per session),
+`profile` (persistent user data directory shared by all sessions) or `connect`
+(attach over CDP to an already-running Chrome, which it never closes). Sessions
+record a bounded page/network event log readable by polling
+(`/api/sessions/{id}/events`) and by SSE (`/api/sessions/{id}/events/stream`).
+Scripts are declarative `anima-yaml/v1`.
 
 Deploy normalizes push payloads, matches rules and runs repo-owned scripts with
 explicit interpreter selection (`.cmd`/`.exe` on Windows, `.sh` on Unix; `.ps1`

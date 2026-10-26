@@ -53,10 +53,17 @@ static int Help()
           anima bus publish|ask|watch ...
           anima workflow start|show|ask|answer|spec|assign|result ...
           anima knowledge kinds|search|get|create-node|edge|plan ...
-          anima browser check [--browser <name>]
-          anima scripts run <script.yaml> [--browser <name>] [--base-url <url>] [--headed] [--var key=value]
+          anima browser check [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>]
+          anima scripts run <script.yaml> [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>] [--base-url <url>] [--headed] [--events|--events-errors] [--var key=value]
 
         --browser (or ANIMA_BROWSER) is required: chromium, chrome, msedge, firefox or webkit.
+        --events / --events-errors print the captured console, network, navigation,
+        dialog and page-error log after the run; --capture-headers / --capture-bodies
+        extend network events (secrets are redacted).
+        --mode (or ANIMA_BROWSER_MODE) launches a throwaway Chrome (launch, default), a
+        Chrome with a persistent profile (profile, dir from --profile-dir or
+        ANIMA_CHROME_PROFILE), or attaches over CDP to a running Chrome (connect, url from
+        --connect or ANIMA_CDP_ENDPOINT, default http://127.0.0.1:9222).
         """);
     return 0;
 }
@@ -68,24 +75,82 @@ static int Browser(string[] args)
         return Help();
     }
 
+    if (ValuedOptionWithoutValue(args) is { } missingOption)
+    {
+        Console.Error.WriteLine($"option {missingOption} requires a value");
+        return 2;
+    }
+
     var name = OptionValue(args, "--browser")
         ?? Environment.GetEnvironmentVariable("ANIMA_BROWSER")
         ?? "chrome";
 
-    if (name is "firefox" or "webkit")
+    BrowserLaunchPlan plan;
+    try
     {
-        Console.WriteLine($"{name}: Playwright-managed build (scripts/install-playwright.sh {name})");
-        return 0;
+        plan = BrowserLaunchPlanResolver.Resolve(CreateBrowserOptions(args, name, headless: true));
     }
-
-    var path = BrowserExecutableLocator.Find(name);
-    if (path is null)
+    catch (InvalidOperationException exception)
     {
-        Console.Error.WriteLine($"{name}: executable not found (set ANIMA_CHROME_PATH or Playwright:ExecutablePath)");
+        Console.Error.WriteLine(exception.Message);
         return 3;
     }
 
-    Console.WriteLine($"{name}: {path}");
+    Console.WriteLine($"mode: {plan.Mode}");
+    if (plan.UserDataDirectory is not null)
+    {
+        Console.WriteLine($"profile: {plan.UserDataDirectory}");
+    }
+
+    if (plan.ConnectEndpoint is not null)
+    {
+        Console.WriteLine($"endpoint: {plan.ConnectEndpoint}");
+    }
+
+    var path = plan.ExecutablePath;
+    if (path is null)
+    {
+        // Firefox and WebKit never use a system executable; they need the
+        // Playwright-managed build.
+        var hint = plan.BrowserName is "firefox" or "webkit"
+            ? $" (scripts/install-playwright.sh {plan.BrowserName})"
+            : string.Empty;
+
+        Console.WriteLine($"{plan.BrowserName}: Playwright-managed build{hint}");
+        return 0;
+    }
+
+    Console.WriteLine($"{plan.BrowserName}: {path}");
+
+    var version = OperatingSystem.IsWindows()
+        ? WindowsBrowserVersion(path)
+        : RunBrowserVersion(path);
+
+    if (!string.IsNullOrWhiteSpace(version))
+    {
+        Console.WriteLine(version);
+    }
+
+    return 0;
+}
+
+// chrome.exe is a GUI-subsystem binary on Windows and has no console to write
+// --version to, so read the file version resource instead.
+static string? WindowsBrowserVersion(string path)
+{
+    try
+    {
+        return FileVersionInfo.GetVersionInfo(path).FileVersion;
+    }
+    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+    {
+        Console.Error.WriteLine($"could not read version: {exception.Message}");
+        return null;
+    }
+}
+
+static string? RunBrowserVersion(string path)
+{
     try
     {
         using var process = Process.Start(new ProcessStartInfo
@@ -96,22 +161,20 @@ static int Browser(string[] args)
             UseShellExecute = false,
         });
 
-        if (process is not null)
+        if (process is null)
         {
-            var version = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit();
-            if (version.Length > 0)
-            {
-                Console.WriteLine(version);
-            }
+            return null;
         }
+
+        var version = process.StandardOutput.ReadToEnd().Trim();
+        process.WaitForExit();
+        return version.Length > 0 ? version : null;
     }
     catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
     {
         Console.Error.WriteLine($"could not query version: {exception.Message}");
+        return null;
     }
-
-    return 0;
 }
 
 static int Unknown(string command)
@@ -301,9 +364,15 @@ static async Task<int> ScriptsAsync(string[] args)
 
         case "run":
             {
+                if (ValuedOptionWithoutValue(args) is { } missingOption)
+                {
+                    Console.Error.WriteLine($"option {missingOption} requires a value");
+                    return 2;
+                }
+
                 if (args.Length < 2)
                 {
-                    Console.Error.WriteLine("usage: anima scripts run <script.yaml> [--browser <name>] [--base-url <url>] [--headed] [--var key=value]");
+                    Console.Error.WriteLine("usage: anima scripts run <script.yaml> [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>] [--base-url <url>] [--headed] [--events|--events-errors] [--capture-headers] [--capture-bodies] [--var key=value]");
                     return 2;
                 }
 
@@ -316,12 +385,22 @@ static async Task<int> ScriptsAsync(string[] args)
                 var variables = ParseVariables(args);
 
                 var driver = new PlaywrightBrowserDriver(
-                    Options.Create(new PlaywrightOptions { BrowserName = browser, Headless = headless }),
+                    Options.Create(CreateBrowserOptions(args, browser, headless)),
                     NullLogger<PlaywrightBrowserDriver>.Instance);
                 var runner = new YamlAutomationScriptRunner(parser);
 
+                var showEvents = args.Contains("--events", StringComparer.Ordinal)
+                    || args.Contains("--events-errors", StringComparer.Ordinal);
+                var errorsOnly = args.Contains("--events-errors", StringComparer.Ordinal);
+
                 await using var session = await driver.StartSessionAsync(
-                    new SessionOptions { BaseUrl = baseUrl, Headless = headless });
+                    new SessionOptions
+                    {
+                        BaseUrl = baseUrl,
+                        Headless = headless,
+                        CaptureHeaders = args.Contains("--capture-headers", StringComparer.Ordinal),
+                        CaptureBodies = args.Contains("--capture-bodies", StringComparer.Ordinal),
+                    });
 
                 var result = await runner.RunAsync(
                     File.ReadAllText(args[1]),
@@ -331,6 +410,11 @@ static async Task<int> ScriptsAsync(string[] args)
                 foreach (var step in result.Steps)
                 {
                     Console.WriteLine($"{(step.Success ? "ok  " : "FAIL")} {step.Index,3} {step.Action,-12} {step.DurationMs,6}ms {step.Output ?? step.Error}");
+                }
+
+                if (showEvents)
+                {
+                    PrintEvents(session.ReadEvents(limit: int.MaxValue), session.DroppedEventCount, errorsOnly);
                 }
 
                 Console.WriteLine(result.Success ? "script succeeded" : $"script failed: {result.Error}");
@@ -349,6 +433,76 @@ static ISchemaCatalog CreateCatalog(string? directory) => new FileDescriptorSetC
         WatchForChanges = false,
     }),
     NullLogger<FileDescriptorSetCatalog>.Instance);
+
+static string? ValuedOptionWithoutValue(string[] args)
+{
+    string[] valuedOptions =
+    [
+        "--browser", "--mode", "--profile-dir", "--connect", "--base-url", "--dir", "--var",
+    ];
+
+    for (var index = 0; index < args.Length; index++)
+    {
+        if (!valuedOptions.Contains(args[index], StringComparer.Ordinal))
+        {
+            continue;
+        }
+
+        if (index == args.Length - 1 || args[index + 1].StartsWith("--", StringComparison.Ordinal))
+        {
+            return args[index];
+        }
+    }
+
+    return null;
+}
+
+static void PrintEvents(IReadOnlyList<BrowserEvent> events, long dropped, bool errorsOnly)
+{
+    var shown = errorsOnly ? events.Where(IsProblem).ToList() : events;
+
+    Console.WriteLine($"events: {shown.Count} shown of {events.Count} captured ({dropped} dropped)");
+
+    foreach (var item in shown)
+    {
+        Console.WriteLine(
+            $"{item.Sequence,5} {item.Kind,-13} {DescribeEvent(item)}");
+    }
+}
+
+static bool IsProblem(BrowserEvent item)
+    => item.Kind switch
+    {
+        BrowserEventKind.PageError or BrowserEventKind.RequestFailed or BrowserEventKind.Dialog => true,
+        BrowserEventKind.Console => item.Level is "error" or "warning",
+        BrowserEventKind.Response => item.Status >= 400,
+        _ => false,
+    };
+
+static string DescribeEvent(BrowserEvent item)
+{
+    var detail = item.Kind switch
+    {
+        BrowserEventKind.Console or BrowserEventKind.PageError => item.Text,
+        BrowserEventKind.Navigation => item.Url,
+        BrowserEventKind.Dialog => $"{item.Detail}: {item.Text}",
+        BrowserEventKind.Response => $"{item.Method} {item.Status} {item.Url} ({item.DurationMs?.ToString(CultureInfo.InvariantCulture) ?? "-"}ms)",
+        BrowserEventKind.RequestFailed => $"{item.Method} {item.Url} {item.Detail}",
+        _ => $"{item.Method} {item.Url}",
+    };
+
+    return detail ?? string.Empty;
+}
+
+static PlaywrightOptions CreateBrowserOptions(string[] args, string browserName, bool headless)
+    => new()
+    {
+        BrowserName = browserName,
+        Mode = OptionValue(args, "--mode"),
+        UserDataDirectory = OptionValue(args, "--profile-dir"),
+        ConnectEndpoint = OptionValue(args, "--connect"),
+        Headless = headless,
+    };
 
 static string? OptionValue(string[] args, string name)
 {

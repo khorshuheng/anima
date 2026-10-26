@@ -6,7 +6,10 @@ public sealed record SessionRequest(
     string? BaseUrl = null,
     bool? Headless = null,
     double? TimeoutMs = null,
-    string? TracePath = null);
+    string? TracePath = null,
+    bool? CaptureHeaders = null,
+    bool? CaptureBodies = null,
+    string? DialogBehavior = null);
 
 public sealed class SessionRegistry : IAsyncDisposable
 {
@@ -31,6 +34,9 @@ public sealed class SessionRegistry : IAsyncDisposable
             Headless = request.Headless ?? true,
             TimeoutMs = request.TimeoutMs ?? 30_000,
             TracePath = request.TracePath,
+            CaptureHeaders = request.CaptureHeaders ?? false,
+            CaptureBodies = request.CaptureBodies ?? false,
+            DialogBehavior = ParseDialogBehavior(request.DialogBehavior),
         };
 
         var session = await _driver.StartSessionAsync(options, cancellationToken);
@@ -43,6 +49,22 @@ public sealed class SessionRegistry : IAsyncDisposable
         => _sessions.TryGetValue(id, out var entry) ? entry : null;
 
     public IReadOnlyList<Entry> List() => _sessions.Values.OrderBy(entry => entry.StartedAt).ToArray();
+
+    private static BrowserDialogBehavior ParseDialogBehavior(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return BrowserDialogBehavior.Dismiss;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "dismiss" => BrowserDialogBehavior.Dismiss,
+            "accept" => BrowserDialogBehavior.Accept,
+            _ => throw new InvalidOperationException(
+                $"Unknown dialogBehavior '{value}'. Use 'dismiss' or 'accept'."),
+        };
+    }
 
     public async Task<bool> CloseAsync(string id)
     {
