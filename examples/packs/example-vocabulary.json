@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "name": "example",
+  "node_kinds": [
+    {
+      "name": "example:invoice",
+      "description": "A billable unit, used by the pack documentation.",
+      "required_props": ["repo"]
+    }
+  ],
+  "edge_types": [
+    {
+      "name": "example:billed_to",
+      "description": "An invoice is billed against the repository it concerns.",
+      "pairs": [["example:invoice", "repo"]],
+      "inverse_name": "example:billed_from",
+      "acyclic": true
+    }
+  ]
+}

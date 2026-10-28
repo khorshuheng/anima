@@ -44,6 +44,9 @@ COPY --from=dotnet-build /out/workflow ./services/workflow
 COPY --from=dotnet-build /out/dashboard ./services/dashboard
 COPY --from=ui-build /src/ui/dist ./ui/dist
 COPY contracts/descriptors ./contracts/descriptors
+# Repo-owned vocabulary packs are discovered under $ANIMA_REPO_ROOT/config/knowledge,
+# so the directory has to exist in the image, not only in a developer checkout.
+COPY config ./config
 
 # Compose overrides the command per service. The default keeps `docker run`
 # useful for a quick dashboard-only smoke.

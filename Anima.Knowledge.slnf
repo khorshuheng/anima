@@ -8,7 +8,8 @@
       "src/Anima.Knowledge.Service/Anima.Knowledge.Service.csproj",
       "src/Anima.Knowledge.Sqlite/Anima.Knowledge.Sqlite.csproj",
       "tests/Anima.Knowledge.Core.Tests/Anima.Knowledge.Core.Tests.csproj",
-      "tests/Anima.Knowledge.Sqlite.Tests/Anima.Knowledge.Sqlite.Tests.csproj"
+      "tests/Anima.Knowledge.Sqlite.Tests/Anima.Knowledge.Sqlite.Tests.csproj",
+      "tests/Anima.Knowledge.Client.Tests/Anima.Knowledge.Client.Tests.csproj"
     ]
   }
 }

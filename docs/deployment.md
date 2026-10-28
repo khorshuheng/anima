@@ -125,6 +125,23 @@ packs, applied in this order at startup:
 2. `~/.config/anima/knowledge/*.json`
 3. `Anima__Knowledge__Packs__0`, `__1`, ... (files, directories or `*.json` globs)
 
+`<repo>` is `$ANIMA_REPO_ROOT`, which the image sets to `/app`. The image copies
+`config/`, so a pack committed to `config/knowledge/` ships with it; a file only in
+a developer checkout does not. `examples/packs/example-vocabulary.json` is a
+validated sample (`example:` namespace) you can copy as a starting point.
+
+To add a pack to a running compose stack without rebuilding, mount it and point the
+service at it:
+
+```yaml
+  knowledge:
+    volumes:
+      - ./config/knowledge:/packs:ro
+    environment:
+      Anima__Knowledge__Packs__0: /packs/acme.json
+      Anima__Knowledge__VocabularyMode: Warn   # optional: skip a broken pack instead of failing
+```
+
 ```json
 {
   "schema_version": 1,
