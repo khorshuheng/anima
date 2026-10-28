@@ -153,11 +153,11 @@ public sealed class BusDiagnosticsTests
             }
         }));
 
-        var readers = Enumerable.Range(0, 4).Select(index => Task.Run(async () =>
+        var readers = Enumerable.Range(0, 4).Select(_ => Task.Run(async () =>
         {
             for (int i = 0; i < 100; i++)
             {
-                _ = bus.GetSnapshot();
+                Assert.NotNull(bus.GetSnapshot());
                 await Task.Yield();
             }
         }));

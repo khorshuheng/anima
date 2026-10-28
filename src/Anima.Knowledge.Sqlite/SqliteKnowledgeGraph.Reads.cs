@@ -447,7 +447,7 @@ public sealed partial class SqliteKnowledgeGraph
         string selectSql =
             $"SELECT n.id, k.name, n.name, n.description, {contentColumn} AS content, n.properties, " +
             $"n.created_at, n.updated_at, CASE WHEN {ResolvedExists} THEN 1 ELSE 0 END AS resolved" +
-            $"{rankColumn}{from}{whereSql}";
+            $" {rankColumn}{from}{whereSql}";
         selectSql += useFts ? " ORDER BY rank ASC, n.id ASC" : " ORDER BY n.id ASC";
         selectSql += " LIMIT $limit OFFSET $offset;";
 
@@ -580,7 +580,7 @@ public sealed partial class SqliteKnowledgeGraph
         }
     }
 
-    private async Task EnsureNodeAsync(
+    private static async Task EnsureNodeAsync(
         SqliteConnection connection,
         long id,
         CancellationToken cancellationToken)

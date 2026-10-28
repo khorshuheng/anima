@@ -42,8 +42,8 @@ public sealed class DistributionTests
             var catalog = KnowledgeVocabularyLoader.Load([pack]);
             Assert.Contains(
                 catalog.NodeKinds.Concat<object>(catalog.EdgeTypes),
-                entry => entry is NodeKindDefinition nodeKind && nodeKind.Source != KnowledgeVocabularyCatalog.CorePack
-                    || entry is EdgeTypeDefinition edgeType && edgeType.Source != KnowledgeVocabularyCatalog.CorePack);
+                entry => (entry is NodeKindDefinition nodeKind && nodeKind.Source != KnowledgeVocabularyCatalog.CorePack)
+                    || (entry is EdgeTypeDefinition edgeType && edgeType.Source != KnowledgeVocabularyCatalog.CorePack));
         }
     }
 

@@ -6,6 +6,10 @@ namespace Anima.Deploy;
 /// Normalizes GitHub, Gitea and generic push payloads into <see cref="GitPushEvent"/>.
 /// The sink only needs repository, ref and commit messages to choose a rule.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Performance",
+    "S2325:Methods and properties that don't access instance data should be static",
+    Justification = "Parsers are injected services; keeping the call site instance-based is deliberate.")]
 public sealed class GitPushPayloadParser
 {
     public GitPushEvent Parse(string provider, string payload)

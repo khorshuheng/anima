@@ -496,13 +496,12 @@ public sealed class DescriptorJsonCodec : IMessageCodec
             return true;
         }
 
-        foreach (var pair in fields)
+        var match = fields.FirstOrDefault(pair =>
+            string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase));
+        if (match.Key is not null)
         {
-            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
-            {
-                field = pair.Value;
-                return true;
-            }
+            field = match.Value;
+            return true;
         }
 
         field = null!;

@@ -37,7 +37,7 @@ internal static class BusCommands
         string? type = CliJson.Option(args, "--type");
         if (string.IsNullOrWhiteSpace(topic) || string.IsNullOrWhiteSpace(type))
         {
-            Console.Error.WriteLine("usage: anima bus publish --topic <topic> --type <protoMessage> [--payload <json|@file>] [--reply-to <topic>] [--correlation <id>] [--sender <id>] [--recipient <id>]");
+            await Console.Error.WriteLineAsync("usage: anima bus publish --topic <topic> --type <protoMessage> [--payload <json|@file>] [--reply-to <topic>] [--correlation <id>] [--sender <id>] [--recipient <id>]");
             return 2;
         }
 
@@ -53,7 +53,7 @@ internal static class BusCommands
             replyTo: CliJson.Option(args, "--reply-to"));
 
         await bus.PublishAsync(envelope);
-        Console.WriteLine(CliJson.Serialize(new { envelope.MessageId, envelope.Topic, envelope.TypeName }));
+        await Console.Out.WriteLineAsync(CliJson.Serialize(new { envelope.MessageId, envelope.Topic, envelope.TypeName }));
         return 0;
     }
 
@@ -63,7 +63,7 @@ internal static class BusCommands
         string? type = CliJson.Option(args, "--type");
         if (string.IsNullOrWhiteSpace(topic) || string.IsNullOrWhiteSpace(type))
         {
-            Console.Error.WriteLine("usage: anima bus ask --topic <agent inbox> --type <protoMessage> [--payload <json|@file>] [--timeout <seconds>] [--sender <id>]");
+            await Console.Error.WriteLineAsync("usage: anima bus ask --topic <agent inbox> --type <protoMessage> [--payload <json|@file>] [--timeout <seconds>] [--sender <id>]");
             return 2;
         }
 
@@ -80,7 +80,7 @@ internal static class BusCommands
         var reply = await requester.AskAsync(
             request,
             new BusRequestOptions { Timeout = TimeSpan.FromSeconds(timeout) });
-        Console.WriteLine(BusEnvelopeJson.ToJson(reply).ToJsonString());
+        await Console.Out.WriteLineAsync(BusEnvelopeJson.ToJson(reply).ToJsonString());
         return 0;
     }
 
@@ -96,16 +96,16 @@ internal static class BusCommands
 
         await using var subscription = await bus.SubscribeAsync(
             topics,
-            (envelope, _) =>
+            async (envelope, deliveryToken) =>
             {
-                Console.WriteLine(BusEnvelopeJson.ToJson(envelope).ToJsonString());
-                Console.Out.Flush();
-                return Task.CompletedTask;
+                await Console.Out.WriteLineAsync(BusEnvelopeJson.ToJson(envelope).ToJsonString())
+                    .WaitAsync(deliveryToken);
+                await Console.Out.FlushAsync(deliveryToken);
             },
             new SubscriptionOptions { Name = "anima-cli-watch" },
             cancellation.Token);
 
-        Console.Error.WriteLine($"watching {topics} (ctrl-c to stop)");
+        await Console.Error.WriteLineAsync($"watching {topics} (ctrl-c to stop)");
         try
         {
             await Task.Delay(Timeout.Infinite, cancellation.Token);

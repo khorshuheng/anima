@@ -68,4 +68,4 @@ app.MapGet("/api/runs/{id}/log", (string id, IDeployRunStore store) =>
         : Results.Ok(new { runId = id, lines = store.GetLog(id) });
 });
 
-app.Run();
+await app.RunAsync();

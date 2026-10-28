@@ -106,7 +106,6 @@ app.MapPost("/api/bus/publish", async (
 
 app.MapGet("/api/bus/stream", async (
     HttpContext context,
-    IMessageCodec codec,
     IMessageBus bus,
     CancellationToken cancellationToken) =>
 {
@@ -202,4 +201,4 @@ app.MapGet("/api/bus/info", (Microsoft.Extensions.Options.IOptions<BusOptions> o
 
 app.MapGet("/api/bus/snapshot", (IBusDiagnostics diagnostics) => Results.Ok(diagnostics.GetSnapshot()));
 
-app.Run();
+await app.RunAsync();

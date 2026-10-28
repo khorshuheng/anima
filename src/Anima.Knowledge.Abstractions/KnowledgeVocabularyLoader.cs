@@ -116,15 +116,8 @@ public sealed class KnowledgeVocabularyCatalog
 
         string source = KnowledgeVocabularyLoader.NormalizeName(sourceKind);
         string destination = KnowledgeVocabularyLoader.NormalizeName(destinationKind);
-        foreach (var pair in definition.Pairs)
-        {
-            if (Matches(pair.Source, source) && Matches(pair.Destination, destination))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return definition.Pairs.Any(pair =>
+            Matches(pair.Source, source) && Matches(pair.Destination, destination));
 
         static bool Matches(string expected, string actual)
             => expected == Wildcard || string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
@@ -504,12 +497,9 @@ public static class KnowledgeVocabularyLoader
             yield break;
         }
 
-        foreach (var pack in packs)
+        foreach (var pack in packs.Where(pack => pack is not null))
         {
-            if (pack is not null)
-            {
-                yield return pack;
-            }
+            yield return pack;
         }
     }
 
@@ -873,13 +863,11 @@ public static class KnowledgeVocabularyLoader
                 mirrored.Add(new EdgeKindPair(source, destination));
             }
 
-            foreach (var pair in mirrored)
+            EdgeKindPair[] missing = [.. mirrored.Where(pair => !edge.Pairs.Contains(pair))];
+            if (missing.Length > 0)
             {
-                if (!edge.Pairs.Contains(pair))
-                {
-                    throw new KnowledgeVocabularyException(
-                        $"symmetric edge type '{edge.Name}' does not allow the mirrored pair ({pair.Source}, {pair.Destination})");
-                }
+                throw new KnowledgeVocabularyException(
+                    $"symmetric edge type '{edge.Name}' does not allow the mirrored pair ({missing[0].Source}, {missing[0].Destination})");
             }
         }
     }

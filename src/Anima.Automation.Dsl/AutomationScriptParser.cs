@@ -16,6 +16,10 @@ namespace Anima.Automation.Dsl;
 ///   - expect: { url: /dashboard }
 /// </code>
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Performance",
+    "S2325:Methods and properties that don't access instance data should be static",
+    Justification = "Parsers are injected services; keeping the call site instance-based is deliberate.")]
 public sealed class AutomationScriptParser
 {
     public ScriptParseResult Parse(string source)

@@ -35,11 +35,16 @@ public sealed record FormFieldValue
         => new() { Choices = [.. values] };
 
     public override string ToString()
-        => Toggle is { } toggle
-            ? (toggle ? "true" : "false")
-            : Choices is { } choices
-                ? $"[{string.Join(", ", choices)}]"
-                : Text ?? "<empty>";
+    {
+        if (Toggle is { } toggle)
+        {
+            return toggle ? "true" : "false";
+        }
+
+        return Choices is { } choices
+            ? $"[{string.Join(", ", choices)}]"
+            : Text ?? "<empty>";
+    }
 }
 
 /// <summary>

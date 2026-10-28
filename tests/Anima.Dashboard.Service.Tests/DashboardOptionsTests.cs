@@ -32,7 +32,7 @@ public sealed class DashboardOptionsTests
             new DashboardOptions { KnowledgeBaseUrl = baseUrl });
 
         Assert.False(result.Succeeded);
-        var failures = Assert.IsAssignableFrom<IEnumerable<string>>(result.Failures);
+        var failures = Assert.IsType<IEnumerable<string>>(result.Failures, exactMatch: false);
         Assert.Contains(failures, failure => failure.Contains("KnowledgeBaseUrl", StringComparison.Ordinal));
     }
 
@@ -44,7 +44,7 @@ public sealed class DashboardOptionsTests
             new DashboardOptions { UpstreamTimeout = TimeSpan.Zero });
 
         Assert.False(result.Succeeded);
-        var failures = Assert.IsAssignableFrom<IEnumerable<string>>(result.Failures);
+        var failures = Assert.IsType<IEnumerable<string>>(result.Failures, exactMatch: false);
         Assert.Contains(failures, failure => failure.Contains("UpstreamTimeout", StringComparison.Ordinal));
     }
 }

@@ -32,7 +32,7 @@ internal static class KnowledgeCommands
         }
         catch (InvalidOperationException exception)
         {
-            Console.Error.WriteLine($"error: {exception.Message}");
+            await Console.Error.WriteLineAsync($"error: {exception.Message}");
             return 2;
         }
     }
@@ -164,13 +164,13 @@ internal static class KnowledgeCommands
         string text = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
-            Console.Error.WriteLine($"error {(int)response.StatusCode}: {text}");
+            await Console.Error.WriteLineAsync($"error {(int)response.StatusCode}: {text}");
             return 3;
         }
 
         if (text.Length > 0)
         {
-            Console.WriteLine(text);
+            await Console.Out.WriteLineAsync(text);
         }
 
         return 0;

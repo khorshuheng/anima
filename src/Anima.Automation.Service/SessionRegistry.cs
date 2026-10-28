@@ -80,16 +80,16 @@ public sealed class SessionRegistry : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        foreach (var entry in _sessions.Values)
+        foreach (var session in _sessions.Values.Select(entry => entry.Session))
         {
             try
             {
-                await entry.Session.DisposeAsync();
+                await session.DisposeAsync();
             }
             catch (Exception exception)
             {
                 // Host shutdown must not fail on a broken browser session.
-                _logger.LogWarning(exception, "Failed to dispose browser session {SessionId}.", entry.Session.Id);
+                _logger.LogWarning(exception, "Failed to dispose browser session {SessionId}.", session.Id);
             }
         }
 

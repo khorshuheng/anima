@@ -720,7 +720,7 @@ app.MapPost("/api/sessions/{id}/cdp", async (
     return Results.Ok(new { Result = result });
 });
 
-app.Run();
+await app.RunAsync();
 
 // Per-action timeout: narrow the session's default for the duration of one action,
 // so every verb (including composite waits) honours timeoutMs without threading a
@@ -809,7 +809,16 @@ static WaitState ParseWaitState(string? state) => (state ?? "visible").ToLowerIn
 // does not grow the artifact directory without limit.
 static string StableCaptureName(string sessionId, bool fullPage, string? target)
 {
-    string mode = target is not null ? "element" : fullPage ? "full" : "viewport";
+    string mode = "viewport";
+    if (target is not null)
+    {
+        mode = "element";
+    }
+    else if (fullPage)
+    {
+        mode = "full";
+    }
+
     string suffix = target is null ? string.Empty : "-" + Slug(target);
     return $"session-{sessionId}-{mode}{suffix}";
 }

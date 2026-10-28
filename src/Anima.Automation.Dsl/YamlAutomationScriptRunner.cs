@@ -269,11 +269,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 {
                     var resolvedFields = fillForm.Fields.ToDictionary(
                         pair => resolve(pair.Key),
-                        pair => pair.Value.Text is { } text
-                            ? FormFieldValue.FromText(resolve(text))
-                            : pair.Value.Choices is { } choices
-                                ? FormFieldValue.FromChoices(choices.Select(resolve))
-                                : pair.Value,
+                        pair => ResolveField(pair.Value, resolve),
                         StringComparer.Ordinal);
 
                     var filled = await session.FillFormAsync(resolvedFields, cancellationToken);
@@ -341,8 +337,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
         if (expect.Url is { } url)
         {
             string expected = resolve(url);
-            if (session.CurrentUrl is null ||
-                !session.CurrentUrl.Contains(expected, StringComparison.OrdinalIgnoreCase))
+            if (session.CurrentUrl?.Contains(expected, StringComparison.OrdinalIgnoreCase) != true)
             {
                 throw new InvalidOperationException(
                     $"expected url containing '{expected}', current url is '{session.CurrentUrl}'");
@@ -354,7 +349,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
             string resolvedTarget = resolve(target);
             string expected = resolve(text);
             string? actual = await session.GetTextAsync(resolvedTarget, cancellationToken);
-            if (actual is null || !actual.Contains(expected, StringComparison.Ordinal))
+            if (actual?.Contains(expected, StringComparison.Ordinal) != true)
             {
                 throw new InvalidOperationException(
                     $"expected '{resolvedTarget}' to contain '{expected}', got '{actual}'");
@@ -468,4 +463,17 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
         ScreenshotStep => "screenshot",
         _ => step.GetType().Name,
     };
+
+    private static FormFieldValue ResolveField(FormFieldValue value, Func<string, string> resolve)
+    {
+        if (value.Text is { } text)
+        {
+            return FormFieldValue.FromText(resolve(text));
+        }
+
+        return value.Choices is { } choices
+            ? FormFieldValue.FromChoices(choices.Select(resolve))
+            : value;
+    }
+
 }

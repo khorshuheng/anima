@@ -51,19 +51,19 @@ public static class DashboardRoutes
     public static string Search(string? queryString = null) => "api/search" + queryString;
 
     /// <summary><c>/api/dashboard/kinds</c> -> knowledge <c>api/node-kinds</c>.</summary>
-    public static string Kinds() => "api/node-kinds";
+    public const string Kinds = "api/node-kinds";
 
     /// <summary><c>/api/dashboard/edge-types</c> -> knowledge <c>api/edge-types</c>.</summary>
-    public static string EdgeTypes() => "api/edge-types";
+    public const string EdgeTypes = "api/edge-types";
 
     /// <summary>
     /// <c>/api/dashboard/vocabulary</c> -> knowledge <c>api/vocabulary</c>: the merged
     /// core pack plus any loaded user packs.
     /// </summary>
-    public static string Vocabulary() => "api/vocabulary";
+    public const string Vocabulary = "api/vocabulary";
 
     /// <summary><c>/api/dashboard/bus</c> -> bus <c>api/bus/snapshot</c>.</summary>
-    public static string BusSnapshot() => "api/bus/snapshot";
+    public const string BusSnapshot = "api/bus/snapshot";
 
     /// <summary><c>/api/dashboard/bus/stream</c> -> bus <c>api/bus/stream</c> with the caller's topics filter.</summary>
     public static string BusStream(string? queryString = null) => "api/bus/stream" + queryString;

@@ -1,6 +1,10 @@
 namespace Anima.Automation.Dsl;
 
 /// <summary>One declarative step in an agent-derived UI script.</summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Major Code Smell",
+    "S2094:Classes should not be empty",
+    Justification = "Marker base type for the step hierarchy; steps are matched by concrete type.")]
 public abstract record AutomationStep;
 
 public sealed record NavigateStep(string Url) : AutomationStep;

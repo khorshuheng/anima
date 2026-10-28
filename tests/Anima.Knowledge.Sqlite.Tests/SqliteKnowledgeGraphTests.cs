@@ -131,20 +131,20 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
         await Assert.ThrowsAsync<KnowledgeValidationException>(
             () => graph.CreatePlanAsync(new PlanDraft(
                 "Re-anchor",
-                GoalId: anchored.Goal!.Id,
-                Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo))));
+                Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo),
+                GoalId: anchored.Goal!.Id)));
 
         var same = await graph.CreatePlanAsync(new PlanDraft(
             "Same anchor",
-            GoalId: anchored.Goal!.Id,
-            Anchor: new PlanAnchor(repoOne.Id, KnowledgeEdgeTypes.BelongsTo)));
+            Anchor: new PlanAnchor(repoOne.Id, KnowledgeEdgeTypes.BelongsTo),
+            GoalId: anchored.Goal!.Id));
         Assert.Equal(anchored.Goal!.Id, same.Goal!.Id);
 
         var loose = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Goal, "Loose"));
         await graph.CreatePlanAsync(new PlanDraft(
             "Attach loose",
-            GoalId: loose.Id,
-            Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo)));
+            Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo),
+            GoalId: loose.Id));
         var neighbors = await graph.GetNeighborsAsync(
             new NeighborQuery(loose.Id, EdgeDirection.Outgoing, KnowledgeEdgeTypes.BelongsTo));
         Assert.Contains(neighbors, neighbor => neighbor.Node.Id == repoTwo.Id);

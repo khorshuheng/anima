@@ -50,7 +50,7 @@ public sealed class MigrationTests : IDisposable
         }
 
         using var second = CreateGraph(path);
-        using var connection = Open(path);
+        await using var connection = Open(path);
 
         Assert.Equal(1, ScalarLong(connection, "SELECT COUNT(*) FROM SchemaVersions;"));
         Assert.Equal(1, ScalarLong(connection, "SELECT COUNT(*) FROM node;"));
@@ -191,7 +191,7 @@ public sealed class MigrationTests : IDisposable
         foreach (var (table, expected) in SchemaContract.Columns)
         {
             var actual = ColumnNames(connection, table);
-            string[] missing = expected.Where(column => !actual.Contains(column)).ToArray();
+            string[] missing = [.. expected.Where(column => !actual.Contains(column))];
             Assert.True(
                 missing.Length == 0,
                 $"{table} is missing {string.Join(", ", missing)}; update SchemaContract with Migrations/*.sql");

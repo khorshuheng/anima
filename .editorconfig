@@ -46,6 +46,9 @@ dotnet_diagnostic.IDE0058.severity = none
 # mirroring project folders, so IDE0130's folder rule does not apply. Renaming them
 # would change every public type's fully-qualified name.
 dotnet_diagnostic.IDE0130.severity = none
+# Deconstructing `var x = await graph.VocabularyAsync(...)` yields unused locals or
+# collides with existing `kinds`/`edgeTypes` names, so the object form stays.
+dotnet_diagnostic.IDE0042.severity = none
 
 [tests/**/*.cs]
 dotnet_diagnostic.CA1707.severity = none
@@ -69,4 +72,5 @@ dotnet_diagnostic.S2857.severity = suggestion   # SQL keyword casing
 dotnet_diagnostic.S2365.severity = suggestion   # collection-copy properties
 dotnet_diagnostic.S2094.severity = suggestion   # empty marker classes
 dotnet_diagnostic.S1066.severity = suggestion   # merge nested if
-dotnet_diagnostic.S8969.severity = suggestion   # xUnit NotNull is not a flow annotation
+dotnet_diagnostic.S8969.severity = none        # xUnit v2 NotNull is not a flow annotation, so `!` is required
+dotnet_diagnostic.RCS1249.severity = none      # same: the null-forgiving operator is needed after Assert.NotNull

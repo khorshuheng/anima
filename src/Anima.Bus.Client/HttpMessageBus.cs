@@ -176,8 +176,8 @@ public sealed class HttpMessageBus : IMessageBus, IAsyncDisposable
 
         public void Start()
         {
-            _reader = Task.Run(() => ReadAsync(_cts.Token));
-            _pump = Task.Run(() => PumpAsync(_cts.Token));
+            _reader = Task.Run(() => ReadAsync(_cts.Token), _cts.Token);
+            _pump = Task.Run(() => PumpAsync(_cts.Token), _cts.Token);
         }
 
         public Task WaitForReadyAsync(TimeSpan timeout, CancellationToken cancellationToken)

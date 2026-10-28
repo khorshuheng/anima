@@ -39,9 +39,7 @@ string busTransport = (builder.Configuration["Anima:Bus:Transport"] ?? "Http").T
 if (string.Equals(busTransport, "Http", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddHttpBus(options =>
-    {
-        options.BaseUrl = builder.Configuration["Anima:Bus:BaseUrl"] ?? "http://127.0.0.1:7412";
-    });
+        options.BaseUrl = builder.Configuration["Anima:Bus:BaseUrl"] ?? "http://127.0.0.1:7412");
 }
 else if (string.Equals(busTransport, "InProc", StringComparison.OrdinalIgnoreCase))
 {
@@ -279,4 +277,4 @@ app.MapPost("/api/workflows/{id:long}/dispatch", async (
             : StatusCodes.Status503ServiceUnavailable);
 });
 
-app.Run();
+await app.RunAsync();

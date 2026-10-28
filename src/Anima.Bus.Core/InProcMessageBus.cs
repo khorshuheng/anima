@@ -398,7 +398,8 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
 
         public ChannelReader<MessageEnvelope> Reader => _channel.Reader;
 
-        public void Start(Func<CancellationToken, Task> pump) => _pump = Task.Run(() => pump(_cts.Token));
+        public void Start(Func<CancellationToken, Task> pump)
+            => _pump = Task.Run(() => pump(_cts.Token), _cts.Token);
 
         public void RecordDelivered()
         {

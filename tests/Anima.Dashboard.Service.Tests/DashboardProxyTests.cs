@@ -41,10 +41,10 @@ public sealed class DashboardProxyTests
         using var client = CreateClient(handler);
         var proxy = CreateProxy(client, "knowledge");
 
-        await proxy.GetAsync(DashboardRoutes.Vocabulary());
+        await proxy.GetAsync(DashboardRoutes.Vocabulary);
         Assert.Equal("http://upstream.test/api/vocabulary", handler.LastRequestUri?.ToString());
 
-        await proxy.GetAsync(DashboardRoutes.EdgeTypes());
+        await proxy.GetAsync(DashboardRoutes.EdgeTypes);
         Assert.Equal("http://upstream.test/api/edge-types", handler.LastRequestUri?.ToString());
     }
 

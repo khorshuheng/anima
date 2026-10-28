@@ -622,7 +622,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         };
     }
 
-    private async Task<long> InsertNodeAsync(
+    private static async Task<long> InsertNodeAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
         long kindId,
@@ -779,7 +779,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         };
     }
 
-    private async Task<KnowledgeNode> LoadNodeAsync(
+    private static async Task<KnowledgeNode> LoadNodeAsync(
         SqliteConnection connection,
         SqliteTransaction? transaction,
         long id,

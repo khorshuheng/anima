@@ -162,7 +162,7 @@ app.MapGet("/api/dashboard/kinds", async (
         httpClientFactory.CreateClient(DashboardUpstreams.Knowledge),
         DashboardUpstreams.Knowledge,
         options.Value.UpstreamTimeout);
-    var upstream = await proxy.GetAsync(DashboardRoutes.Kinds(), cancellationToken);
+    var upstream = await proxy.GetAsync(DashboardRoutes.Kinds, cancellationToken);
     await upstream.WriteAsync(context.Response, cancellationToken);
 });
 
@@ -176,7 +176,7 @@ app.MapGet("/api/dashboard/edge-types", async (
         httpClientFactory.CreateClient(DashboardUpstreams.Knowledge),
         DashboardUpstreams.Knowledge,
         options.Value.UpstreamTimeout);
-    var upstream = await proxy.GetAsync(DashboardRoutes.EdgeTypes(), cancellationToken);
+    var upstream = await proxy.GetAsync(DashboardRoutes.EdgeTypes, cancellationToken);
     await upstream.WriteAsync(context.Response, cancellationToken);
 });
 
@@ -190,7 +190,7 @@ app.MapGet("/api/dashboard/vocabulary", async (
         httpClientFactory.CreateClient(DashboardUpstreams.Knowledge),
         DashboardUpstreams.Knowledge,
         options.Value.UpstreamTimeout);
-    var upstream = await proxy.GetAsync(DashboardRoutes.Vocabulary(), cancellationToken);
+    var upstream = await proxy.GetAsync(DashboardRoutes.Vocabulary, cancellationToken);
     await upstream.WriteAsync(context.Response, cancellationToken);
 });
 
@@ -204,7 +204,7 @@ app.MapGet("/api/dashboard/bus", async (
         httpClientFactory.CreateClient(DashboardUpstreams.Bus),
         DashboardUpstreams.Bus,
         options.Value.UpstreamTimeout);
-    var upstream = await proxy.GetAsync(DashboardRoutes.BusSnapshot(), cancellationToken);
+    var upstream = await proxy.GetAsync(DashboardRoutes.BusSnapshot, cancellationToken);
     await upstream.WriteAsync(context.Response, cancellationToken);
 });
 
@@ -224,7 +224,7 @@ app.MapGet("/api/dashboard/bus/stream", async (
         cancellationToken);
 });
 
-app.Run();
+await app.RunAsync();
 
 // Registers one named upstream client. The base URL and timeout are read from the
 // validated DashboardOptions on first use, not from an unvalidated configuration

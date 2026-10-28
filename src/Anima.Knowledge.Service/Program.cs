@@ -19,9 +19,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 });
 builder.Services.Configure<KnowledgeOptions>(builder.Configuration.GetSection("Anima:Knowledge"));
 builder.Services.AddHttpBus(options =>
-{
-    options.BaseUrl = builder.Configuration["Anima:Bus:BaseUrl"] ?? "http://127.0.0.1:7412";
-});
+    options.BaseUrl = builder.Configuration["Anima:Bus:BaseUrl"] ?? "http://127.0.0.1:7412");
 
 // The vocabulary is the merged core pack plus configured packs, resolved once at
 // startup. Pack paths come from Anima:Knowledge:Packs plus the repo and user defaults.
@@ -42,9 +40,7 @@ string provider = (builder.Configuration["Anima:Knowledge:Provider"] ?? "Sqlite"
 if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddSqliteKnowledgeGraph(options =>
-    {
-        options.DatabasePath = builder.Configuration["Anima:Knowledge:DatabasePath"];
-    });
+        options.DatabasePath = builder.Configuration["Anima:Knowledge:DatabasePath"]);
     builder.Services.AddSingleton<IKnowledgeGraph>(serviceProvider => new PublishingKnowledgeGraph(
         serviceProvider.GetRequiredService<SqliteKnowledgeGraph>(),
         serviceProvider.GetService<IBusPublisher>(),
@@ -529,4 +525,4 @@ app.MapGet("/api/session", (HttpContext context) => Results.Ok(new
     session = context.Request.Headers["X-Session-Id"].FirstOrDefault() ?? "anonymous",
 }));
 
-app.Run();
+await app.RunAsync();

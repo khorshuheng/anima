@@ -40,12 +40,12 @@ internal static class WorkflowCommands
         }
         catch (WorkflowValidationException exception)
         {
-            Console.Error.WriteLine($"error: {exception.Message}");
+            await Console.Error.WriteLineAsync($"error: {exception.Message}");
             return 2;
         }
         catch (HttpRequestException exception)
         {
-            Console.Error.WriteLine($"error: {exception.Message}");
+            await Console.Error.WriteLineAsync($"error: {exception.Message}");
             return 3;
         }
     }
@@ -289,13 +289,13 @@ internal static class WorkflowCommands
         string text = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
-            Console.Error.WriteLine($"error {(int)response.StatusCode}: {text}");
+            await Console.Error.WriteLineAsync($"error {(int)response.StatusCode}: {text}");
             return 3;
         }
 
         if (text.Length > 0)
         {
-            Console.WriteLine(text);
+            await Console.Out.WriteLineAsync(text);
         }
 
         return 0;

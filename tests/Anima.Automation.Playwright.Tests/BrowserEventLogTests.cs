@@ -198,11 +198,11 @@ public sealed class BrowserEventLogTests
         var received = new List<long>();
         try
         {
-            await foreach (var item in log.SubscribeAsync(afterSequence: 1_000).WithCancellation(Timeout()))
-            {
-                received.Add(item.Sequence);
-                break;
-            }
+            await using var items = log.SubscribeAsync(afterSequence: 1_000)
+                .WithCancellation(Timeout())
+                .GetAsyncEnumerator();
+            Assert.True(await items.MoveNextAsync(), "no event was published");
+            received.Add(items.Current.Sequence);
         }
         finally
         {

@@ -572,7 +572,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             TestCommands ?? (success ? ["dotnet test"] : []),
             ArtifactPaths);
 
-    private KnowledgeWorkflowStore CreateStore(WorkflowOptions? options = null)
+    private static KnowledgeWorkflowStore CreateStore(WorkflowOptions? options = null)
     {
         var graph = new InMemoryKnowledgeGraph(
             Options.Create(new KnowledgeOptions()),

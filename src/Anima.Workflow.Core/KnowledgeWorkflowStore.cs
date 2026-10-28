@@ -848,17 +848,13 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                                  latestByTask.TryGetValue(task.Key, out var item) && item.Success);
         var latestMerge = Latest(existingResults, WorkflowResultKind.Merge);
 
-        if (result.Kind is WorkflowResultKind.Merge or WorkflowResultKind.Review)
+        if (result.Kind is WorkflowResultKind.Merge or WorkflowResultKind.Review && !allImplemented)
         {
-            if (!allImplemented)
-            {
-                throw new WorkflowValidationException(
-                    $"{Wire(result.Kind)} requires every spec task to have a successful implementation result");
-            }
+            throw new WorkflowValidationException(
+                $"{Wire(result.Kind)} requires every spec task to have a successful implementation result");
         }
 
-        if (result.Kind == WorkflowResultKind.Review &&
-            (latestMerge is null || !latestMerge.Success))
+        if (result.Kind == WorkflowResultKind.Review && latestMerge?.Success != true)
         {
             throw new WorkflowValidationException(
                 "review requires a successful merge result");
@@ -1104,8 +1100,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             missing.Add("baseRef");
         }
 
-        if (result.TestCommands is null ||
-            !result.TestCommands.Any(command => !string.IsNullOrWhiteSpace(command)))
+        if (result.TestCommands?.Any(command => !string.IsNullOrWhiteSpace(command)) != true)
         {
             missing.Add("testCommands");
         }
@@ -1641,13 +1636,11 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
 
     public void Dispose() => _mutationGate.Dispose();
 
-    private static string Require(string? value, string field)
+    private static void Require(string? value, string field)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new WorkflowValidationException($"{field} is required");
         }
-
-        return value.Trim();
     }
 }

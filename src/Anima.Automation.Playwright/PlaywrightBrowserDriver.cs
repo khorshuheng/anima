@@ -340,7 +340,7 @@ internal sealed class BrowserHost(BrowserLaunchPlan plan, IBrowser? browser, IBr
     /// a connected Chrome the operator closed as well as for an owned one that
     /// crashed, and both need the host rebuilt.
     /// </summary>
-    public bool IsUsable => Browser is null || Browser.IsConnected;
+    public bool IsUsable => Browser?.IsConnected ?? true;
 
     public async ValueTask DisposeAsync()
     {
@@ -836,7 +836,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             """,
             values.ToArray());
 
-        string[] missing = [.. values.Where((value, index) => resolved[index] is null)];
+        string[] missing = [.. values.Where((_, index) => resolved[index] is null)];
 
         if (missing.Length > 0)
         {
@@ -953,8 +953,14 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             case "text":
                 // A boolean aimed at a text control is still fillable ("true"/"false"),
                 // so the parser's kind inference cannot make a field unfillable.
-                string? text = (value.Text
-                    ?? (value.Toggle is { } toggle ? (toggle ? "true" : "false") : null)) ?? throw new InvalidOperationException("a text control needs a text value");
+                string? toggleText = null;
+                if (value.Toggle is { } flag)
+                {
+                    toggleText = flag ? "true" : "false";
+                }
+
+                string? text = (value.Text ?? toggleText)
+                    ?? throw new InvalidOperationException("a text control needs a text value");
                 await _page.Locator(selector).FillAsync(text).ConfigureAwait(false);
                 break;
 
@@ -1317,13 +1323,12 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             return false;
         }
 
-        foreach (var property in element.EnumerateObject())
+        var match = element.EnumerateObject().FirstOrDefault(property =>
+            string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (match.Name is not null)
         {
-            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                value = property.Value;
-                return true;
-            }
+            value = match.Value;
+            return true;
         }
 
         return false;
@@ -1375,6 +1380,10 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             : null;
 
     /// <summary>One control's state, as the filler sees it.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Style",
+        "IDE1006:Naming Styles",
+        Justification = "Members mirror the DOM attributes they read (tag, value, label, labels).")]
     private sealed record FormElementState(
         string control,
         string? tag,

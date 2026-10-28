@@ -18,12 +18,9 @@ public interface IAgentMailbox : IAsyncDisposable
         timeoutSource.CancelAfter(timeout);
         try
         {
-            await foreach (var envelope in ReadAllAsync(timeoutSource.Token))
-            {
-                return envelope;
-            }
-
-            return null;
+            await using var messages = ReadAllAsync(timeoutSource.Token)
+                .GetAsyncEnumerator(timeoutSource.Token);
+            return await messages.MoveNextAsync() ? messages.Current : null;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

@@ -602,14 +602,12 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
                 string.Equals(value, pair.Value, StringComparison.Ordinal)));
         }
 
-        candidates = query.Scope switch
+        return query.Scope switch
         {
             KnowledgeScope.Active => candidates.Where(node => !resolved.Contains(node.Id)),
             KnowledgeScope.Resolved => candidates.Where(node => resolved.Contains(node.Id)),
             _ => candidates,
         };
-
-        return candidates;
     }
 
     /// <summary>

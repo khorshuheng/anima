@@ -86,13 +86,13 @@ public sealed class InMemoryKnowledgeGraphTests
         await Assert.ThrowsAsync<KnowledgeValidationException>(
             () => graph.CreatePlanAsync(new PlanDraft(
                 "Re-anchor",
-                GoalId: anchored.Goal!.Id,
-                Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo))));
+                Anchor: new PlanAnchor(repoTwo.Id, KnowledgeEdgeTypes.BelongsTo),
+                GoalId: anchored.Goal!.Id)));
 
         var same = await graph.CreatePlanAsync(new PlanDraft(
             "Same anchor",
-            GoalId: anchored.Goal!.Id,
-            Anchor: new PlanAnchor(repoOne.Id, KnowledgeEdgeTypes.BelongsTo)));
+            Anchor: new PlanAnchor(repoOne.Id, KnowledgeEdgeTypes.BelongsTo),
+            GoalId: anchored.Goal!.Id));
         Assert.Equal(anchored.Goal!.Id, same.Goal!.Id);
     }
 

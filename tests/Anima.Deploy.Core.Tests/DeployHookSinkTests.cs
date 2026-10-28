@@ -113,11 +113,12 @@ public sealed class DeployHookSinkTests
 
     private static async Task<string> ReadScriptAsync(DeployDispatcher queue)
     {
-        await foreach (var item in queue.ReadAllAsync())
+        await using var items = queue.ReadAllAsync().GetAsyncEnumerator();
+        if (!await items.MoveNextAsync())
         {
-            return item.Rule.Script;
+            throw new InvalidOperationException("no deploy item was queued");
         }
 
-        throw new InvalidOperationException("no deploy item was queued");
+        return items.Current.Rule.Script;
     }
 }

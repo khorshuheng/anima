@@ -61,15 +61,18 @@ public static class DeployScriptInterpreter
                     ScriptIsExecutable: false);
 
             default:
-                return isWindows
-                    ? new DeployInterpreter(
+                if (isWindows)
+                {
+                    return new DeployInterpreter(
                         string.IsNullOrWhiteSpace(options.CommandShell) ? "cmd.exe" : options.CommandShell,
                         ["/c"],
-                        ScriptIsExecutable: false)
-                    : new DeployInterpreter(
-                        string.IsNullOrWhiteSpace(options.Shell) ? "bash" : options.Shell,
-                        [],
                         ScriptIsExecutable: false);
+                }
+
+                return new DeployInterpreter(
+                    string.IsNullOrWhiteSpace(options.Shell) ? "bash" : options.Shell,
+                    [],
+                    ScriptIsExecutable: false);
         }
     }
 }

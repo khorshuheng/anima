@@ -46,8 +46,8 @@ public sealed class DashboardRoutesTests
     [Fact]
     public void Nodes_forwards_kind_scope_and_limit_filters()
     {
-        Assert.Equal("api/edge-types", DashboardRoutes.EdgeTypes());
-        Assert.Equal("api/vocabulary", DashboardRoutes.Vocabulary());
+        Assert.Equal("api/edge-types", DashboardRoutes.EdgeTypes);
+        Assert.Equal("api/vocabulary", DashboardRoutes.Vocabulary);
         Assert.Equal("api/nodes", DashboardRoutes.Nodes());
         Assert.Equal(
             "api/nodes?kind=goal&scope=all&summary=true&limit=100",
@@ -63,10 +63,10 @@ public sealed class DashboardRoutesTests
     }
 
     [Fact]
-    public void Kinds_targets_the_node_kind_catalog() => Assert.Equal("api/node-kinds", DashboardRoutes.Kinds());
+    public void Kinds_targets_the_node_kind_catalog() => Assert.Equal("api/node-kinds", DashboardRoutes.Kinds);
 
     [Fact]
-    public void Bus_snapshot_targets_the_bus_diagnostics_endpoint() => Assert.Equal("api/bus/snapshot", DashboardRoutes.BusSnapshot());
+    public void Bus_snapshot_targets_the_bus_diagnostics_endpoint() => Assert.Equal("api/bus/snapshot", DashboardRoutes.BusSnapshot);
 
     [Fact]
     public void Bus_stream_forwards_the_topics_filter()

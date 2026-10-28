@@ -40,7 +40,7 @@ internal static class BatchBodyReader
             return new ParsedBatch(null, null, $"batch body exceeds {MaxBodyChars} characters");
         }
 
-        string body = new string(buffer, 0, total);
+        string body = new(buffer, 0, total);
         var trimmed = body.AsSpan().TrimStart();
 
         if (trimmed.IsEmpty)

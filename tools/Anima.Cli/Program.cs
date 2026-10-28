@@ -34,7 +34,7 @@ try
 }
 catch (Exception exception)
 {
-    Console.Error.WriteLine($"error: {exception.Message}");
+    await Console.Error.WriteLineAsync($"error: {exception.Message}");
     return 1;
 }
 
@@ -350,11 +350,11 @@ static async Task<int> ScriptsAsync(string[] args)
             {
                 if (args.Length < 2)
                 {
-                    Console.Error.WriteLine("usage: anima scripts validate <script.yaml>");
+                    await Console.Error.WriteLineAsync("usage: anima scripts validate <script.yaml>");
                     return 2;
                 }
 
-                var result = parser.Parse(File.ReadAllText(args[1]));
+                var result = parser.Parse(await File.ReadAllTextAsync(args[1]));
                 foreach (var diagnostic in result.Diagnostics)
                 {
                     Console.WriteLine($"[{(diagnostic.IsError ? "error" : "warn")}] step {diagnostic.StepIndex?.ToString(CultureInfo.InvariantCulture) ?? "-"}: {diagnostic.Message}");
@@ -367,13 +367,13 @@ static async Task<int> ScriptsAsync(string[] args)
             {
                 if (ValuedOptionWithoutValue(args) is { } missingOption)
                 {
-                    Console.Error.WriteLine($"option {missingOption} requires a value");
+                    await Console.Error.WriteLineAsync($"option {missingOption} requires a value");
                     return 2;
                 }
 
                 if (args.Length < 2)
                 {
-                    Console.Error.WriteLine("usage: anima scripts run <script.yaml> [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>] [--base-url <url>] [--headless] [--events|--events-errors] [--capture-headers] [--capture-bodies] [--var key=value]");
+                    await Console.Error.WriteLineAsync("usage: anima scripts run <script.yaml> [--browser <name>] [--mode launch|profile|connect] [--profile-dir <path>] [--connect <url>] [--base-url <url>] [--headless] [--events|--events-errors] [--capture-headers] [--capture-bodies] [--var key=value]");
                     return 2;
                 }
 
@@ -406,7 +406,7 @@ static async Task<int> ScriptsAsync(string[] args)
                     });
 
                 var result = await runner.RunAsync(
-                    File.ReadAllText(args[1]),
+                    await File.ReadAllTextAsync(args[1]),
                     session,
                     new ScriptRunOptions { Variables = variables, BaseUrl = baseUrl });
 

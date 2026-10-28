@@ -68,9 +68,9 @@ public sealed class DeployHookSink : IDeployHookSink
 
         var rules = LoadRules();
         var matched = rules
-            .Where(rule => rule.Enabled)
-            .Where(rule => GlobPattern.IsMatch(rule.RepositoryPattern, push.Repository))
-            .Where(rule => GlobPattern.IsMatch(rule.RefPattern, push.Ref))
+            .Where(rule => rule.Enabled
+                && GlobPattern.IsMatch(rule.RepositoryPattern, push.Repository)
+                && GlobPattern.IsMatch(rule.RefPattern, push.Ref))
             .ToArray();
 
         if (matched.Length == 0)
@@ -125,12 +125,11 @@ public sealed class DeployHookSink : IDeployHookSink
 
     private static string? GetHeader(IReadOnlyDictionary<string, string> headers, string name)
     {
-        foreach (var pair in headers)
+        var match = headers.FirstOrDefault(pair =>
+            string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase));
+        if (match.Key is not null)
         {
-            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
-            {
-                return pair.Value;
-            }
+            return match.Value;
         }
 
         return null;

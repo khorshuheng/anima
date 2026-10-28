@@ -69,12 +69,9 @@ public sealed class InProcMessageBusTests
         await alice.SendAsync("bob", CreateEnvelope("unused"));
 
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        MessageEnvelope? received = null;
-        await foreach (var envelope in bob.ReadAllAsync(timeout.Token))
-        {
-            received = envelope;
-            break;
-        }
+        await using var messages = bob.ReadAllAsync(timeout.Token).GetAsyncEnumerator(timeout.Token);
+        Assert.True(await messages.MoveNextAsync(), "no message was delivered");
+        MessageEnvelope received = messages.Current;
 
         Assert.NotNull(received);
         Assert.Equal("alice", received.Sender);

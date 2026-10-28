@@ -7,12 +7,20 @@ namespace Anima.Bus.Client;
 /// <summary>Reads <c>event: message</c> / <c>data: {...}</c> frames from an SSE stream.</summary>
 public static class SseEnvelopeReader
 {
-    public static async IAsyncEnumerable<MessageEnvelope> ReadAsync(
+    public static IAsyncEnumerable<MessageEnvelope> ReadAsync(
         Stream stream,
         Func<Task>? onReady = null,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stream);
+        return ReadCoreAsync(stream, onReady, cancellationToken);
+    }
+
+    private static async IAsyncEnumerable<MessageEnvelope> ReadCoreAsync(
+        Stream stream,
+        Func<Task>? onReady,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var data = new StringBuilder();
         string? eventName = null;
