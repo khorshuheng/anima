@@ -21,6 +21,14 @@ public sealed record VocabularyPack
     public IReadOnlyList<EdgeTypeSpec> EdgeTypes { get; init; } = [];
 }
 
+/// <summary>
+/// One loaded vocabulary: the merged catalog plus the packs that produced it, so a
+/// candidate pack can be validated against the same baseline the service is running.
+/// </summary>
+public sealed record KnowledgeVocabularyLoad(
+    KnowledgeVocabularyCatalog Catalog,
+    IReadOnlyList<VocabularyPack> Packs);
+
 /// <summary>A node kind as authored, before merge and id assignment.</summary>
 public sealed record NodeKindSpec
 {

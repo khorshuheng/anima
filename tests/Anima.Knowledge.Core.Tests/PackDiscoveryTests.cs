@@ -83,6 +83,43 @@ public sealed class PackDiscoveryTests : IDisposable
         Assert.Equal(KnowledgeVocabularyCatalog.CorePack, catalog.RequireEdgeType(KnowledgeEdgeTypes.RelatedTo).Source);
     }
 
+    [Fact]
+    public void Loaded_packs_let_a_candidate_widen_another_packs_entry()
+    {
+        Directory.CreateDirectory(Path.Combine(RepoPacks, "..", ".."));
+        File.WriteAllText(Path.Combine(RepoPacks, "10-base.json"), """
+            { "schema_version": 1, "name": "base",
+              "node_kinds": [{ "name": "base:invoice" }] }
+            """);
+        File.WriteAllText(Path.Combine(UserPacks, "20-widen.json"), """
+            { "schema_version": 1, "name": "widen",
+              "edge_types": [{ "name": "related_to", "pairs": [["base:invoice", "repo"]] }] }
+            """);
+        var paths = KnowledgeVocabularyLoader.DiscoverPackFiles([], RepoRoot, UserRoot);
+
+        var loaded = KnowledgeVocabularyLoader.LoadWithPacks(paths);
+        Assert.Equal(2, loaded.Packs.Count);
+
+        // Candidate widening the same core edge, referencing another pack's kind.
+        var candidate = KnowledgeVocabularyLoader.Parse(
+            """
+            { "schema_version": 1, "name": "candidate",
+              "edge_types": [{ "name": "related_to", "pairs": [["base:invoice", "note"]] }] }
+            """,
+            "candidate");
+
+        var merged = KnowledgeVocabularyLoader.Build(
+            KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+            [.. loaded.Packs, candidate]);
+        Assert.True(merged.AllowsPair(KnowledgeEdgeTypes.RelatedTo, "base:invoice", KnowledgeKinds.Note));
+
+        // Without the loaded packs the same candidate cannot resolve the kind, which is
+        // why the validation endpoint validates on top of them.
+        Assert.Throws<KnowledgeVocabularyException>(() => KnowledgeVocabularyLoader.Build(
+            KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+            [candidate]));
+    }
+
     private static string Touch(string directory, string name)
     {
         Directory.CreateDirectory(directory);

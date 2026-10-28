@@ -228,6 +228,17 @@ public static class KnowledgeVocabularyLoader
         IEnumerable<string>? packPaths,
         VocabularyMode mode = VocabularyMode.Strict,
         Action<string>? onWarning = null)
+        => LoadWithPacks(packPaths, mode, onWarning).Catalog;
+
+    /// <summary>
+    /// Same as <see cref="Load"/> but also returns the accepted packs, so a caller can
+    /// validate a candidate pack on top of the vocabulary that is actually loaded
+    /// (a pack may widen another pack's entry, not only a core one).
+    /// </summary>
+    public static KnowledgeVocabularyLoad LoadWithPacks(
+        IEnumerable<string>? packPaths,
+        VocabularyMode mode = VocabularyMode.Strict,
+        Action<string>? onWarning = null)
     {
         var core = LoadEmbeddedCore();
         var accepted = new List<VocabularyPack>();
@@ -259,7 +270,7 @@ public static class KnowledgeVocabularyLoader
             accepted.Add(pack);
         }
 
-        return Build(core, accepted);
+        return new KnowledgeVocabularyLoad(Build(core, accepted), accepted);
     }
 
     private static void Reject(VocabularyMode mode, Action<string>? onWarning, string message)

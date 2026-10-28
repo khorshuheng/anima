@@ -146,6 +146,29 @@ public sealed class SqliteVocabularyReconcileTests : IDisposable
         Assert.Equal("acme:legacy", node.Kind);
     }
 
+    [Fact]
+    public async Task Deprecated_entry_lifecycle_ends_in_deactivation()
+    {
+        // 1. The pack declares the kind deprecated: hidden from listings, still writable.
+        using (var deprecated = CreateGraph(DeprecatedCatalog()))
+        {
+            Assert.DoesNotContain("acme:legacy", (await deprecated.GetKindsAsync()).Select(kind => kind.Name));
+            var legacy = await deprecated.CreateNodeAsync(new NodeDraft("acme:legacy", "old row"));
+
+            // 2. Data migrates off the kind before the pack entry is removed.
+            Assert.True(await deprecated.DeleteNodeAsync(legacy.Id));
+        }
+
+        // 3. The pack drops the entry: the row deactivates because nothing references it.
+        using var after = CreateGraph(KnowledgeVocabularyLoader.LoadCore());
+        Assert.DoesNotContain("acme:legacy", (await after.GetKindsAsync()).Select(kind => kind.Name));
+
+        // 4. The retired name is not writable again.
+        var retired = await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => after.CreateNodeAsync(new NodeDraft("acme:legacy", "resurrected")));
+        Assert.Contains("inactive", retired.Message, StringComparison.Ordinal);
+    }
+
     private long InactiveEpicRows()
     {
         using var connection = new SqliteConnection($"Data Source={_path}");
@@ -160,6 +183,16 @@ public sealed class SqliteVocabularyReconcileTests : IDisposable
         Options.Create(new KnowledgeOptions()),
         NullLogger<SqliteKnowledgeGraph>.Instance,
         vocabulary);
+
+    private static KnowledgeVocabularyCatalog DeprecatedCatalog() => KnowledgeVocabularyLoader.Build(
+        KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+        [
+            new VocabularyPack
+            {
+                Name = "acme",
+                NodeKinds = [new NodeKindSpec { Name = "acme:legacy", Deprecated = true }],
+            },
+        ]);
 
     private static KnowledgeVocabularyCatalog PackCatalog() => KnowledgeVocabularyLoader.Build(
         KnowledgeVocabularyLoader.LoadEmbeddedCore(),

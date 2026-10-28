@@ -30,11 +30,13 @@ builder.Services.AddSingleton(serviceProvider =>
     var options = serviceProvider.GetRequiredService<IOptions<KnowledgeOptions>>().Value;
     var logger = serviceProvider.GetRequiredService<ILogger<KnowledgeVocabularyCatalog>>();
     var paths = KnowledgeVocabularyLoader.DiscoverPackFiles(options.Packs, RepoLayout.Root);
-    return KnowledgeVocabularyLoader.Load(
+    return KnowledgeVocabularyLoader.LoadWithPacks(
         paths,
         options.VocabularyMode,
         warning => logger.LogWarning("Vocabulary pack skipped: {Reason}", warning));
 });
+builder.Services.AddSingleton(serviceProvider =>
+    serviceProvider.GetRequiredService<KnowledgeVocabularyLoad>().Catalog);
 
 var provider = (builder.Configuration["Anima:Knowledge:Provider"] ?? "Sqlite").Trim();
 if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
@@ -136,12 +138,16 @@ app.MapGet("/api/vocabulary", (KnowledgeVocabularyCatalog vocabulary) => Results
 
 // Authoring check for a candidate pack: parsed and merged on top of the core pack, so
 // typos, unknown kinds and core redefinitions fail with a message instead of at boot.
-app.MapPost("/api/vocabulary/validate", (JsonElement body) =>
+app.MapPost("/api/vocabulary/validate", (JsonElement body, KnowledgeVocabularyLoad loaded) =>
 {
     try
     {
+        // Validate against the vocabulary that is actually running, so a pack that
+        // widens another pack's entry behaves the same here as at the next startup.
         var pack = KnowledgeVocabularyLoader.Parse(body.GetRawText(), "candidate");
-        var catalog = KnowledgeVocabularyLoader.Build(KnowledgeVocabularyLoader.LoadEmbeddedCore(), [pack]);
+        var catalog = KnowledgeVocabularyLoader.Build(
+            KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+            [.. loaded.Packs, pack]);
         return Results.Ok(new
         {
             valid = true,

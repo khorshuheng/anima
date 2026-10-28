@@ -185,7 +185,19 @@ in generic logic, and a pack widening the pair sets does not change it.
   are always fatal.
 - `deprecated: true` hides an entry from `GET /api/node-kinds` and
   `GET /api/edge-types`, while writes still succeed with a warning so existing
-  automation can finish migrating. Removal is a separate, later step.
+  automation can finish migrating. Deprecated entries stay visible in
+  `GET /api/vocabulary` (and the dashboard Vocabulary tab) so an operator can see
+  what is still in use.
+
+  Removal lifecycle, in full: mark the entry `deprecated: true` in the pack and
+  restart → writes keep working but warn and the entry disappears from kind/edge
+  listings → migrate the data off it → delete the remaining nodes/edges → drop the
+  entry from the pack and restart. Reconcile then deactivates the row because
+  nothing references it, and the retired name is rejected from then on
+  (`is inactive because the pack that defined it was removed`). Dropping a pack
+  entry while nodes still use it fails startup with the referencing kind named, so
+  removal cannot silently orphan data. `SqliteVocabularyReconcileTests` covers this
+  sequence end to end.
 - Validation surface, mirroring `anima contracts validate`:
   `anima knowledge vocabulary show` (merged vocabulary),
   `anima knowledge vocabulary validate <pack.json>`,
@@ -221,19 +233,22 @@ duplication but adds a build step.
 
 ## Open questions
 
-Resolved: namespacing is enforced, `VocabularyMode` is implemented, and deprecated
-entries are hidden from listings with a write warning.
+Resolved:
 
-Still open:
-
-- **Removal.** Deprecated entries stay writable forever; there is no "remove after
-  N releases" step or migration helper.
-- **Ad-hoc kinds.** `AllowAdHocKinds` still defaults to `true`. Ad-hoc rows are now
-  labelled and share the pack id band, so flipping the default becomes a policy
-  decision rather than a technical one.
-- **Cross-pack widening.** `POST /api/vocabulary/validate` checks a candidate
-  against the core pack only, so a pack that widens another pack's entry validates
-  locally but fails at boot.
+- **Namespacing** is enforced for pack-added names.
+- **`VocabularyMode`** `strict|warn` is implemented, strict by default.
+- **Deprecation** hides an entry from listings and warns on write; the removal
+  lifecycle is documented above and covered by a test.
+- **Ad-hoc kinds** stay enabled by default. Rows are labelled `source = 'ad-hoc'`,
+  allocate from the pack id band and are excluded from reconcile, so they no longer
+  masquerade as core vocabulary or collide with pack ids. Requiring packs for every
+  agent-authored memory kind would break existing harness writes for no gain now
+  that ad-hoc kinds are visible and promotable; turning the default off remains a
+  one-line config decision if curation becomes a problem.
+- **Cross-pack widening**: `POST /api/vocabulary/validate` now validates the
+  candidate on top of the packs the service actually loaded (`LoadWithPacks`), so a
+  pack that widens another pack's entry behaves the same at validation time and at
+  the next startup.
 
 ## Rollout
 

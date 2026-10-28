@@ -130,6 +130,16 @@ packs, applied in this order at startup:
 a developer checkout does not. `examples/packs/example-vocabulary.json` is a
 validated sample (`example:` namespace) you can copy as a starting point.
 
+The compose demo can show a pack without changing the default stack:
+
+```bash
+docker compose -f docker/compose.yml -f docker/compose.pack.yml up -d
+```
+
+`docker/compose.pack.yml` bind-mounts `examples/packs` and points
+`Anima__Knowledge__Packs__0` at the sample pack (it cannot be baked into the image
+because `.dockerignore` excludes `examples/`).
+
 To add a pack to a running compose stack without rebuilding, mount it and point the
 service at it:
 
@@ -169,7 +179,11 @@ A pack may only add names under its own prefix (`acme:`); references to core nam
   `Anima__Knowledge__VocabularyMode=Warn` to log and skip the offending pack instead
   (useful while authoring; strict is the default).
 - `deprecated: true` hides a kind or edge type from the kind/edge listings while
-  writes continue with a warning.
+  writes continue with a warning; `GET /api/vocabulary` (and the dashboard
+  Vocabulary tab) still lists it. To retire an entry: deprecate it, migrate the
+  data off it, delete the remaining nodes, drop it from the pack and restart —
+  startup deactivates the row when nothing references it, and refuses to start when
+  something still does.
 - Check a pack before deploying it:
 
   ```bash

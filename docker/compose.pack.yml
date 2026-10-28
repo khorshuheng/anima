@@ -1,0 +1,14 @@
+# Overlay that demonstrates a user vocabulary pack in the compose demo.
+#
+#   docker compose -f docker/compose.yml -f docker/compose.pack.yml up -d
+#
+# The pack is bind-mounted from the repo (examples/ is excluded from the image build
+# context, so it cannot be baked in) and pointed at explicitly. The pack adds
+# `example:invoice` and `example:billed_to`; see examples/packs/example-vocabulary.json
+# and docs/deployment.md.
+services:
+  knowledge:
+    volumes:
+      - ../examples/packs:/packs:ro
+    environment:
+      Anima__Knowledge__Packs__0: /packs/example-vocabulary.json
