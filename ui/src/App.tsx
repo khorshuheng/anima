@@ -1,17 +1,19 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BusTab } from './BusTab';
 import { GraphErrorBoundary } from './GraphErrorBoundary';
+import { VocabularyTab } from './VocabularyTab';
 import { WorkflowsTab } from './WorkflowsTab';
 import { useBusStream } from './useBusStream';
 import type { BusStreamEvent } from './types';
 
 const GraphTab = lazy(() => import('./GraphTab').then((module) => ({ default: module.GraphTab })));
 
-type Tab = 'workflows' | 'graph' | 'bus';
+type Tab = 'workflows' | 'graph' | 'vocabulary' | 'bus';
 
 const tabs: Array<{ id: Tab; label: string }> = [
   { id: 'workflows', label: 'Workflows' },
   { id: 'graph', label: 'Graph' },
+  { id: 'vocabulary', label: 'Vocabulary' },
   { id: 'bus', label: 'Bus' },
 ];
 
@@ -98,6 +100,7 @@ export default function App() {
           </Suspense>
         </GraphErrorBoundary>
       )}
+      {tab === 'vocabulary' && <VocabularyTab revision={revision} />}
       {tab === 'bus' && <BusTab events={events} status={status} revision={revision} />}
     </div>
   );

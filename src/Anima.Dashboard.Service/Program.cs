@@ -166,6 +166,34 @@ app.MapGet("/api/dashboard/kinds", async (
     await upstream.WriteAsync(context.Response, cancellationToken);
 });
 
+app.MapGet("/api/dashboard/edge-types", async (
+    HttpContext context,
+    IHttpClientFactory httpClientFactory,
+    IOptions<DashboardOptions> options,
+    CancellationToken cancellationToken) =>
+{
+    var proxy = new DashboardProxy(
+        httpClientFactory.CreateClient(DashboardUpstreams.Knowledge),
+        DashboardUpstreams.Knowledge,
+        options.Value.UpstreamTimeout);
+    var upstream = await proxy.GetAsync(DashboardRoutes.EdgeTypes(), cancellationToken);
+    await upstream.WriteAsync(context.Response, cancellationToken);
+});
+
+app.MapGet("/api/dashboard/vocabulary", async (
+    HttpContext context,
+    IHttpClientFactory httpClientFactory,
+    IOptions<DashboardOptions> options,
+    CancellationToken cancellationToken) =>
+{
+    var proxy = new DashboardProxy(
+        httpClientFactory.CreateClient(DashboardUpstreams.Knowledge),
+        DashboardUpstreams.Knowledge,
+        options.Value.UpstreamTimeout);
+    var upstream = await proxy.GetAsync(DashboardRoutes.Vocabulary(), cancellationToken);
+    await upstream.WriteAsync(context.Response, cancellationToken);
+});
+
 app.MapGet("/api/dashboard/bus", async (
     HttpContext context,
     IHttpClientFactory httpClientFactory,

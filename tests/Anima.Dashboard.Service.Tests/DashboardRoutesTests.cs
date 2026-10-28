@@ -52,6 +52,8 @@ public sealed class DashboardRoutesTests
     [Fact]
     public void Nodes_forwards_kind_scope_and_limit_filters()
     {
+        Assert.Equal("api/edge-types", DashboardRoutes.EdgeTypes());
+        Assert.Equal("api/vocabulary", DashboardRoutes.Vocabulary());
         Assert.Equal("api/nodes", DashboardRoutes.Nodes());
         Assert.Equal(
             "api/nodes?kind=goal&scope=all&summary=true&limit=100",

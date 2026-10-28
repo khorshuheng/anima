@@ -5,6 +5,7 @@ import type {
   GoalExplorerResponse,
   GraphQueryResult,
   GraphSnapshot,
+  EdgeType,
   NodeKind,
   QuestionView,
   ResultView,
@@ -12,6 +13,7 @@ import type {
   TimelineView,
   WorkflowDetail,
   WorkflowRunSummary,
+  Vocabulary,
   WorkflowState,
 } from './types';
 
@@ -77,6 +79,8 @@ export const api = {
 
   bus: () => get<BusSnapshot>(`${dashboardBase}/bus`),
   kinds: () => get<{ items: NodeKind[] }>(`${dashboardBase}/kinds`),
+  edgeTypes: () => get<{ items: EdgeType[] }>(`${dashboardBase}/edge-types`),
+  vocabulary: () => get<Vocabulary>(`${dashboardBase}/vocabulary`),
 
   nodes: (params: {
     kind?: string;

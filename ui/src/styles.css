@@ -229,6 +229,18 @@ summary { cursor: pointer; color: var(--accent); font-size: 12px; }
 
 /* Graph tab */
 
+.vocabulary-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 24px 60px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+/* Rows contributed by a user pack, so core vocabulary stays visually dominant. */
+.vocabulary-pack-row td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+
 .graph-tab, .bus-tab {
   display: flex;
   flex-direction: column;

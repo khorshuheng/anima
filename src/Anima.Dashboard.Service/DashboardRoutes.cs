@@ -53,6 +53,15 @@ public static class DashboardRoutes
     /// <summary><c>/api/dashboard/kinds</c> -> knowledge <c>api/node-kinds</c>.</summary>
     public static string Kinds() => "api/node-kinds";
 
+    /// <summary><c>/api/dashboard/edge-types</c> -> knowledge <c>api/edge-types</c>.</summary>
+    public static string EdgeTypes() => "api/edge-types";
+
+    /// <summary>
+    /// <c>/api/dashboard/vocabulary</c> -> knowledge <c>api/vocabulary</c>: the merged
+    /// core pack plus any loaded user packs.
+    /// </summary>
+    public static string Vocabulary() => "api/vocabulary";
+
     /// <summary><c>/api/dashboard/bus</c> -> bus <c>api/bus/snapshot</c>.</summary>
     public static string BusSnapshot() => "api/bus/snapshot";
 

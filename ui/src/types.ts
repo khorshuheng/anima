@@ -238,6 +238,33 @@ export interface NodeKind {
   id: number;
   name: string;
   description: string;
+  required_props: string[];
+  traits: string[];
+  source: string;
+  deprecated: boolean;
+}
+
+export interface EdgeType {
+  id: number;
+  name: string;
+  description: string;
+  resolves: boolean;
+  single_outgoing: boolean;
+  symmetric: boolean;
+  acyclic: boolean;
+  inverse_name: string | null;
+  source_kinds: string[];
+  destination_kinds: string[];
+  pairs: string[][];
+  traits: string[];
+  source: string;
+  deprecated: boolean;
+}
+
+export interface Vocabulary {
+  node_kinds: NodeKind[];
+  edge_types: EdgeType[];
+  traits: string[];
 }
 
 export interface GraphQueryResult {

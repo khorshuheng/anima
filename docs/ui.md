@@ -9,6 +9,10 @@ What it shows:
 - **Workflows** tab: list/status, requirement, Q/A, spec/tasks, assignments,
   implementation/merge/review results/findings and phase timeline
 - **Graph** tab: force-directed knowledge graph, caps/truncation, node inspector
+- **Vocabulary** tab: the merged vocabulary the knowledge service loaded — node
+  kinds and edge types with their owning pack (`core` or a user pack), traits,
+  required properties, endpoint pairs, inverse names, acyclic/symmetric flags and
+  deprecation state
 - **Bus** tab: topics/producers, subscribers and counters, live event feed
 
 Live updates come from the bus:
@@ -30,6 +34,14 @@ make ui-build    # ui/dist, served at / by the dashboard
 
 The UI does not mutate workflows; the harness and agents post facts through the
 workflow API.
+
+The Vocabulary tab reads `/api/dashboard/vocabulary`, which proxies the knowledge
+service's merged catalog (`GET /api/vocabulary`). Rows contributed by a user pack
+carry a coloured edge so core vocabulary stays visually dominant; deprecated
+entries show a `deprecated` chip. It is read-only: packs are loaded at knowledge
+startup from `config/knowledge`, `~/.config/anima/knowledge` and
+`Anima:Knowledge:Packs`, and changing them requires a restart (see ADR 0007 and
+`docs/deployment.md`).
 
 The Workflows tab includes a Run summary panel with task roles, recorded
 agents/runs, result and review counts, review iterations, duration and

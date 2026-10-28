@@ -105,8 +105,13 @@ human interaction.
 
 ## Knowledge graph
 
-Kinds include the original task/memory vocabulary plus `spec`, `question`,
-`answer`, `workflow`, `phase`, `result`, `finding`, `worktree`, `agent`.
+The vocabulary ships as data: an embedded core pack (21 node kinds, 27 edge types)
+that user packs may extend additively
+(`docs/adr/0007-knowledge-vocabulary-packs.md`). Core kinds include the original
+task/memory vocabulary plus `spec`, `question`, `answer`, `workflow`, `phase`,
+`result`, `finding`, `worktree`, `agent`. Generic graph logic keys off vocabulary
+traits (`plannable`, `hierarchy`, `anchor`) rather than kind names, and the schema
+is applied by DbUp (`docs/adr/0008-schema-migrations.md`).
 
 Key edges: `tracks` workflow->goal, `specifies` spec->workflow, `asks`
 question->workflow, `answers` answer->question (resolves), `phase_of`,
