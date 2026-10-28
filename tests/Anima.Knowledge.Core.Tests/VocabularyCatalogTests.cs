@@ -493,3 +493,91 @@ public sealed class VocabularyPolicyTests
         IReadOnlyList<EdgeTypeSpec>? edges = null)
         => new() { Name = name, NodeKinds = kinds ?? [], EdgeTypes = edges ?? [] };
 }
+
+/// <summary>
+/// The validation surface used by `anima knowledge vocabulary validate` and
+/// POST /api/vocabulary/validate. It validates on top of the loaded packs, so a pack
+/// that widens another pack's entry behaves the same here and at startup.
+/// </summary>
+public sealed class VocabularyValidatorTests
+{
+    private static readonly VocabularyPack BasePack = new()
+    {
+        Name = "base",
+        NodeKinds = [new NodeKindSpec { Name = "base:invoice" }],
+    };
+
+    private static readonly VocabularyPack WidenPack = new()
+    {
+        Name = "widen",
+        EdgeTypes =
+        [
+            new EdgeTypeSpec
+            {
+                Name = KnowledgeEdgeTypes.RelatedTo,
+                Pairs = [new EdgeKindPair("base:invoice", KnowledgeKinds.Repo)],
+            },
+        ],
+    };
+
+    private const string CandidateWideningToAnotherPackKind = """
+        { "schema_version": 1, "name": "candidate",
+          "edge_types": [{ "name": "related_to", "pairs": [["base:invoice", "note"]] }] }
+        """;
+
+    [Fact]
+    public void Candidate_is_validated_against_the_loaded_packs()
+    {
+        var result = KnowledgeVocabularyValidator.Validate(
+            CandidateWideningToAnotherPackKind,
+            [BasePack, WidenPack]);
+
+        Assert.True(result.Valid, result.Message);
+        Assert.Equal("candidate", result.PackName);
+        Assert.Equal(0, result.AddedNodeKinds);
+
+        // Without the loaded packs the same candidate cannot resolve base:invoice.
+        var alone = KnowledgeVocabularyValidator.Validate(CandidateWideningToAnotherPackKind, []);
+        Assert.False(alone.Valid);
+        Assert.Contains("undefined node kind 'base:invoice'", alone.Message!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Invalid_documents_report_the_reason()
+    {
+        Assert.Equal(
+            "candidate: pack document is empty",
+            KnowledgeVocabularyValidator.Validate("null", []).Message);
+
+        var unnamed = KnowledgeVocabularyValidator.Validate("{}", []);
+        Assert.False(unnamed.Valid);
+        Assert.Contains("pack name must not be empty", unnamed.Message!, StringComparison.Ordinal);
+
+        var duplicate = KnowledgeVocabularyValidator.Validate(
+            """{ "schema_version": 1, "name": "base" }""",
+            [BasePack]);
+        Assert.False(duplicate.Valid);
+        Assert.Contains("loaded more than once", duplicate.Message!, StringComparison.Ordinal);
+
+        var unnamespaced = KnowledgeVocabularyValidator.Validate(
+            """{ "schema_version": 1, "name": "cand", "node_kinds": [{ "name": "invoice" }] }""",
+            []);
+        Assert.Contains("must be namespaced", unnamespaced.Message!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Counts_distinguish_owned_entries_from_inherited_ones()
+    {
+        var result = KnowledgeVocabularyValidator.Validate(
+            """
+            { "schema_version": 1, "name": "candidate",
+              "node_kinds": [{ "name": "candidate:thing" }] }
+            """,
+            [BasePack]);
+
+        Assert.True(result.Valid, result.Message);
+        Assert.Equal(1, result.AddedNodeKinds);
+        Assert.Equal(0, result.AddedEdgeTypes);
+        Assert.Equal(23, result.NodeKinds);
+    }
+}

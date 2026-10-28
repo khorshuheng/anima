@@ -136,32 +136,23 @@ app.MapGet("/api/vocabulary", (KnowledgeVocabularyCatalog vocabulary) => Results
     traits = new[] { KnowledgeTraits.Plannable, KnowledgeTraits.Hierarchy, KnowledgeTraits.Anchor },
 }));
 
-// Authoring check for a candidate pack: parsed and merged on top of the core pack, so
-// typos, unknown kinds and core redefinitions fail with a message instead of at boot.
+// Authoring check for a candidate pack: validated against the packs this service
+// actually loaded, so a pack that widens another pack's entry behaves the same here
+// as it would at the next startup.
 app.MapPost("/api/vocabulary/validate", (JsonElement body, KnowledgeVocabularyLoad loaded) =>
 {
-    try
-    {
-        // Validate against the vocabulary that is actually running, so a pack that
-        // widens another pack's entry behaves the same here as at the next startup.
-        var pack = KnowledgeVocabularyLoader.Parse(body.GetRawText(), "candidate");
-        var catalog = KnowledgeVocabularyLoader.Build(
-            KnowledgeVocabularyLoader.LoadEmbeddedCore(),
-            [.. loaded.Packs, pack]);
-        return Results.Ok(new
+    var result = KnowledgeVocabularyValidator.Validate(body.GetRawText(), loaded.Packs);
+    return result.Valid
+        ? Results.Ok(new
         {
             valid = true,
-            pack = pack.Name,
-            node_kinds = catalog.NodeKinds.Count,
-            edge_types = catalog.EdgeTypes.Count,
-            added_node_kinds = catalog.NodeKinds.Count(kind => string.Equals(kind.Source, pack.Name, StringComparison.OrdinalIgnoreCase)),
-            added_edge_types = catalog.EdgeTypes.Count(type => string.Equals(type.Source, pack.Name, StringComparison.OrdinalIgnoreCase)),
-        });
-    }
-    catch (KnowledgeVocabularyException exception)
-    {
-        return Results.UnprocessableEntity(new { valid = false, message = exception.Message });
-    }
+            pack = result.PackName,
+            node_kinds = result.NodeKinds,
+            edge_types = result.EdgeTypes,
+            added_node_kinds = result.AddedNodeKinds,
+            added_edge_types = result.AddedEdgeTypes,
+        })
+        : Results.UnprocessableEntity(new { valid = false, message = result.Message });
 });
 
 app.MapGet("/api/edge-types", async (IKnowledgeGraph graph, CancellationToken cancellationToken) =>

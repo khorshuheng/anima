@@ -13,8 +13,8 @@ public sealed record VocabularyPack
     /// <summary>Schema version of the pack document; a mismatch fails startup.</summary>
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
-    /// <summary>Pack identifier, used in validation messages.</summary>
-    public string Name { get; init; } = "core";
+    /// <summary>Pack identifier, used in validation messages. Required for user packs.</summary>
+    public string Name { get; init; } = string.Empty;
 
     public IReadOnlyList<NodeKindSpec> NodeKinds { get; init; } = [];
 

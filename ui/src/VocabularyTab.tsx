@@ -2,13 +2,40 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 import type { EdgeType, NodeKind, Vocabulary } from './types';
 
-interface VocabularyTabProps {
-  /** Incremented by the shell on live events and polling ticks. */
-  revision: number;
+function packLabel(source: string | undefined): string {
+  return source && source !== 'core' ? source : 'core';
 }
 
-function packLabel(source: string): string {
-  return source === 'core' ? 'core' : source;
+/**
+ * Normalizes a payload that may come from a knowledge service older than this build.
+ * Without the defaults a missing field throws during render and, absent a boundary,
+ * takes the whole dashboard down.
+ */
+function normalizeVocabulary(raw: Vocabulary): Vocabulary {
+  return {
+    traits: raw.traits ?? [],
+    node_kinds: (raw.node_kinds ?? []).map((kind) => ({
+      ...kind,
+      traits: kind.traits ?? [],
+      required_props: kind.required_props ?? [],
+      source: kind.source ?? 'core',
+      deprecated: kind.deprecated ?? false,
+    })),
+    edge_types: (raw.edge_types ?? []).map((edge) => ({
+      ...edge,
+      pairs: edge.pairs ?? [],
+      source_kinds: edge.source_kinds ?? [],
+      destination_kinds: edge.destination_kinds ?? [],
+      traits: edge.traits ?? [],
+      source: edge.source ?? 'core',
+      inverse_name: edge.inverse_name ?? null,
+      symmetric: edge.symmetric ?? false,
+      acyclic: edge.acyclic ?? false,
+      resolves: edge.resolves ?? false,
+      single_outgoing: edge.single_outgoing ?? false,
+      deprecated: edge.deprecated ?? false,
+    })),
+  };
 }
 
 function pairLabel(pair: string[]): string {
@@ -26,13 +53,13 @@ function flags(edge: EdgeType): string[] {
 }
 
 /** Read-only view of the vocabulary the knowledge service actually loaded. */
-export function VocabularyTab({ revision }: VocabularyTabProps) {
+export function VocabularyTab() {
   const [vocabulary, setVocabulary] = useState<Vocabulary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setVocabulary(await api.vocabulary());
+      setVocabulary(normalizeVocabulary(await api.vocabulary()));
       setError(null);
     } catch (exception) {
       setError(String(exception));
@@ -41,7 +68,7 @@ export function VocabularyTab({ revision }: VocabularyTabProps) {
 
   useEffect(() => {
     void load();
-  }, [load, revision]);
+  }, [load]);
 
   if (error) {
     return (

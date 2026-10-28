@@ -430,10 +430,16 @@ public static class KnowledgeVocabularyLoader
         var kindIds = new HashSet<int>();
         var edgeIds = new HashSet<int>();
 
+        var packNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pack in Enumerate(core, packs))
         {
             var isCore = ReferenceEquals(pack, core);
             ValidateHeader(pack, isCore);
+            if (!packNames.Add(pack.Name))
+            {
+                throw new KnowledgeVocabularyException(
+                    $"pack '{pack.Name}' is loaded more than once; candidate packs cannot replace a loaded pack");
+            }
 
             foreach (var spec in pack.NodeKinds)
             {

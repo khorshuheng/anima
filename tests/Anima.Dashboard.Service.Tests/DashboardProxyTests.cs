@@ -35,6 +35,20 @@ public sealed class DashboardProxyTests
     }
 
     [Fact]
+    public async Task Vocabulary_routes_resolve_against_the_knowledge_upstream()
+    {
+        var handler = new StubHandler((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var client = CreateClient(handler);
+        var proxy = CreateProxy(client, "knowledge");
+
+        await proxy.GetAsync(DashboardRoutes.Vocabulary());
+        Assert.Equal("http://upstream.test/api/vocabulary", handler.LastRequestUri?.ToString());
+
+        await proxy.GetAsync(DashboardRoutes.EdgeTypes());
+        Assert.Equal("http://upstream.test/api/edge-types", handler.LastRequestUri?.ToString());
+    }
+
+    [Fact]
     public async Task Get_maps_an_unreachable_upstream_to_a_generic_502()
     {
         using var client = CreateClient(

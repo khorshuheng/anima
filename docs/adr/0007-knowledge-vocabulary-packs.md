@@ -230,6 +230,10 @@ duplication but adds a build step.
   storage or event noise.
 - Every vocabulary-shaped read passes through the catalog, so a pack change is
   visible to the stores without a rebuild.
+- **No vocabulary size cap.** `GET /api/vocabulary` and the dashboard table return
+  and render every entry, which is fine for a core of 21 kinds and 27 edge types plus
+  a handful of pack entries. Packs are repo-versioned, reviewed data; adding a cap or
+  pagination is the trigger if packs ever come from somewhere less trusted.
 
 ## Open questions
 

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { BusTab } from './BusTab';
-import { GraphErrorBoundary } from './GraphErrorBoundary';
+import { TabErrorBoundary } from './TabErrorBoundary';
 import { VocabularyTab } from './VocabularyTab';
 import { WorkflowsTab } from './WorkflowsTab';
 import { useBusStream } from './useBusStream';
@@ -94,13 +94,17 @@ export default function App() {
         />
       )}
       {tab === 'graph' && (
-        <GraphErrorBoundary onRetry={() => window.location.reload()}>
+        <TabErrorBoundary tab="Graph" onRetry={() => window.location.reload()}>
           <Suspense fallback={<div className="panel graph-loading">Loading graph…</div>}>
             <GraphTab revision={revision} />
           </Suspense>
-        </GraphErrorBoundary>
+        </TabErrorBoundary>
       )}
-      {tab === 'vocabulary' && <VocabularyTab revision={revision} />}
+      {tab === 'vocabulary' && (
+        <TabErrorBoundary tab="Vocabulary" onRetry={() => window.location.reload()}>
+          <VocabularyTab />
+        </TabErrorBoundary>
+      )}
       {tab === 'bus' && <BusTab events={events} status={status} revision={revision} />}
     </div>
   );

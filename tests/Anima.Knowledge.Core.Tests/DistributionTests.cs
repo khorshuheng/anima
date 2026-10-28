@@ -31,13 +31,21 @@ public sealed class DistributionTests
     }
 
     [Fact]
-    public void Repo_pack_directory_only_holds_documentation()
+    public void Every_repo_pack_loads()
     {
         var directory = Path.Combine(RepositoryRoot, "config", "knowledge");
         Assert.True(Directory.Exists(directory), $"missing repo pack directory {directory}");
 
-        // Only *.json is discovered, so documentation here must not look like a pack.
-        Assert.Empty(Directory.EnumerateFiles(directory, "*.json"));
+        // Committing a repo-owned pack here is the documented first pack location, so the
+        // guard checks that each one still loads rather than forbidding *.json.
+        foreach (var pack in Directory.EnumerateFiles(directory, "*.json").Order(StringComparer.Ordinal))
+        {
+            var catalog = KnowledgeVocabularyLoader.Load([pack]);
+            Assert.Contains(
+                catalog.NodeKinds.Concat<object>(catalog.EdgeTypes),
+                entry => entry is NodeKindDefinition nodeKind && nodeKind.Source != KnowledgeVocabularyCatalog.CorePack
+                    || entry is EdgeTypeDefinition edgeType && edgeType.Source != KnowledgeVocabularyCatalog.CorePack);
+        }
     }
 
     [Fact]
