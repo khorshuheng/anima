@@ -109,7 +109,18 @@ curl -fsS http://127.0.0.1:7416/health
 ```
 
 Open `http://127.0.0.1:7416/`. The knowledge/bus/workflow ports are not
-published; containers reach each other by service name. The SQLite knowledge DB
+published; containers reach each other by service name.
+
+Verify the stack end to end after a change:
+
+```bash
+make docker-smoke              # expects the stack to be up
+scripts/compose-smoke.sh --clean  # wipe the volume, rebuild, then verify
+```
+
+The smoke checks container health, every dashboard BFF route, the SSE stream, and
+one real round trip: it creates a workflow inside the network and reads it back
+through the dashboard, the knowledge API and the bus. The SQLite knowledge DB
 is stored in the `anima-knowledge` volume. Reset it with:
 
 ```bash

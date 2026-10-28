@@ -105,6 +105,9 @@ docker-down:
 docker-logs:
 	docker compose -f docker/compose.yml logs -f dashboard
 
+docker-smoke:
+	./scripts/compose-smoke.sh
+
 clean:
 	$(DOTNET) clean $(SOLUTION) -c $(CONFIG)
 
