@@ -8,4 +8,9 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The standard vocabulary ships as data; a pack is validated at startup. -->
+    <EmbeddedResource Include="KnowledgeVocabulary.core.json" />
+  </ItemGroup>
+
 </Project>

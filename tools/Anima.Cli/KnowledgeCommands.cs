@@ -19,6 +19,7 @@ internal static class KnowledgeCommands
             {
                 "kinds" => await GetAsync(http, "api/node-kinds"),
                 "edge-types" => await GetAsync(http, "api/edge-types"),
+                "vocabulary" => await VocabularyAsync(http, args),
                 "health" => await GetAsync(http, "api/graph-health"),
                 "get" => await GetAsync(http, $"api/nodes/{RequireId(args)}"),
                 "search" => await SearchAsync(http, args),
@@ -109,6 +110,39 @@ internal static class KnowledgeCommands
         return await SendAsync(http, method, args[2], body);
     }
 
+    private static async Task<int> VocabularyAsync(HttpClient http, string[] args)
+    {
+        if (args.Length < 2)
+        {
+            throw new InvalidOperationException(
+                "usage: anima knowledge vocabulary show | validate <pack.json>");
+        }
+
+        return args[1] switch
+        {
+            "show" => await GetAsync(http, "api/vocabulary"),
+            "validate" => await ValidateVocabularyAsync(http, args),
+            _ => throw new InvalidOperationException(
+                "usage: anima knowledge vocabulary show | validate <pack.json>"),
+        };
+    }
+
+    private static async Task<int> ValidateVocabularyAsync(HttpClient http, string[] args)
+    {
+        if (args.Length < 3)
+        {
+            throw new InvalidOperationException("usage: anima knowledge vocabulary validate <pack.json>");
+        }
+
+        var path = args[2];
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException($"vocabulary pack '{path}' does not exist");
+        }
+
+        return await PostAsync(http, "api/vocabulary/validate", await File.ReadAllTextAsync(path));
+    }
+
     private static async Task<int> GetAsync(HttpClient http, string path)
         => await SendAsync(http, HttpMethod.Get, path, null);
 
@@ -153,6 +187,7 @@ internal static class KnowledgeCommands
             usage:
               anima knowledge kinds
               anima knowledge edge-types
+              anima knowledge vocabulary show|validate <pack.json>
               anima knowledge health
               anima knowledge get <id>
               anima knowledge search <text> [--kind <kind>] [--scope <active|all|resolved>] [--limit <n>]

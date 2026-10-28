@@ -249,9 +249,10 @@ public sealed class InMemoryKnowledgeGraphTests
         Assert.DoesNotContain(delta.Edges, edge => edge.Source == goal.Id || edge.Destination == goal.Id);
     }
 
-    private static InMemoryKnowledgeGraph CreateGraph() => new(
+    private static InMemoryKnowledgeGraph CreateGraph(KnowledgeVocabularyCatalog? vocabulary = null) => new(
         Options.Create(new KnowledgeOptions()),
-        NullLogger<InMemoryKnowledgeGraph>.Instance);
+        NullLogger<InMemoryKnowledgeGraph>.Instance,
+        vocabulary ?? KnowledgeVocabularyLoader.LoadCore());
 }
 
 public sealed class KnowledgeUpdateTests
@@ -306,7 +307,440 @@ public sealed class KnowledgeUpdateTests
         Assert.Equal("7", page.Items[0].Properties["workflowId"]);
     }
 
-    private static InMemoryKnowledgeGraph CreateGraph() => new(
+    private static InMemoryKnowledgeGraph CreateGraph(KnowledgeVocabularyCatalog? vocabulary = null) => new(
         Options.Create(new KnowledgeOptions()),
-        NullLogger<InMemoryKnowledgeGraph>.Instance);
+        NullLogger<InMemoryKnowledgeGraph>.Instance,
+        vocabulary ?? KnowledgeVocabularyLoader.LoadCore());
+}
+
+/// <summary>
+/// Generic graph logic (plan scoping, anchoring, health) keys off vocabulary traits,
+/// so a pack can add vocabulary that participates without a code change. A pack that
+/// introduces a plannable parent kind must also widen <c>part_of</c>, because the task
+/// API keeps writing that edge type.
+/// </summary>
+public sealed class VocabularyTraitTests
+{
+    private const string Epic = "acme:epic";
+    private const string EpicAnchored = "acme:epic_anchored";
+
+    [Fact]
+    public async Task Pack_kind_and_edges_join_scope_logic_through_traits()
+    {
+        var graph = CreateGraph(PackCatalog());
+
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var epic = await graph.CreateNodeAsync(new NodeDraft(Epic, "Refresh tokens"));
+        var task = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Task, "Rotate tokens"));
+        await graph.CreateNodeAsync(new NodeDraft("acme:invoice", "Not plannable"));
+
+        await graph.AddEdgeAsync(new EdgeDraft(task.Id, epic.Id, KnowledgeEdgeTypes.PartOf));
+
+        // Both plannable nodes are unanchored until the epic has its anchor edge.
+        Assert.Equal(2, (await graph.GetHealthAsync()).UnanchoredWork);
+
+        await graph.AddEdgeAsync(new EdgeDraft(epic.Id, repo.Id, EpicAnchored));
+
+        // The task is anchored through the widened hierarchy edge.
+        Assert.Equal(0, (await graph.GetHealthAsync()).UnanchoredWork);
+    }
+
+    [Fact]
+    public async Task Plannable_trait_gates_task_parents()
+    {
+        var graph = CreateGraph(PackCatalog());
+
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        var epic = await graph.CreateNodeAsync(new NodeDraft(Epic, "Refresh tokens"));
+        var note = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Note, "free form"));
+
+        var notPlannable = await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.CreateTaskAsync(new TaskDraft("child", Parent: note.Id)));
+        Assert.Contains("plannable kind", notPlannable.Message, StringComparison.Ordinal);
+
+        // The epic is plannable but not anchored yet.
+        var notAnchored = await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.CreateTaskAsync(new TaskDraft("child", Parent: epic.Id)));
+        Assert.Contains("not anchored", notAnchored.Message, StringComparison.Ordinal);
+
+        await graph.AddEdgeAsync(new EdgeDraft(epic.Id, repo.Id, EpicAnchored));
+        var allowed = await graph.CreateTaskAsync(new TaskDraft("child", Parent: epic.Id));
+        Assert.Equal(KnowledgeKinds.Task, allowed.Kind);
+    }
+
+    private static KnowledgeVocabularyCatalog PackCatalog() => KnowledgeVocabularyLoader.Build(
+        KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+        [
+            new VocabularyPack
+            {
+                Name = "acme",
+                NodeKinds =
+                [
+                    new NodeKindSpec { Name = Epic, Traits = [KnowledgeTraits.Plannable] },
+                    new NodeKindSpec { Name = "acme:invoice" },
+                ],
+                EdgeTypes =
+                [
+                    // Additive: a new anchor edge for the new scope root kind.
+                    new EdgeTypeSpec
+                    {
+                        Name = EpicAnchored,
+                        Pairs = [new EdgeKindPair(Epic, KnowledgeKinds.Repo)],
+                        Traits = [KnowledgeTraits.Anchor],
+                    },
+                    // Widening: the task API writes part_of, so the new parent kind
+                    // must be an allowed destination.
+                    new EdgeTypeSpec
+                    {
+                        Name = KnowledgeEdgeTypes.PartOf,
+                        SourceKinds = [KnowledgeKinds.Task],
+                        DestinationKinds = [Epic],
+                    },
+                ],
+            },
+        ]);
+
+    private static InMemoryKnowledgeGraph CreateGraph(KnowledgeVocabularyCatalog vocabulary) => new(
+        Options.Create(new KnowledgeOptions()),
+        NullLogger<InMemoryKnowledgeGraph>.Instance,
+        vocabulary);
+}
+
+/// <summary>
+/// Edges are stored in one canonical direction, but the vocabulary can declare an
+/// inverse relation and a symmetric one. Reads accept either name; writes must use
+/// the canonical name so the stored direction stays predictable.
+/// </summary>
+public sealed class EdgeDirectionTests
+{
+    private const string Invoice = "acme:invoice";
+    private const string BilledTo = "acme:billed_to";
+    private const string BilledFrom = "acme:billed_from";
+    private const string Person = "acme:person";
+    private const string Knows = "acme:knows";
+
+    [Fact]
+    public async Task Inverse_name_reads_the_stored_edge_from_the_other_end()
+    {
+        var graph = CreateGraph();
+        var invoice = await graph.CreateNodeAsync(new NodeDraft(Invoice, "INV-1"));
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+
+        var stored = await graph.AddEdgeAsync(new EdgeDraft(invoice.Id, repo.Id, BilledTo));
+
+        var outgoing = Assert.Single(await graph.GetNeighborsAsync(
+            new NeighborQuery(invoice.Id, EdgeDirection.Outgoing, BilledTo)));
+        Assert.Equal(repo.Id, outgoing.Node.Id);
+        Assert.Equal(EdgeDirection.Outgoing, outgoing.Direction);
+
+        // Named from the other end, the same stored edge is reachable in the opposite role.
+        var reversed = Assert.Single(await graph.GetNeighborsAsync(
+            new NeighborQuery(repo.Id, EdgeDirection.Outgoing, BilledFrom)));
+        Assert.Equal(invoice.Id, reversed.Node.Id);
+        Assert.Equal(invoice.Id, reversed.Edge.Source);
+        Assert.Equal(stored.Id, reversed.Edge.Id);
+        Assert.Equal(EdgeDirection.Incoming, reversed.Direction);
+
+        var reversedIncoming = Assert.Single(await graph.GetNeighborsAsync(
+            new NeighborQuery(invoice.Id, EdgeDirection.Incoming, BilledFrom)));
+        Assert.Equal(repo.Id, reversedIncoming.Node.Id);
+        Assert.Equal(EdgeDirection.Outgoing, reversedIncoming.Direction);
+    }
+
+    [Fact]
+    public async Task Inverse_name_on_a_write_is_rejected_with_guidance()
+    {
+        var graph = CreateGraph();
+        var invoice = await graph.CreateNodeAsync(new NodeDraft(Invoice, "INV-1"));
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+
+        var exception = await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.AddEdgeAsync(new EdgeDraft(repo.Id, invoice.Id, BilledFrom)));
+
+        Assert.Contains("is the inverse of 'acme:billed_to'", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Symmetric_edge_is_readable_from_both_ends()
+    {
+        var graph = CreateGraph();
+        var alice = await graph.CreateNodeAsync(new NodeDraft(Person, "alice"));
+        var bob = await graph.CreateNodeAsync(new NodeDraft(Person, "bob"));
+
+        await graph.AddEdgeAsync(new EdgeDraft(alice.Id, bob.Id, Knows));
+
+        // Stored once as alice -> bob; bob sees it as an outgoing relation too.
+        var fromBob = Assert.Single(await graph.GetNeighborsAsync(
+            new NeighborQuery(bob.Id, EdgeDirection.Outgoing, Knows)));
+        Assert.Equal(alice.Id, fromBob.Node.Id);
+
+        var fromAlice = Assert.Single(await graph.GetNeighborsAsync(
+            new NeighborQuery(alice.Id, EdgeDirection.Incoming, Knows)));
+        Assert.Equal(bob.Id, fromAlice.Node.Id);
+    }
+
+    [Fact]
+    public async Task Inverse_name_works_in_scope_traversals()
+    {
+        var graph = CreateGraph();
+        var invoice = await graph.CreateNodeAsync(new NodeDraft(Invoice, "INV-1"));
+        var repo = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Repo, "anima"));
+        await graph.AddEdgeAsync(new EdgeDraft(invoice.Id, repo.Id, BilledTo));
+
+        var page = await graph.QueryNodesAsync(new NodeQuery
+        {
+            Within = repo.Id,
+            Via = BilledFrom,
+            Scope = KnowledgeScope.All,
+        });
+
+        Assert.Equal(invoice.Id, Assert.Single(page.Items).Id);
+    }
+
+    private static InMemoryKnowledgeGraph CreateGraph()
+    {
+        var catalog = KnowledgeVocabularyLoader.Build(
+            KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+            [
+                new VocabularyPack
+                {
+                    Name = "acme",
+                    NodeKinds =
+                    [
+                        new NodeKindSpec { Name = Invoice },
+                        new NodeKindSpec { Name = Person },
+                    ],
+                    EdgeTypes =
+                    [
+                        // The inverse is virtual: one stored edge, readable from both ends.
+                        new EdgeTypeSpec
+                        {
+                            Name = BilledTo,
+                            Pairs = [new EdgeKindPair(Invoice, KnowledgeKinds.Repo)],
+                            InverseName = BilledFrom,
+                        },
+                        new EdgeTypeSpec
+                        {
+                            Name = Knows,
+                            Pairs = [new EdgeKindPair(Person, Person)],
+                            Symmetric = true,
+                        },
+                    ],
+                },
+            ]);
+
+        return new InMemoryKnowledgeGraph(
+            Options.Create(new KnowledgeOptions()),
+            NullLogger<InMemoryKnowledgeGraph>.Instance,
+            catalog);
+    }
+}
+
+/// <summary>Regressions for the review findings: descend direction, symmetric writes, cycles.</summary>
+public sealed class EdgeSemanticsTests
+{
+    private const string Responds = "acme:responds";
+    private const string RespondedBy = "acme:responded_by";
+    private const string Person = "acme:person";
+    private const string Knows = "acme:knows";
+
+    [Fact]
+    public async Task Descend_gives_the_same_result_for_canonical_and_inverse_names()
+    {
+        var graph = CreateGraph();
+        var question = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Question, "q1"));
+        var answer = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Answer, "a1"));
+        var nested = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Answer, "a2"));
+        await graph.AddEdgeAsync(new EdgeDraft(answer.Id, question.Id, Responds));
+        await graph.AddEdgeAsync(new EdgeDraft(nested.Id, answer.Id, Responds));
+
+        async Task<string[]> Names(string descend)
+        {
+            var page = await graph.QueryNodesAsync(new NodeQuery
+            {
+                Within = question.Id,
+                Via = Responds,
+                Descend = descend,
+                Scope = KnowledgeScope.All,
+            });
+            return page.Items.Select(item => item.Name).Order(StringComparer.Ordinal).ToArray();
+        }
+
+        var canonical = await Names(Responds);
+        Assert.Equal(new[] { "a1", "a2" }, canonical);
+        Assert.Equal(canonical, await Names(RespondedBy));
+        Assert.Equal(canonical, await Names(RespondedBy.ToUpperInvariant()));
+    }
+
+    [Fact]
+    public async Task Symmetric_mirror_write_reuses_the_stored_edge()
+    {
+        var graph = CreateGraph();
+        var alice = await graph.CreateNodeAsync(new NodeDraft(Person, "alice"));
+        var bob = await graph.CreateNodeAsync(new NodeDraft(Person, "bob"));
+
+        var first = await graph.AddEdgeAsync(new EdgeDraft(alice.Id, bob.Id, Knows));
+        var mirror = await graph.AddEdgeAsync(new EdgeDraft(bob.Id, alice.Id, Knows));
+
+        Assert.Equal(first.Id, mirror.Id);
+        var neighbors = await graph.GetNeighborsAsync(new NeighborQuery(alice.Id, EdgeDirection.Both, Knows));
+        Assert.Single(neighbors);
+    }
+
+    [Fact]
+    public async Task Acyclic_edge_type_rejects_a_cycle()
+    {
+        var graph = CreateGraph();
+        var first = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Task, "first"));
+        var second = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Task, "second"));
+
+        await graph.AddEdgeAsync(new EdgeDraft(first.Id, second.Id, KnowledgeEdgeTypes.DependsOn));
+
+        var exception = await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.AddEdgeAsync(new EdgeDraft(second.Id, first.Id, KnowledgeEdgeTypes.DependsOn)));
+        Assert.Contains("would close a cycle", exception.Message, StringComparison.Ordinal);
+
+        // Re-adding the same edge is a no-op, not a cycle.
+        var same = await graph.AddEdgeAsync(new EdgeDraft(first.Id, second.Id, KnowledgeEdgeTypes.DependsOn));
+        Assert.True(same.Id > 0);
+    }
+
+    private static InMemoryKnowledgeGraph CreateGraph()
+    {
+        var catalog = KnowledgeVocabularyLoader.Build(
+            KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+            [
+                new VocabularyPack
+                {
+                    Name = "acme",
+                    NodeKinds = [new NodeKindSpec { Name = Person }],
+                    EdgeTypes =
+                    [
+                        new EdgeTypeSpec
+                        {
+                            Name = Responds,
+                            Pairs = [new EdgeKindPair(KnowledgeKinds.Answer, KnowledgeKinds.Question), new EdgeKindPair(KnowledgeKinds.Answer, KnowledgeKinds.Answer)],
+                            InverseName = RespondedBy,
+                        },
+                        new EdgeTypeSpec
+                        {
+                            Name = Knows,
+                            Pairs = [new EdgeKindPair(Person, Person)],
+                            Symmetric = true,
+                        },
+                    ],
+                },
+            ]);
+
+        return new InMemoryKnowledgeGraph(
+            Options.Create(new KnowledgeOptions()),
+            NullLogger<InMemoryKnowledgeGraph>.Instance,
+            catalog);
+    }
+}
+
+/// <summary>Deprecated vocabulary stays writable but is hidden from listings.</summary>
+public sealed class DeprecatedVocabularyTests
+{
+    private const string Legacy = "acme:legacy";
+    private const string LegacyLink = "acme:legacy_link";
+
+    [Fact]
+    public async Task Deprecated_kind_and_edge_are_hidden_but_writable()
+    {
+        var catalog = KnowledgeVocabularyLoader.Build(
+            KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+            [
+                new VocabularyPack
+                {
+                    Name = "acme",
+                    NodeKinds = [new NodeKindSpec { Name = Legacy, Deprecated = true }],
+                    EdgeTypes =
+                    [
+                        new EdgeTypeSpec
+                        {
+                            Name = LegacyLink,
+                            Pairs = [new EdgeKindPair(Legacy, KnowledgeKinds.Note)],
+                            Deprecated = true,
+                        },
+                    ],
+                },
+            ]);
+
+        var graph = new InMemoryKnowledgeGraph(
+            Options.Create(new KnowledgeOptions()),
+            NullLogger<InMemoryKnowledgeGraph>.Instance,
+            catalog);
+
+        Assert.DoesNotContain(Legacy, (await graph.GetKindsAsync()).Select(kind => kind.Name));
+        Assert.DoesNotContain(LegacyLink, (await graph.GetEdgeTypesAsync()).Select(edge => edge.Name));
+
+        // Writes still succeed so existing automation can finish the migration.
+        var legacy = await graph.CreateNodeAsync(new NodeDraft(Legacy, "old row"));
+        var note = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Note, "note"));
+        var edge = await graph.AddEdgeAsync(new EdgeDraft(legacy.Id, note.Id, LegacyLink));
+        Assert.Equal(LegacyLink, edge.EdgeType);
+    }
+}
+
+/// <summary>Required properties declared by a pack are enforced on create and patch.</summary>
+public sealed class RequiredPropertyTests
+{
+    private const string Invoice = "acme:invoice";
+
+    [Fact]
+    public async Task Missing_required_property_is_rejected_on_create_and_patch()
+    {
+        var graph = CreateGraph();
+
+        var missing = await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.CreateNodeAsync(new NodeDraft(Invoice, "INV-1")));
+        Assert.Contains("requires properties repo", missing.Message, StringComparison.Ordinal);
+
+        var created = await graph.CreateNodeAsync(new NodeDraft(
+            Invoice,
+            "INV-1",
+            Properties: new Dictionary<string, string> { ["Repo"] = "anima", ["amount"] = "10" }));
+
+        // A patch replaces the property set, so dropping a required key is rejected.
+        var dropped = await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.UpdateNodeAsync(created.Id, new NodePatch(
+                Properties: new Dictionary<string, string> { ["amount"] = "20" })));
+        Assert.Contains("requires properties repo", dropped.Message, StringComparison.Ordinal);
+
+        var blank = await Assert.ThrowsAsync<KnowledgeValidationException>(
+            () => graph.UpdateNodeAsync(created.Id, new NodePatch(
+                Properties: new Dictionary<string, string> { ["repo"] = "", ["amount"] = "20" })));
+        Assert.Contains("requires properties repo", blank.Message, StringComparison.Ordinal);
+
+        var updated = await graph.UpdateNodeAsync(created.Id, new NodePatch(
+            Properties: new Dictionary<string, string> { ["repo"] = "other", ["amount"] = "20" }));
+        Assert.Equal("other", updated.Properties["repo"]);
+    }
+
+    [Fact]
+    public async Task Core_kinds_without_required_props_are_unaffected()
+    {
+        var graph = CreateGraph();
+        var note = await graph.CreateNodeAsync(new NodeDraft(KnowledgeKinds.Note, "free form"));
+        Assert.Equal(KnowledgeKinds.Note, note.Kind);
+    }
+
+    private static InMemoryKnowledgeGraph CreateGraph()
+    {
+        var catalog = KnowledgeVocabularyLoader.Build(
+            KnowledgeVocabularyLoader.LoadEmbeddedCore(),
+            [
+                new VocabularyPack
+                {
+                    Name = "acme",
+                    NodeKinds = [new NodeKindSpec { Name = Invoice, RequiredProps = ["repo"] }],
+                },
+            ]);
+
+        return new InMemoryKnowledgeGraph(
+            Options.Create(new KnowledgeOptions()),
+            NullLogger<InMemoryKnowledgeGraph>.Instance,
+            catalog);
+    }
 }

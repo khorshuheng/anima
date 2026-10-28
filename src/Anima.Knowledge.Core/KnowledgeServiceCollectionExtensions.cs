@@ -17,6 +17,8 @@ public static class KnowledgeServiceCollectionExtensions
             services.Configure(configure);
         }
 
+        services.TryAddSingleton(_ => KnowledgeVocabularyLoader.LoadCore());
+
         services.TryAddSingleton<InMemoryKnowledgeGraph>();
         services.TryAddSingleton<IKnowledgeGraph>(provider => provider.GetRequiredService<InMemoryKnowledgeGraph>());
         return services;

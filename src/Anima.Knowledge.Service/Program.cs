@@ -23,6 +23,19 @@ builder.Services.AddHttpBus(options =>
     options.BaseUrl = builder.Configuration["Anima:Bus:BaseUrl"] ?? "http://127.0.0.1:7412";
 });
 
+// The vocabulary is the merged core pack plus configured packs, resolved once at
+// startup. Pack paths come from Anima:Knowledge:Packs plus the repo and user defaults.
+builder.Services.AddSingleton(serviceProvider =>
+{
+    var options = serviceProvider.GetRequiredService<IOptions<KnowledgeOptions>>().Value;
+    var logger = serviceProvider.GetRequiredService<ILogger<KnowledgeVocabularyCatalog>>();
+    var paths = KnowledgeVocabularyLoader.DiscoverPackFiles(options.Packs, RepoLayout.Root);
+    return KnowledgeVocabularyLoader.Load(
+        paths,
+        options.VocabularyMode,
+        warning => logger.LogWarning("Vocabulary pack skipped: {Reason}", warning));
+});
+
 var provider = (builder.Configuration["Anima:Knowledge:Provider"] ?? "Sqlite").Trim();
 if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
@@ -76,7 +89,73 @@ app.Use(async (context, next) =>
 app.MapGet("/api/node-kinds", async (IKnowledgeGraph graph, CancellationToken cancellationToken) =>
 {
     var kinds = await graph.GetKindsAsync(cancellationToken);
-    return Results.Ok(new { items = kinds });
+    return Results.Ok(new
+    {
+        items = kinds.Select(kind => new
+        {
+            kind.Id,
+            kind.Name,
+            kind.Description,
+            RequiredProps = kind.RequiredProps.ToArray(),
+            Traits = kind.Traits.ToArray(),
+            kind.Source,
+            kind.Deprecated,
+        }),
+    });
+});
+
+app.MapGet("/api/vocabulary", (KnowledgeVocabularyCatalog vocabulary) => Results.Ok(new
+{
+    node_kinds = vocabulary.NodeKinds.Select(kind => new
+    {
+        kind.Id,
+        kind.Name,
+        kind.Description,
+        RequiredProps = kind.RequiredProps.ToArray(),
+        Traits = kind.Traits.ToArray(),
+        kind.Source,
+        kind.Deprecated,
+    }),
+    edge_types = vocabulary.EdgeTypes.Select(type => new
+    {
+        type.Id,
+        type.Name,
+        type.Description,
+        type.Resolves,
+        type.SingleOutgoing,
+        type.Symmetric,
+        type.Acyclic,
+        type.InverseName,
+        Pairs = type.Pairs.Select(pair => new[] { pair.Source, pair.Destination }).ToArray(),
+        Traits = type.Traits.ToArray(),
+        type.Source,
+        type.Deprecated,
+    }),
+    traits = new[] { KnowledgeTraits.Plannable, KnowledgeTraits.Hierarchy, KnowledgeTraits.Anchor },
+}));
+
+// Authoring check for a candidate pack: parsed and merged on top of the core pack, so
+// typos, unknown kinds and core redefinitions fail with a message instead of at boot.
+app.MapPost("/api/vocabulary/validate", (JsonElement body) =>
+{
+    try
+    {
+        var pack = KnowledgeVocabularyLoader.Parse(body.GetRawText(), "candidate");
+        var catalog = KnowledgeVocabularyLoader.Build(KnowledgeVocabularyLoader.LoadEmbeddedCore(), [pack]);
+        return Results.Ok(new
+        {
+            valid = true,
+            pack = pack.Name,
+            node_kinds = catalog.NodeKinds.Count,
+            edge_types = catalog.EdgeTypes.Count,
+            added_node_kinds = catalog.NodeKinds.Count(kind => string.Equals(kind.Source, pack.Name, StringComparison.OrdinalIgnoreCase)),
+            added_edge_types = catalog.EdgeTypes.Count(type => string.Equals(type.Source, pack.Name, StringComparison.OrdinalIgnoreCase)),
+        });
+    }
+    catch (KnowledgeVocabularyException exception)
+    {
+        return Results.UnprocessableEntity(new { valid = false, message = exception.Message });
+    }
 });
 
 app.MapGet("/api/edge-types", async (IKnowledgeGraph graph, CancellationToken cancellationToken) =>
@@ -91,8 +170,15 @@ app.MapGet("/api/edge-types", async (IKnowledgeGraph graph, CancellationToken ca
             type.Description,
             type.Resolves,
             type.SingleOutgoing,
+            type.Symmetric,
+            type.Acyclic,
+            type.InverseName,
             SourceKinds = type.SourceKinds.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
             DestinationKinds = type.DestinationKinds.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+            Pairs = type.Pairs.Select(pair => new[] { pair.Source, pair.Destination }).ToArray(),
+            Traits = type.Traits.ToArray(),
+            type.Source,
+            type.Deprecated,
         }),
     });
 });

@@ -21,6 +21,8 @@ public static class SqliteKnowledgeServiceCollectionExtensions
             services.Configure(configure);
         }
 
+        services.TryAddSingleton(_ => KnowledgeVocabularyLoader.LoadCore());
+
         services.TryAddSingleton<SqliteKnowledgeGraph>();
         services.TryAddSingleton<IKnowledgeGraph>(provider =>
             provider.GetRequiredService<SqliteKnowledgeGraph>());

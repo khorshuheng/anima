@@ -116,6 +116,78 @@ is stored in the `anima-knowledge` volume. Reset it with:
 docker compose -f docker/compose.yml down -v
 ```
 
+## Knowledge vocabulary packs
+
+The standard vocabulary is embedded; extra node kinds and edge types come from
+packs, applied in this order at startup:
+
+1. `<repo>/config/knowledge/*.json`
+2. `~/.config/anima/knowledge/*.json`
+3. `Anima__Knowledge__Packs__0`, `__1`, ... (files, directories or `*.json` globs)
+
+```json
+{
+  "schema_version": 1,
+  "name": "acme",
+  "node_kinds": [{ "name": "acme:invoice", "required_props": ["repo"] }],
+  "edge_types": [
+    {
+      "name": "acme:billed_to",
+      "pairs": [["acme:invoice", "repo"]],
+      "inverse_name": "acme:billed_from"
+    }
+  ]
+}
+```
+
+A pack may only add names under its own prefix (`acme:`); references to core names
+(`repo`, `part_of`) stay unprefixed.
+
+- Packs are additive: they cannot redefine a core entry, and may only widen an
+  existing edge type's endpoint pairs. Omitted flags, traits and `inverse_name`
+  are inherited.
+- `inverse_name` is virtual: read the relation from either end, write it in the
+  canonical direction only.
+- An invalid pack fails startup with the reason. Set
+  `Anima__Knowledge__VocabularyMode=Warn` to log and skip the offending pack instead
+  (useful while authoring; strict is the default).
+- `deprecated: true` hides a kind or edge type from the kind/edge listings while
+  writes continue with a warning.
+- Check a pack before deploying it:
+
+  ```bash
+  anima knowledge vocabulary validate config/knowledge/acme.json
+  anima knowledge vocabulary show
+  ```
+- A pack that disappears deactivates its unused kinds/edge types automatically and
+  fails startup if the graph still uses them.
+- Ad-hoc kinds (an unknown kind written with `AllowAdHocKinds`) are recorded with
+  `source = 'ad-hoc'` and share the pack id band, so formalizing one in a pack
+  keeps the same id.
+
+## Knowledge schema migrations
+
+Knowledge applies its schema itself at startup: DbUp runs the SQL scripts embedded
+in `Anima.Knowledge.Sqlite` (`src/Anima.Knowledge.Sqlite/Migrations/*.sql`) in
+filename order, once each, and journals them in the `SchemaVersions` table. See
+`docs/adr/0008-schema-migrations.md`.
+
+- Nothing has been released, so no database needs upgrading: `0001_init.sql` is
+the whole schema and there is no `0002`. A database from before DbUp is deleted,
+not migrated.
+- `PRAGMA user_version` is not used; `SchemaVersions` is the only version record.
+- To inspect what was applied:
+
+  ```bash
+  sqlite3 "$HOME/.local/share/anima/knowledge.db" \
+    'SELECT ScriptName, Applied FROM SchemaVersions ORDER BY SchemaVersionID;'
+  ```
+- Applied scripts are immutable. Adding a migration means adding
+  `0002_<name>.sql`, never editing `0001_init.sql`.
+- To start over locally, delete the state instead of writing a migration:
+  `docker compose -f docker/compose.yml down -v` and
+  `rm -f "$HOME/.local/share/anima/knowledge.db"*`.
+
 The image build:
 
 - restores and publishes the four services in a .NET SDK stage;

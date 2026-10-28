@@ -464,7 +464,11 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
     private sealed record KindDto(
         long Id,
         string Name,
-        string? Description);
+        string? Description,
+        [property: JsonPropertyName("required_props")] List<string>? RequiredProps,
+        List<string>? Traits,
+        string? Source,
+        bool Deprecated);
 
     private sealed record EdgeTypeDto(
         long Id,
@@ -473,7 +477,14 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
         bool Resolves,
         [property: JsonPropertyName("single_outgoing")] bool SingleOutgoing,
         [property: JsonPropertyName("source_kinds")] List<string>? SourceKinds,
-        [property: JsonPropertyName("destination_kinds")] List<string>? DestinationKinds);
+        [property: JsonPropertyName("destination_kinds")] List<string>? DestinationKinds,
+        List<string[]>? Pairs,
+        [property: JsonPropertyName("inverse_name")] string? InverseName,
+        bool Symmetric,
+        bool Acyclic,
+        List<string>? Traits,
+        string? Source,
+        bool Deprecated);
 
     private sealed record EdgeTypeEnvelope(
         [property: JsonPropertyName("items")] List<EdgeTypeDto>? Items);
@@ -583,10 +594,28 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
                 new HashSet<string>(type.SourceKinds ?? [], StringComparer.OrdinalIgnoreCase),
                 new HashSet<string>(type.DestinationKinds ?? [], StringComparer.OrdinalIgnoreCase),
                 type.Resolves,
-                type.SingleOutgoing));
+                type.SingleOutgoing)
+            {
+                Pairs = (type.Pairs ?? [])
+                    .Where(pair => pair.Length == 2)
+                    .Select(pair => new EdgeKindPair(pair[0], pair[1]))
+                    .ToArray(),
+                InverseName = type.InverseName,
+                Symmetric = type.Symmetric,
+                Acyclic = type.Acyclic,
+                Traits = type.Traits ?? [],
+                Source = type.Source ?? KnowledgeVocabularyCatalog.CorePack,
+                Deprecated = type.Deprecated,
+            });
 
             Kinds = kinds
-                .Select(kind => new NodeKindDefinition((int)kind.Id, kind.Name, kind.Description ?? string.Empty))
+                .Select(kind => new NodeKindDefinition((int)kind.Id, kind.Name, kind.Description ?? string.Empty)
+                {
+                    RequiredProps = kind.RequiredProps ?? [],
+                    Traits = kind.Traits ?? [],
+                    Source = kind.Source ?? KnowledgeVocabularyCatalog.CorePack,
+                    Deprecated = kind.Deprecated,
+                })
                 .ToArray();
             EdgeTypes = _edgeTypesById.Values.ToArray();
         }

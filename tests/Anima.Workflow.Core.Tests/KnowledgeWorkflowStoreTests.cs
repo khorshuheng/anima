@@ -576,7 +576,8 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
     {
         var graph = new InMemoryKnowledgeGraph(
             Options.Create(new KnowledgeOptions()),
-            NullLogger<InMemoryKnowledgeGraph>.Instance);
+            NullLogger<InMemoryKnowledgeGraph>.Instance,
+            KnowledgeVocabularyLoader.LoadCore());
         return new KnowledgeWorkflowStore(
             graph,
             new NullWorkflowEventPublisher(),

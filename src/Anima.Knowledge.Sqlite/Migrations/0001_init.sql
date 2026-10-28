@@ -1,8 +1,22 @@
+-- Initial knowledge schema, applied by DbUp (see docs/adr/0008-schema-migrations.md).
+--
+-- Scripts run in filename order, once each, and are journaled in `SchemaVersions`.
+-- This script is the whole schema as of the first release: there are no prior
+-- databases to upgrade, so vocabulary columns are present from the start rather
+-- than arriving through a second migration.
+
 CREATE TABLE IF NOT EXISTS node_kind (
-    id          INTEGER PRIMARY KEY,
-    name        TEXT NOT NULL UNIQUE,
-    description TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    id              INTEGER PRIMARY KEY,
+    name            TEXT NOT NULL UNIQUE,
+    description     TEXT NOT NULL,
+    required_props  TEXT NOT NULL DEFAULT '[]',
+    traits          TEXT NOT NULL DEFAULT '[]',
+    source          TEXT NOT NULL DEFAULT 'core',
+    pack_version    TEXT,
+    checksum        TEXT,
+    active          INTEGER NOT NULL DEFAULT 1,
+    deprecated      INTEGER NOT NULL DEFAULT 0,
+    updated_at      TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS edge_type (
@@ -13,6 +27,16 @@ CREATE TABLE IF NOT EXISTS edge_type (
     single_outgoing  INTEGER NOT NULL DEFAULT 0,
     source_kinds     TEXT NOT NULL DEFAULT '',
     destination_kinds TEXT NOT NULL DEFAULT '',
+    pairs            TEXT NOT NULL DEFAULT '[]',
+    inverse_name     TEXT,
+    symmetric        INTEGER NOT NULL DEFAULT 0,
+    acyclic          INTEGER NOT NULL DEFAULT 0,
+    traits           TEXT NOT NULL DEFAULT '[]',
+    source           TEXT NOT NULL DEFAULT 'core',
+    pack_version     TEXT,
+    checksum         TEXT,
+    active           INTEGER NOT NULL DEFAULT 1,
+    deprecated       INTEGER NOT NULL DEFAULT 0,
     updated_at       TEXT NOT NULL
 );
 

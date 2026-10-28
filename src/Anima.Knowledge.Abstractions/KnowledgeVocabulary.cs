@@ -26,8 +26,8 @@ public static class KnowledgeKinds
 
     public static IReadOnlyList<NodeKindDefinition> Definitions { get; } =
     [
-        new(1, Goal, "An outcome a plan advances."),
-        new(2, Task, "A unit of work in a plan tree."),
+        new(1, Goal, "An outcome a plan advances.") { Traits = [KnowledgeTraits.Plannable] },
+        new(2, Task, "A unit of work in a plan tree.") { Traits = [KnowledgeTraits.Plannable] },
         new(3, Change, "A delivered code or config change."),
         new(4, Decision, "A decision the work is justified by."),
         new(5, Bug, "A defect."),
@@ -85,15 +85,25 @@ public static class KnowledgeEdgeTypes
 
     public static IReadOnlyList<EdgeTypeDefinition> Definitions { get; } =
     [
-        new(1, PartOf, "Decomposition: task to goal or task.", Set(KnowledgeKinds.Task), Set(KnowledgeKinds.Goal, KnowledgeKinds.Task)),
-        new(2, DependsOn, "Ordering: the destination completes first.", Set(KnowledgeKinds.Task), Set(KnowledgeKinds.Task)),
+        new(1, PartOf, "Decomposition: task to goal or task.", Set(KnowledgeKinds.Task), Set(KnowledgeKinds.Goal, KnowledgeKinds.Task))
+        {
+            Acyclic = true,
+            Traits = [KnowledgeTraits.Hierarchy],
+        },
+        new(2, DependsOn, "Ordering: the destination completes first.", Set(KnowledgeKinds.Task), Set(KnowledgeKinds.Task))
+        {
+            Acyclic = true,
+        },
         new(3, Affects, "Predicted blast radius.", Set(KnowledgeKinds.Task), Set(KnowledgeKinds.File, KnowledgeKinds.DatabaseTable, KnowledgeKinds.DatabaseView)),
         new(4, Implements, "A change delivers a task.", Set(KnowledgeKinds.Change), Set(KnowledgeKinds.Task), Resolves: true),
         new(5, Fixes, "A change resolves a defect.", Set(KnowledgeKinds.Change), Set(KnowledgeKinds.Bug), Resolves: true),
         new(6, Modifies, "Actual touched set.", Set(KnowledgeKinds.Change), Set(KnowledgeKinds.File, KnowledgeKinds.DatabaseTable, KnowledgeKinds.DatabaseView)),
         new(7, JustifiedBy, "The reasoning a change answers to.", Set(KnowledgeKinds.Change), Set(KnowledgeKinds.Decision)),
         new(8, Contains, "Physical containment.", Set(KnowledgeKinds.Repo), Set(KnowledgeKinds.File)),
-        new(9, BelongsTo, "The project a goal advances.", Set(KnowledgeKinds.Goal), Set(KnowledgeKinds.Repo), SingleOutgoing: true),
+        new(9, BelongsTo, "The project a goal advances.", Set(KnowledgeKinds.Goal), Set(KnowledgeKinds.Repo), SingleOutgoing: true)
+        {
+            Traits = [KnowledgeTraits.Anchor],
+        },
         new(10, Verifies, "Evidence that an obligation holds.", Set(KnowledgeKinds.Test), Set(KnowledgeKinds.Goal, KnowledgeKinds.Task)),
         new(11, Reveals, "A test surfaced a defect.", Set(KnowledgeKinds.Test), Set(KnowledgeKinds.Bug)),
         new(12, Mentions, "A memory references a node.", Set(KnowledgeKinds.Memory, KnowledgeKinds.Note), Set()),
@@ -104,13 +114,19 @@ public static class KnowledgeEdgeTypes
         new(17, Asks, "A question belongs to a workflow.", Set(KnowledgeKinds.Question), Set(KnowledgeKinds.Workflow), SingleOutgoing: true),
         new(18, Answers, "An answer resolves a question.", Set(KnowledgeKinds.Answer), Set(KnowledgeKinds.Question), Resolves: true, SingleOutgoing: true),
         new(19, PhaseOf, "A phase belongs to a workflow.", Set(KnowledgeKinds.Phase), Set(KnowledgeKinds.Workflow), SingleOutgoing: true),
-        new(20, Precedes, "Phase ordering.", Set(KnowledgeKinds.Phase), Set(KnowledgeKinds.Phase)),
+        new(20, Precedes, "Phase ordering.", Set(KnowledgeKinds.Phase), Set(KnowledgeKinds.Phase))
+        {
+            Acyclic = true,
+        },
         new(21, Reviews, "A result reviews a workflow, spec or change.", Set(KnowledgeKinds.Result), Set(KnowledgeKinds.Workflow, KnowledgeKinds.Spec, KnowledgeKinds.Change)),
         new(22, FoundIn, "A finding was found in a result.", Set(KnowledgeKinds.Finding), Set(KnowledgeKinds.Result)),
         new(23, AssignedTo, "A worktree is assigned to an external agent.", Set(KnowledgeKinds.Worktree), Set(KnowledgeKinds.Agent)),
         new(24, WorktreeOf, "A worktree serves a workflow.", Set(KnowledgeKinds.Worktree), Set(KnowledgeKinds.Workflow), SingleOutgoing: true),
         new(25, ResultOf, "A result belongs to a workflow.", Set(KnowledgeKinds.Result), Set(KnowledgeKinds.Workflow), SingleOutgoing: true),
         new(26, ImplementsSpec, "A result implements a spec.", Set(KnowledgeKinds.Result), Set(KnowledgeKinds.Spec)),
-        new(27, Supersedes, "A newer spec replaces an older one.", Set(KnowledgeKinds.Spec), Set(KnowledgeKinds.Spec), SingleOutgoing: true),
+        new(27, Supersedes, "A newer spec replaces an older one.", Set(KnowledgeKinds.Spec), Set(KnowledgeKinds.Spec), SingleOutgoing: true)
+        {
+            Acyclic = true,
+        },
     ];
 }

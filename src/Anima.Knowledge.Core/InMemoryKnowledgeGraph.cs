@@ -19,27 +19,43 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, EdgeTypeDefinition> _edgeTypes =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly KnowledgeVocabularyCatalog _vocabulary;
+    private readonly HashSet<string> _plannableKinds;
+    private readonly HashSet<string> _hierarchyEdges;
+    private readonly HashSet<string> _anchorEdges;
 
     private long _nextNodeId;
     private long _nextEdgeId;
 
-    public InMemoryKnowledgeGraph(IOptions<KnowledgeOptions> options, ILogger<InMemoryKnowledgeGraph> logger)
+    public InMemoryKnowledgeGraph(
+        IOptions<KnowledgeOptions> options,
+        ILogger<InMemoryKnowledgeGraph> logger,
+        KnowledgeVocabularyCatalog vocabulary)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(vocabulary);
         _options = options.Value;
         _logger = logger;
+        _vocabulary = vocabulary;
 
-        foreach (var kind in KnowledgeKinds.Definitions)
+        foreach (var kind in vocabulary.NodeKinds)
         {
             _kinds[kind.Name] = kind;
         }
 
-        foreach (var edgeType in KnowledgeEdgeTypes.Definitions)
+        foreach (var edgeType in vocabulary.EdgeTypes)
         {
             _edgeTypes[edgeType.Name] = edgeType;
         }
+
+        _plannableKinds = Names(vocabulary.NodeKindsWithTrait(KnowledgeTraits.Plannable).Select(kind => kind.Name));
+        _hierarchyEdges = Names(vocabulary.EdgeTypesWithTrait(KnowledgeTraits.Hierarchy).Select(edge => edge.Name));
+        _anchorEdges = Names(vocabulary.EdgeTypesWithTrait(KnowledgeTraits.Anchor).Select(edge => edge.Name));
     }
+
+    private static HashSet<string> Names(IEnumerable<string> names)
+        => names.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     public Task<KnowledgeNode> CreateNodeAsync(
         NodeDraft draft,
@@ -93,6 +109,13 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             if (patch.Content is not null)
             {
                 node.Content = patch.Content;
+            }
+
+            // A patch replaces the property dictionary, so the requirement applies to the
+            // replacement set, not to a merge with the current one.
+            if (patch.Properties is not null && _kinds.TryGetValue(node.Kind, out var nodeKind))
+            {
+                KnowledgePropertyRules.EnsureRequired(nodeKind, patch.Properties);
             }
 
             if (patch.Properties is not null)
@@ -226,23 +249,36 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             var resolved = ResolvedIds();
             var results = new List<NeighborResult>();
 
+            string? edgeType = null;
+            var direction = query.Direction;
+            if (query.EdgeType is not null)
+            {
+                if (!_vocabulary.TryResolveEdgeType(query.EdgeType, out var resolution))
+                {
+                    return Task.FromResult<IReadOnlyList<NeighborResult>>(results);
+                }
+
+                edgeType = resolution.Definition.Name;
+                direction = EffectiveDirection(resolution, direction);
+            }
+
             foreach (var edge in _edges.Values.OrderBy(edge => edge.Id))
             {
-                if (query.EdgeType is not null &&
-                    !string.Equals(edge.EdgeType, query.EdgeType, StringComparison.OrdinalIgnoreCase))
+                if (edgeType is not null &&
+                    !string.Equals(edge.EdgeType, edgeType, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
                 if (edge.Source == query.NodeId &&
-                    query.Direction is EdgeDirection.Outgoing or EdgeDirection.Both &&
+                    direction is EdgeDirection.Outgoing or EdgeDirection.Both &&
                     _nodes.TryGetValue(edge.Destination, out var destination))
                 {
                     results.Add(new NeighborResult(ToNode(destination, resolved), ToEdge(edge), EdgeDirection.Outgoing));
                 }
 
                 if (edge.Destination == query.NodeId &&
-                    query.Direction is EdgeDirection.Incoming or EdgeDirection.Both &&
+                    direction is EdgeDirection.Incoming or EdgeDirection.Both &&
                     _nodes.TryGetValue(edge.Source, out var source))
                 {
                     results.Add(new NeighborResult(ToNode(source, resolved), ToEdge(edge), EdgeDirection.Incoming));
@@ -259,7 +295,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         lock (_gate)
         {
             return Task.FromResult<IReadOnlyList<NodeKindDefinition>>(
-                _kinds.Values.OrderBy(kind => kind.Id).ToArray());
+                _kinds.Values.Where(kind => !kind.Deprecated).OrderBy(kind => kind.Id).ToArray());
         }
     }
 
@@ -270,7 +306,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         lock (_gate)
         {
             return Task.FromResult<IReadOnlyList<EdgeTypeDefinition>>(
-                _edgeTypes.Values.OrderBy(type => type.Id).ToArray());
+                _edgeTypes.Values.Where(type => !type.Deprecated).OrderBy(type => type.Id).ToArray());
         }
     }
 
@@ -287,7 +323,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             }
 
             var unanchored = _nodes.Values.Count(node =>
-                node.Kind is KnowledgeKinds.Task or KnowledgeKinds.Goal && !IsAnchored(node));
+                _plannableKinds.Contains(node.Kind) && !IsAnchored(node));
 
             var duplicatePairs = _edges.Values
                 .GroupBy(edge => (edge.Source, edge.Destination, edge.EdgeType))
@@ -375,16 +411,16 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             }
 
             var parent = RequireNode(parentId);
-            if (parent.Kind is not (KnowledgeKinds.Task or KnowledgeKinds.Goal))
+            if (!_plannableKinds.Contains(parent.Kind))
             {
                 throw new KnowledgeValidationException(
-                    $"task parent must be a task or goal, got '{parent.Kind}'");
+                    $"task parent must be a plannable kind, got '{parent.Kind}'");
             }
 
             if (!IsAnchored(parent))
             {
                 throw new KnowledgeValidationException(
-                    $"part_of parent references node {parent.Id}, which is not attached to a repo via belongs_to");
+                    $"parent references node {parent.Id}, which is not anchored");
             }
 
             var node = CreateNodeCore(new NodeDraft(
@@ -583,10 +619,11 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
     /// </summary>
     private HashSet<long> Reachable(long start, string? via, string? descend)
     {
+        var viaType = CanonicalEdgeType(via);
         var hop = new HashSet<long>();
         foreach (var edge in _edges.Values)
         {
-            if (via is not null && !string.Equals(edge.EdgeType, via, StringComparison.OrdinalIgnoreCase))
+            if (viaType is not null && !string.Equals(edge.EdgeType, viaType, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -602,11 +639,15 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             }
         }
 
-        if (descend is null)
+        if (descend is null || !_vocabulary.TryResolveEdgeType(descend, out var descendResolution))
         {
             return hop;
         }
 
+        // descend narrows away from the hop nodes. Children are always the edge's
+        // source side (they point at their parent), so naming the relation by its
+        // inverse changes which edges match, never the walk direction.
+        var descendType = descendResolution.Definition.Name;
         var reachable = new HashSet<long>(hop);
         var queue = new Queue<long>(hop);
         while (queue.Count > 0)
@@ -614,16 +655,17 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             var current = queue.Dequeue();
             foreach (var edge in _edges.Values)
             {
-                if (!string.Equals(edge.EdgeType, descend, StringComparison.OrdinalIgnoreCase) ||
-                    edge.Destination != current)
+                if (!string.Equals(edge.EdgeType, descendType, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                if (reachable.Add(edge.Source))
+                if (edge.Destination != current || !reachable.Add(edge.Source))
                 {
-                    queue.Enqueue(edge.Source);
+                    continue;
                 }
+
+                queue.Enqueue(edge.Source);
             }
         }
 
@@ -678,17 +720,13 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         var seen = new HashSet<long>();
         while (seen.Add(current.Id))
         {
-            if (current.Kind == KnowledgeKinds.Goal &&
-                _edges.Values.Any(edge =>
-                    edge.Source == current.Id &&
-                    string.Equals(edge.EdgeType, KnowledgeEdgeTypes.BelongsTo, StringComparison.OrdinalIgnoreCase)))
+            if (_edges.Values.Any(edge => edge.Source == current.Id && _anchorEdges.Contains(edge.EdgeType)))
             {
                 return true;
             }
 
             var parentEdge = _edges.Values.FirstOrDefault(edge =>
-                edge.Source == current.Id &&
-                string.Equals(edge.EdgeType, KnowledgeEdgeTypes.PartOf, StringComparison.OrdinalIgnoreCase));
+                edge.Source == current.Id && _hierarchyEdges.Contains(edge.EdgeType));
 
             if (parentEdge is null || !_nodes.TryGetValue(parentEdge.Destination, out current!))
             {
@@ -702,7 +740,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
     private NodeState CreateNodeCore(NodeDraft draft)
     {
         var kind = Normalize(draft.Kind);
-        if (!_kinds.ContainsKey(kind))
+        if (!_kinds.TryGetValue(kind, out var kindDefinition))
         {
             if (!_options.AllowAdHocKinds)
             {
@@ -710,9 +748,17 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             }
 
             var nextId = _kinds.Count == 0 ? 1 : _kinds.Values.Max(existing => existing.Id) + 1;
-            _kinds[kind] = new NodeKindDefinition(nextId, kind, "Ad-hoc kind.");
+            kindDefinition = new NodeKindDefinition(nextId, kind, "Ad-hoc kind.");
+            _kinds[kind] = kindDefinition;
             _logger.LogInformation("Registered ad-hoc node kind {Kind}.", kind);
         }
+
+        if (kindDefinition.Deprecated)
+        {
+            _logger.LogWarning("Writing node kind {Kind}, which the vocabulary marks deprecated.", kind);
+        }
+
+        KnowledgePropertyRules.EnsureRequired(kindDefinition, draft.Properties);
 
         var now = DateTimeOffset.UtcNow;
         var node = new NodeState
@@ -741,19 +787,18 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
 
         if (!_edgeTypes.TryGetValue(typeName, out var definition))
         {
-            throw new KnowledgeValidationException($"unknown edge type '{edgeType}'");
+            throw InverseEdgeTypeException(edgeType);
         }
 
-        if (definition.SourceKinds.Count > 0 && !definition.SourceKinds.Contains(source.Kind))
+        if (definition.Deprecated)
         {
-            throw new KnowledgeValidationException(
-                $"edge type '{definition.Name}' source references node {source.Id} of kind '{source.Kind}', expected one of {string.Join(", ", definition.SourceKinds)}");
+            _logger.LogWarning("Writing edge type {EdgeType}, which the vocabulary marks deprecated.", definition.Name);
         }
 
-        if (definition.DestinationKinds.Count > 0 && !definition.DestinationKinds.Contains(destination.Kind))
+        if (!_vocabulary.AllowsPair(definition.Name, source.Kind, destination.Kind))
         {
             throw new KnowledgeValidationException(
-                $"edge type '{definition.Name}' destination references node {destination.Id} of kind '{destination.Kind}', expected one of {string.Join(", ", definition.DestinationKinds)}");
+                $"edge type '{definition.Name}' does not allow {source.Kind} -> {destination.Kind}; allowed pairs: {DescribePairs(definition)}");
         }
 
         var existing = _edges.Values.FirstOrDefault(edge =>
@@ -764,6 +809,26 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         if (existing is not null)
         {
             return existing;
+        }
+
+        // A symmetric relation is undirected: writing the mirror would store the same
+        // fact twice, and reads would then report the same neighbour twice.
+        if (definition.Symmetric)
+        {
+            var mirrored = _edges.Values.FirstOrDefault(edge =>
+                edge.Source == destinationId &&
+                edge.Destination == sourceId &&
+                string.Equals(edge.EdgeType, definition.Name, StringComparison.OrdinalIgnoreCase));
+            if (mirrored is not null)
+            {
+                return mirrored;
+            }
+        }
+
+        if (definition.Acyclic && Reaches(definition.Name, from: destinationId, to: sourceId))
+        {
+            throw new KnowledgeValidationException(
+                $"edge type '{definition.Name}' is acyclic, and adding {sourceId} -> {destinationId} would close a cycle");
         }
 
         if (definition.SingleOutgoing &&
@@ -808,7 +873,96 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         return name.Trim();
     }
 
+    /// <summary>
+    /// Lower case is the stored vocabulary name format; see
+    /// <see cref="KnowledgeVocabularyLoader.NormalizeName"/> for the wire contract.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Globalization",
+        "CA1308:Normalize strings to uppercase",
+        Justification = "Lower case is the stored vocabulary name format; changing it would break existing rows.")]
     private static string Normalize(string value) => value.Trim().ToLowerInvariant();
+
+    private static string DescribePairs(EdgeTypeDefinition definition)
+        => definition.Pairs.Count == 0
+            ? "any"
+            : string.Join(", ", definition.Pairs.Select(pair => $"{pair.Source}->{pair.Destination}"));
+
+    /// <summary>True when <paramref name="to"/> is reachable from <paramref name="from"/> along the edge type.</summary>
+    private bool Reaches(string edgeType, long from, long to)
+    {
+        var seen = new HashSet<long> { from };
+        var queue = new Queue<long>();
+        queue.Enqueue(from);
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var edge in _edges.Values)
+            {
+                if (edge.Source != current ||
+                    !string.Equals(edge.EdgeType, edgeType, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (edge.Destination == to)
+                {
+                    return true;
+                }
+
+                if (seen.Add(edge.Destination))
+                {
+                    queue.Enqueue(edge.Destination);
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A symmetric relation is undirected however it is stored, and an inverse name
+    /// reads the stored edge from the opposite end.
+    /// </summary>
+    private static EdgeDirection EffectiveDirection(EdgeTypeResolution resolution, EdgeDirection requested)
+    {
+        if (resolution.Definition.Symmetric)
+        {
+            return EdgeDirection.Both;
+        }
+
+        return resolution.Reversed ? Flip(requested) : requested;
+    }
+
+    private static EdgeDirection Flip(EdgeDirection direction) => direction switch
+    {
+        EdgeDirection.Outgoing => EdgeDirection.Incoming,
+        EdgeDirection.Incoming => EdgeDirection.Outgoing,
+        _ => EdgeDirection.Both,
+    };
+
+    /// <summary>Canonical stored name for a traversal filter, or null when unset.</summary>
+    private string? CanonicalEdgeType(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        return _vocabulary.TryGetCanonicalEdgeTypeName(name, out var canonical)
+            ? canonical
+            : Normalize(name);
+    }
+
+    /// <summary>
+    /// Edges are stored in the canonical direction only. Naming the inverse on a write
+    /// is a mistake worth reporting precisely, not a silent swap.
+    /// </summary>
+    private KnowledgeValidationException InverseEdgeTypeException(string edgeType)
+        => _vocabulary.TryResolveEdgeType(edgeType, out var resolution) && resolution.Reversed
+            ? new KnowledgeValidationException(
+                $"'{edgeType}' is the inverse of '{resolution.Definition.Name}'; add the edge as '{resolution.Definition.Name}' from the opposite endpoint")
+            : new KnowledgeValidationException($"unknown edge type '{edgeType}'");
 
     private int ClampLimit(int limit)
         => Math.Clamp(limit <= 0 ? 100 : limit, 1, _options.MaxPageSize);

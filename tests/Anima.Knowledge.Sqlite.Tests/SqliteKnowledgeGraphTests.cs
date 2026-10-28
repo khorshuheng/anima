@@ -400,14 +400,17 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
             (edge.Source, edge.Destination, edge.EdgeType));
     }
 
-    private static SqliteKnowledgeGraph CreateGraph(string path) => new(
+    private static SqliteKnowledgeGraph CreateGraph(
+        string path,
+        KnowledgeVocabularyCatalog? vocabulary = null) => new(
         Options.Create(new SqliteKnowledgeOptions
         {
             DatabasePath = path,
             BusyTimeoutSeconds = 5,
         }),
         Options.Create(new KnowledgeOptions()),
-        NullLogger<SqliteKnowledgeGraph>.Instance);
+        NullLogger<SqliteKnowledgeGraph>.Instance,
+        vocabulary ?? KnowledgeVocabularyLoader.LoadCore());
 
     public void Dispose()
     {

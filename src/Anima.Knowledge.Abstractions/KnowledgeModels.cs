@@ -37,8 +37,19 @@ public sealed record KnowledgeEdge
     public DateTimeOffset CreatedAt { get; init; }
 }
 
-public sealed record NodeKindDefinition(int Id, string Name, string Description);
+public sealed record NodeKindDefinition(int Id, string Name, string Description)
+{
+    /// <summary>Property keys every node of this kind must carry.</summary>
+    public IReadOnlyList<string> RequiredProps { get; init; } = [];
 
+    /// <summary>Traits consumed by code that would otherwise compare kind names.</summary>
+    public IReadOnlyList<string> Traits { get; init; } = [];
+
+    /// <summary>Pack that defined this kind: <c>core</c> or a pack name.</summary>
+    public string Source { get; init; } = KnowledgeVocabularyCatalog.CorePack;
+
+    public bool Deprecated { get; init; }
+}
 public sealed record EdgeTypeDefinition(
     int Id,
     string Name,
@@ -46,7 +57,27 @@ public sealed record EdgeTypeDefinition(
     IReadOnlySet<string> SourceKinds,
     IReadOnlySet<string> DestinationKinds,
     bool Resolves = false,
-    bool SingleOutgoing = false);
+    bool SingleOutgoing = false)
+{
+    /// <summary>Normalized endpoint pairs; an empty kind set with a wildcard pair means any kind.</summary>
+    public IReadOnlyList<EdgeKindPair> Pairs { get; init; } = [];
+
+    /// <summary>Edge type expressing this relation in the opposite direction.</summary>
+    public string? InverseName { get; init; }
+
+    public bool Symmetric { get; init; }
+
+    /// <summary>The relation may not form a cycle.</summary>
+    public bool Acyclic { get; init; }
+
+    /// <summary>Traits consumed by code that would otherwise compare edge type names.</summary>
+    public IReadOnlyList<string> Traits { get; init; } = [];
+
+    /// <summary>Pack that defined this edge type: <c>core</c> or a pack name.</summary>
+    public string Source { get; init; } = KnowledgeVocabularyCatalog.CorePack;
+
+    public bool Deprecated { get; init; }
+}
 
 public sealed record NodePatch(
     string? Name = null,

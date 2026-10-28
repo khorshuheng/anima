@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using DbUp;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -25,18 +26,43 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly string _connectionString;
     private readonly string _databasePath;
+    private readonly KnowledgeVocabularyCatalog _vocabulary;
+    private readonly HashSet<string> _plannableKinds;
+    private readonly HashSet<string> _hierarchyEdges;
+    private readonly HashSet<string> _anchorEdges;
+    private readonly string _plannableKindsJson;
+    private readonly string _hierarchyEdgesJson;
+    private readonly string _anchorEdgesJson;
 
     public SqliteKnowledgeGraph(
         IOptions<SqliteKnowledgeOptions> sqliteOptions,
         IOptions<KnowledgeOptions> knowledgeOptions,
-        ILogger<SqliteKnowledgeGraph> logger)
+        ILogger<SqliteKnowledgeGraph> logger,
+        KnowledgeVocabularyCatalog vocabulary)
     {
         ArgumentNullException.ThrowIfNull(sqliteOptions);
         ArgumentNullException.ThrowIfNull(knowledgeOptions);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(vocabulary);
         _sqliteOptions = sqliteOptions.Value;
         _knowledgeOptions = knowledgeOptions.Value;
         _logger = logger;
+        _vocabulary = vocabulary;
+
+        // Trait sets are passed to SQL as JSON arrays and expanded with json_each,
+        // so vocabulary names never appear in a query string.
+        _plannableKinds = vocabulary.NodeKindsWithTrait(KnowledgeTraits.Plannable)
+            .Select(kind => kind.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _plannableKindsJson = NamesJson(_plannableKinds);
+        _hierarchyEdges = vocabulary.EdgeTypesWithTrait(KnowledgeTraits.Hierarchy)
+            .Select(edge => edge.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _anchorEdges = vocabulary.EdgeTypesWithTrait(KnowledgeTraits.Anchor)
+            .Select(edge => edge.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _hierarchyEdgesJson = NamesJson(_hierarchyEdges);
+        _anchorEdgesJson = NamesJson(_anchorEdges);
 
         _databasePath = string.IsNullOrWhiteSpace(_sqliteOptions.DatabasePath)
             ? SqliteKnowledgeOptions.ResolveDefaultPath()
@@ -70,6 +96,11 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         return await WriteAsync(async (connection, transaction, token) =>
         {
             var kindId = await ResolveKindAsync(connection, transaction, draft.Kind, token);
+            if (_vocabulary.TryGetKind(draft.Kind, out var kindDefinition))
+            {
+                KnowledgePropertyRules.EnsureRequired(kindDefinition, draft.Properties);
+            }
+
             var id = await InsertNodeAsync(
                 connection,
                 transaction,
@@ -102,6 +133,11 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             var description = patch.Description ?? existing.Description;
             var content = patch.Content ?? existing.Content;
             var properties = patch.Properties ?? existing.Properties;
+            if (patch.Properties is not null && _vocabulary.TryGetKind(existing.Kind, out var kindDefinition))
+            {
+                KnowledgePropertyRules.EnsureRequired(kindDefinition, properties);
+            }
+
             var now = Now();
 
             await using var command = connection.CreateCommand();
@@ -299,16 +335,16 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             }
 
             var parent = await LoadNodeAsync(connection, transaction, parentId, token);
-            if (parent.Kind is not (KnowledgeKinds.Task or KnowledgeKinds.Goal))
+            if (!_plannableKinds.Contains(parent.Kind))
             {
                 throw new KnowledgeValidationException(
-                    $"task parent must be a task or goal, got '{parent.Kind}'");
+                    $"task parent must be a plannable kind, got '{parent.Kind}'");
             }
 
             if (!await IsAnchoredAsync(connection, transaction, parentId, token))
             {
                 throw new KnowledgeValidationException(
-                    $"part_of parent references node {parentId}, which is not attached to a repo via belongs_to");
+                    $"parent references node {parentId}, which is not anchored");
             }
 
             var kindId = await ResolveKindAsync(connection, transaction, KnowledgeKinds.Task, token);
@@ -397,18 +433,61 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
 
     private void Initialize()
     {
+        Migrate();
+
         using var connection = OpenConnection();
         if (_sqliteOptions.EnableWal)
         {
             Execute(connection, "PRAGMA journal_mode = WAL;");
         }
 
-        Migrate(connection);
+        EnsureSchemaShape(connection);
+
         Seed(connection);
         _logger.LogInformation(
             "SQLite knowledge graph ready at {DatabasePath} ({NodeCount} nodes).",
             _databasePath,
             ScalarLong(connection, "SELECT COUNT(*) FROM node;"));
+    }
+
+    /// <summary>
+    /// DbUp journals applied scripts by name only, so editing a script that already
+    /// ran is skipped rather than re-applied. During pre-release schema churn that
+    /// leaves a database whose shape no longer matches the code; fail at startup with
+    /// a reset instruction instead of a SQL error on the first request.
+    /// </summary>
+    private void EnsureSchemaShape(SqliteConnection connection)
+    {
+        var missing = SchemaContract.Columns
+            .SelectMany(group => group.Value
+                .Where(column => !ColumnNames(connection, group.Key).Contains(column))
+                .Select(column => $"{group.Key}.{column}"))
+            .ToArray();
+        if (missing.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"SQLite knowledge database '{_databasePath}' predates the current schema (missing {string.Join(", ", missing)}). " +
+                "Delete the database file and restart; the schema is recreated by the migration scripts. See docs/deployment.md.");
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Security",
+        "CA2100:Review SQL queries for security vulnerabilities",
+        Justification = "Only a SchemaContract table name is interpolated; no user input reaches the query.")]
+    private static HashSet<string> ColumnNames(SqliteConnection connection, string table)
+    {
+        SchemaContract.EnsureKnownTable(table);
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table});";
+        using var reader = command.ExecuteReader();
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (reader.Read())
+        {
+            columns.Add(reader.GetString(1));
+        }
+
+        return columns;
     }
 
     private SqliteConnection OpenConnection()
@@ -445,9 +524,9 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         try
         {
             await using var connection = await OpenConnectionAsync(cancellationToken);
-            using var transaction = connection.BeginTransaction();
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
             var result = await action(connection, transaction, cancellationToken);
-            transaction.Commit();
+            await transaction.CommitAsync(cancellationToken);
             return result;
         }
         finally
@@ -469,41 +548,33 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         var destination = await LoadNodeAsync(connection, transaction, destinationId, cancellationToken);
         var definition = await LoadEdgeTypeAsync(connection, transaction, edgeType, cancellationToken);
 
-        if (definition.SourceKinds.Count > 0 && !definition.SourceKinds.Contains(source.Kind))
+        if (!_vocabulary.AllowsPair(definition.Name, source.Kind, destination.Kind))
         {
             throw new KnowledgeValidationException(
-                $"edge type '{definition.Name}' source references node {source.Id} of kind '{source.Kind}', " +
-                $"expected one of {string.Join(", ", definition.SourceKinds)}");
+                $"edge type '{definition.Name}' does not allow {source.Kind} -> {destination.Kind}; " +
+                $"allowed pairs: {DescribePairs(definition)}");
         }
 
-        if (definition.DestinationKinds.Count > 0 && !definition.DestinationKinds.Contains(destination.Kind))
+        if (definition.Acyclic && await ReachesAsync(connection, transaction, definition.Name, destination.Id, source.Id, cancellationToken))
         {
             throw new KnowledgeValidationException(
-                $"edge type '{definition.Name}' destination references node {destination.Id} of kind '{destination.Kind}', " +
-                $"expected one of {string.Join(", ", definition.DestinationKinds)}");
+                $"edge type '{definition.Name}' is acyclic, and adding {source.Id} -> {destination.Id} would close a cycle");
         }
 
-        await using (var existingCommand = connection.CreateCommand())
+        var existing = await FindEdgeAsync(connection, transaction, sourceId, destinationId, definition, cancellationToken);
+        if (existing is not null)
         {
-            existingCommand.Transaction = transaction;
-            existingCommand.CommandText = """
-                SELECT id, created_at FROM edge
-                WHERE source = $source AND destination = $destination AND edge_type_id = $type;
-                """;
-            existingCommand.Parameters.AddWithValue("$source", sourceId);
-            existingCommand.Parameters.AddWithValue("$destination", destinationId);
-            existingCommand.Parameters.AddWithValue("$type", definition.Id);
-            await using var reader = await existingCommand.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
+            return existing;
+        }
+
+        // A symmetric relation is undirected: writing the mirror would store the same
+        // fact twice, and reads would then report the same neighbour twice.
+        if (definition.Symmetric)
+        {
+            var mirrored = await FindEdgeAsync(connection, transaction, destinationId, sourceId, definition, cancellationToken);
+            if (mirrored is not null)
             {
-                return new KnowledgeEdge
-                {
-                    Id = reader.GetInt64(0),
-                    Source = sourceId,
-                    Destination = destinationId,
-                    EdgeType = definition.Name,
-                    CreatedAt = ParseTime(reader.GetString(1)),
-                };
+                return mirrored;
             }
         }
 
@@ -588,17 +659,37 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         string kind,
         CancellationToken cancellationToken)
     {
-        var normalized = Require(kind, "kind").ToLowerInvariant();
+        var normalized = KnowledgeVocabularyLoader.NormalizeName(Require(kind, "kind"));
+        var usedIds = new List<int>();
+        long? inactiveId = null;
         await using (var select = connection.CreateCommand())
         {
             select.Transaction = transaction;
-            select.CommandText = "SELECT id FROM node_kind WHERE name = $name COLLATE NOCASE;";
+            select.CommandText = "SELECT id, active, deprecated FROM node_kind WHERE name = $name COLLATE NOCASE;";
             select.Parameters.AddWithValue("$name", normalized);
-            var value = await select.ExecuteScalarAsync(cancellationToken);
-            if (value is not null and not DBNull)
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
             {
-                return Convert.ToInt64(value, CultureInfo.InvariantCulture);
+                var existingId = reader.GetInt64(0);
+                if (reader.GetInt64(1) != 0)
+                {
+                    if (reader.GetInt64(2) != 0)
+                    {
+                        _logger.LogWarning(
+                            "Writing node kind {Kind}, which the vocabulary marks deprecated.", normalized);
+                    }
+
+                    return existingId;
+                }
+
+                inactiveId = existingId;
             }
+        }
+
+        if (inactiveId is not null)
+        {
+            throw new KnowledgeValidationException(
+                $"node kind '{normalized}' is inactive because the pack that defined it was removed; restore the pack or use another kind");
         }
 
         if (!_knowledgeOptions.AllowAdHocKinds)
@@ -606,19 +697,34 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             throw new KnowledgeValidationException($"unknown node kind '{kind}'");
         }
 
+        // Ad-hoc kinds share the pack id band, so a pack that later formalizes this
+        // kind computes the same deterministic id and nothing has to be migrated.
+        await using (var idsCommand = connection.CreateCommand())
+        {
+            idsCommand.Transaction = transaction;
+            idsCommand.CommandText = "SELECT id FROM node_kind;";
+            await using var reader = await idsCommand.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                usedIds.Add((int)reader.GetInt64(0));
+            }
+        }
+
+        var adHocId = KnowledgeVocabularyLoader.AllocatePackId(normalized, usedIds);
         await using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
-            INSERT INTO node_kind(name, description, updated_at) VALUES($name, $description, $updated)
+            INSERT INTO node_kind(id, name, description, required_props, traits, source, active, deprecated, updated_at)
+            VALUES($id, $name, 'Ad-hoc kind.', '[]', '[]', 'ad-hoc', 1, 0, $updated)
             RETURNING id;
             """;
+        insert.Parameters.AddWithValue("$id", adHocId);
         insert.Parameters.AddWithValue("$name", normalized);
-        insert.Parameters.AddWithValue("$description", "Ad-hoc kind.");
         insert.Parameters.AddWithValue("$updated", Now());
         var id = Convert.ToInt64(
             await insert.ExecuteScalarAsync(cancellationToken),
             CultureInfo.InvariantCulture);
-        _logger.LogInformation("Registered ad-hoc node kind {Kind}.", normalized);
+        _logger.LogInformation("Registered ad-hoc node kind {Kind} as id {Id}.", normalized, id);
         return id;
     }
 
@@ -631,16 +737,30 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT id, name, description, resolves, single_outgoing, source_kinds, destination_kinds
-            FROM edge_type WHERE name = $name COLLATE NOCASE;
+            SELECT id, name, description, resolves, single_outgoing, source_kinds, destination_kinds,
+                   pairs, inverse_name, symmetric, acyclic, traits, source, deprecated
+            FROM edge_type WHERE name = $name COLLATE NOCASE AND active = 1;
             """;
         command.Parameters.AddWithValue("$name", Require(edgeType, "edgeType"));
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
-            throw new KnowledgeValidationException($"unknown edge type '{edgeType}'");
+            if (await ExistsInactiveEdgeTypeAsync(connection, transaction, edgeType, cancellationToken))
+            {
+                throw new KnowledgeValidationException(
+                    $"edge type '{edgeType}' is inactive because the pack that defined it was removed; restore the pack or use another edge type");
+            }
+
+            throw InverseEdgeTypeException(edgeType);
         }
 
+        if (reader.GetInt64(13) != 0)
+        {
+            _logger.LogWarning("Writing edge type {EdgeType}, which the vocabulary marks deprecated.", edgeType);
+        }
+
+        // The write path needs the same view of the definition as the read path: a
+        // partial projection silently loses resolves/single_outgoing/acyclic.
         return new EdgeTypeDefinition(
             (int)reader.GetInt64(0),
             reader.GetString(1),
@@ -648,7 +768,16 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             ParseKinds(reader.GetString(5)),
             ParseKinds(reader.GetString(6)),
             reader.GetInt64(3) != 0,
-            reader.GetInt64(4) != 0);
+            reader.GetInt64(4) != 0)
+        {
+            Pairs = DeserializePairs(reader.GetString(7)),
+            InverseName = await reader.IsDBNullAsync(8, cancellationToken) ? null : reader.GetString(8),
+            Symmetric = reader.GetInt64(9) != 0,
+            Acyclic = reader.GetInt64(10) != 0,
+            Traits = DeserializeNames(reader.GetString(11)),
+            Source = reader.GetString(12),
+            Deprecated = reader.GetInt64(13) != 0,
+        };
     }
 
     private async Task<KnowledgeNode> LoadNodeAsync(
@@ -733,27 +862,26 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
 
         while (seen.Add(currentId))
         {
-            await using var nodeCommand = connection.CreateCommand();
-            nodeCommand.Transaction = transaction;
-            nodeCommand.CommandText = """
-                SELECT k.name FROM node n JOIN node_kind k ON k.id = n.kind_id WHERE n.id = $id;
-                """;
-            nodeCommand.Parameters.AddWithValue("$id", currentId);
-            var kind = await nodeCommand.ExecuteScalarAsync(cancellationToken) as string;
-            if (kind is null)
+            await using (var nodeCommand = connection.CreateCommand())
             {
-                return false;
+                nodeCommand.Transaction = transaction;
+                nodeCommand.CommandText = "SELECT 1 FROM node WHERE id = $id;";
+                nodeCommand.Parameters.AddWithValue("$id", currentId);
+                if (await nodeCommand.ExecuteScalarAsync(cancellationToken) is null)
+                {
+                    return false;
+                }
             }
 
-            if (kind == KnowledgeKinds.Goal)
+            await using (var anchorCommand = connection.CreateCommand())
             {
-                await using var anchorCommand = connection.CreateCommand();
                 anchorCommand.Transaction = transaction;
                 anchorCommand.CommandText = """
                     SELECT COUNT(*) FROM edge e JOIN edge_type t ON t.id = e.edge_type_id
-                    WHERE e.source = $id AND t.name = 'belongs_to';
+                    WHERE e.source = $id AND t.name IN (SELECT value FROM json_each($anchor));
                     """;
                 anchorCommand.Parameters.AddWithValue("$id", currentId);
+                anchorCommand.Parameters.AddWithValue("$anchor", _anchorEdgesJson);
                 var anchored = Convert.ToInt64(
                     await anchorCommand.ExecuteScalarAsync(cancellationToken),
                     CultureInfo.InvariantCulture);
@@ -767,9 +895,10 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             parentCommand.Transaction = transaction;
             parentCommand.CommandText = """
                 SELECT e.destination FROM edge e JOIN edge_type t ON t.id = e.edge_type_id
-                WHERE e.source = $id AND t.name = 'part_of';
+                WHERE e.source = $id AND t.name IN (SELECT value FROM json_each($hierarchy));
                 """;
             parentCommand.Parameters.AddWithValue("$id", currentId);
+            parentCommand.Parameters.AddWithValue("$hierarchy", _hierarchyEdgesJson);
             var parent = await parentCommand.ExecuteScalarAsync(cancellationToken);
             if (parent is null or DBNull)
             {
@@ -782,30 +911,43 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         return false;
     }
 
-    private void Migrate(SqliteConnection connection)
+    /// <summary>
+    /// Applies embedded migration scripts in filename order. DbUp journals applied
+    /// scripts in <c>SchemaVersions</c>, so a restart is a no-op and an already
+    /// applied script is never re-run.
+    /// </summary>
+    private void Migrate()
     {
-        var version = ScalarLong(connection, "PRAGMA user_version;");
-        if (version >= 1)
+        var upgrader = DeployChanges.To
+            .SqliteDatabase(_connectionString)
+            .WithScriptsEmbeddedInAssembly(
+                typeof(SqliteKnowledgeGraph).Assembly,
+                resourceName => resourceName.Contains(".Migrations.", StringComparison.Ordinal))
+            .WithTransactionPerScript()
+            .LogTo(_logger)
+            .Build();
+
+        var result = upgrader.PerformUpgrade();
+        if (!result.Successful)
         {
-            return;
+            var failed = result.Error ?? new InvalidOperationException("unknown DbUp failure");
+            throw new InvalidOperationException(
+                $"SQLite knowledge migration failed at {_databasePath}: {failed.Message}",
+                failed);
         }
 
-        var assembly = typeof(SqliteKnowledgeGraph).Assembly;
-        var resource = assembly.GetManifestResourceNames()
-            .Single(name => name.EndsWith("0001_init.sql", StringComparison.Ordinal));
-        using var stream = assembly.GetManifestResourceStream(resource)
-            ?? throw new InvalidOperationException($"missing migration resource {resource}");
-        using var reader = new StreamReader(stream);
-        var sql = reader.ReadToEnd();
-
-        using (var command = connection.CreateCommand())
+        var applied = result.Scripts.Count();
+        if (applied == 0)
         {
-            command.CommandText = sql;
-            command.ExecuteNonQuery();
+            _logger.LogInformation("SQLite knowledge schema is up to date at {DatabasePath}.", _databasePath);
         }
-
-        Execute(connection, "PRAGMA user_version = 1;");
-        _logger.LogInformation("Applied SQLite knowledge migration 1.");
+        else
+        {
+            _logger.LogInformation(
+                "Applied {Count} SQLite knowledge migration script(s) to {DatabasePath}.",
+                applied,
+                _databasePath);
+        }
     }
 
     private void Seed(SqliteConnection connection)
@@ -813,33 +955,46 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         using var transaction = connection.BeginTransaction();
         var now = Now();
 
-        foreach (var kind in KnowledgeKinds.Definitions)
+        foreach (var kind in _vocabulary.NodeKinds)
         {
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
-                INSERT OR IGNORE INTO node_kind(id, name, description, updated_at)
-                VALUES($id, $name, $description, $updated);
-                UPDATE node_kind SET description = $description, updated_at = $updated WHERE name = $name;
+                INSERT OR IGNORE INTO node_kind(
+                    id, name, description, required_props, traits, source, active, deprecated, updated_at)
+                VALUES($id, $name, $description, $required, $traits, $source, 1, $deprecated, $updated);
+                UPDATE node_kind SET description = $description, required_props = $required,
+                    traits = $traits, source = $source, active = 1, deprecated = $deprecated,
+                    updated_at = $updated
+                WHERE name = $name;
                 """;
             command.Parameters.AddWithValue("$id", kind.Id);
             command.Parameters.AddWithValue("$name", kind.Name);
             command.Parameters.AddWithValue("$description", kind.Description);
+            command.Parameters.AddWithValue("$required", JsonSerializer.Serialize(kind.RequiredProps));
+            command.Parameters.AddWithValue("$traits", JsonSerializer.Serialize(kind.Traits));
+            command.Parameters.AddWithValue("$source", kind.Source);
+            command.Parameters.AddWithValue("$deprecated", kind.Deprecated ? 1 : 0);
             command.Parameters.AddWithValue("$updated", now);
             command.ExecuteNonQuery();
+            EnsureIdMatches(connection, transaction, "node_kind", kind.Name, kind.Id);
         }
 
-        foreach (var edgeType in KnowledgeEdgeTypes.Definitions)
+        foreach (var edgeType in _vocabulary.EdgeTypes)
         {
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
                 INSERT OR IGNORE INTO edge_type(
-                    id, name, description, resolves, single_outgoing, source_kinds, destination_kinds, updated_at)
-                VALUES($id, $name, $description, $resolves, $single, $sources, $destinations, $updated);
+                    id, name, description, resolves, single_outgoing, source_kinds, destination_kinds,
+                    pairs, inverse_name, symmetric, acyclic, traits, source, active, deprecated, updated_at)
+                VALUES($id, $name, $description, $resolves, $single, $sources, $destinations,
+                    $pairs, $inverse, $symmetric, $acyclic, $traits, $source, 1, $deprecated, $updated);
                 UPDATE edge_type SET description = $description, resolves = $resolves,
                     single_outgoing = $single, source_kinds = $sources,
-                    destination_kinds = $destinations, updated_at = $updated
+                    destination_kinds = $destinations, pairs = $pairs, inverse_name = $inverse,
+                    symmetric = $symmetric, acyclic = $acyclic, traits = $traits,
+                    source = $source, active = 1, deprecated = $deprecated, updated_at = $updated
                 WHERE name = $name;
                 """;
             command.Parameters.AddWithValue("$id", edgeType.Id);
@@ -849,12 +1004,305 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             command.Parameters.AddWithValue("$single", edgeType.SingleOutgoing ? 1 : 0);
             command.Parameters.AddWithValue("$sources", JoinKinds(edgeType.SourceKinds));
             command.Parameters.AddWithValue("$destinations", JoinKinds(edgeType.DestinationKinds));
+            command.Parameters.AddWithValue("$pairs", SerializePairs(edgeType.Pairs));
+            command.Parameters.AddWithValue("$inverse", (object?)edgeType.InverseName ?? DBNull.Value);
+            command.Parameters.AddWithValue("$symmetric", edgeType.Symmetric ? 1 : 0);
+            command.Parameters.AddWithValue("$acyclic", edgeType.Acyclic ? 1 : 0);
+            command.Parameters.AddWithValue("$traits", JsonSerializer.Serialize(edgeType.Traits));
+            command.Parameters.AddWithValue("$source", edgeType.Source);
+            command.Parameters.AddWithValue("$deprecated", edgeType.Deprecated ? 1 : 0);
             command.Parameters.AddWithValue("$updated", now);
             command.ExecuteNonQuery();
+            EnsureIdMatches(connection, transaction, "edge_type", edgeType.Name, edgeType.Id);
         }
 
+        Reconcile(connection, transaction, now);
         transaction.Commit();
     }
+
+    /// <summary>
+    /// A row created before the vocabulary claimed the name (an ad-hoc write) keeps its
+    /// old id because the upsert matches on name. The id is part of the wire shape and
+    /// must agree with the catalog, so disagreeing rows fail startup instead of diverging
+    /// silently between SQLite and the in-memory store.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Security",
+        "CA2100:Review SQL queries for security vulnerabilities",
+        Justification = "Only a SchemaContract table name is interpolated; every value is parameterized.")]
+    private static void EnsureIdMatches(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string table,
+        string name,
+        int expected)
+    {
+        SchemaContract.EnsureKnownTable(table);
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"SELECT id FROM {table} WHERE name = $name;";
+        command.Parameters.AddWithValue("$name", name);
+        var actual = command.ExecuteScalar();
+        if (actual is null or DBNull)
+        {
+            throw new InvalidOperationException($"{table} row '{name}' disappeared during seeding");
+        }
+
+        var actualId = Convert.ToInt64(actual, CultureInfo.InvariantCulture);
+        if (actualId != expected)
+        {
+            throw new InvalidOperationException(
+                $"{table} row '{name}' has id {actualId} in the database but the vocabulary assigns {expected}. " +
+                "This happens when a name was first written as an ad-hoc kind and later claimed by a pack with a " +
+                "different id. Delete the database file and restart, or keep the original id in the pack.");
+        }
+    }
+
+    /// <summary>
+    /// Entries that are no longer in the vocabulary are deactivated when nothing uses
+    /// them and reported as an error when the graph still references them. Nothing is
+    /// deleted, and ad-hoc kinds are owned by writes rather than by packs.
+    /// </summary>
+    private void Reconcile(SqliteConnection connection, SqliteTransaction transaction, string now)
+    {
+        Deactivate(
+            connection,
+            transaction,
+            now,
+            table: "node_kind",
+            inUseSql: "SELECT COUNT(*) FROM node WHERE kind_id = $id;",
+            label: "node kind");
+        Deactivate(
+            connection,
+            transaction,
+            now,
+            table: "edge_type",
+            inUseSql: "SELECT COUNT(*) FROM edge WHERE edge_type_id = $id;",
+            label: "edge type");
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Security",
+        "CA2100:Review SQL queries for security vulnerabilities",
+        Justification = "Only a SchemaContract table name is interpolated; every value is parameterized.")]
+    private void Deactivate(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string now,
+        string table,
+        string inUseSql,
+        string label)
+    {
+        SchemaContract.EnsureKnownTable(table);
+        var activeNames = table == "node_kind"
+            ? _vocabulary.NodeKinds.Select(kind => kind.Name)
+            : _vocabulary.EdgeTypes.Select(edge => edge.Name);
+
+        var candidates = new List<(long Id, string Name)>();
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = $"""
+                SELECT id, name FROM {table}
+                WHERE active = 1 AND source <> 'ad-hoc'
+                  AND name NOT IN (SELECT value FROM json_each($names));
+                """;
+            command.Parameters.AddWithValue("$names", NamesJson(activeNames));
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                candidates.Add((reader.GetInt64(0), reader.GetString(1)));
+            }
+        }
+
+        var inUse = new List<string>();
+        foreach (var (id, name) in candidates)
+        {
+            using var usage = connection.CreateCommand();
+            usage.Transaction = transaction;
+            usage.CommandText = inUseSql;
+            usage.Parameters.AddWithValue("$id", id);
+            var count = Convert.ToInt64(
+                usage.ExecuteScalar(),
+                CultureInfo.InvariantCulture);
+            if (count > 0)
+            {
+                inUse.Add($"{name} ({count})");
+                continue;
+            }
+
+            using var deactivate = connection.CreateCommand();
+            deactivate.Transaction = transaction;
+            deactivate.CommandText = $"UPDATE {table} SET active = 0, updated_at = $now WHERE id = $id;";
+            deactivate.Parameters.AddWithValue("$id", id);
+            deactivate.Parameters.AddWithValue("$now", now);
+            deactivate.ExecuteNonQuery();
+            _logger.LogInformation("Deactivated {Label} {Name}: no longer in the vocabulary.", label, name);
+        }
+
+        if (inUse.Count > 0)
+        {
+            throw new KnowledgeValidationException(
+                $"the vocabulary no longer defines {label}(s) {string.Join(", ", inUse)}, which the graph still uses. " +
+                "Restore the pack that defined them, or remove those nodes/edges first.");
+        }
+    }
+
+    private static string SerializePairs(IReadOnlyList<EdgeKindPair> pairs)
+        => JsonSerializer.Serialize(pairs.Select(pair => new[] { pair.Source, pair.Destination }).ToArray());
+
+    private static List<EdgeKindPair> DeserializePairs(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "[]")
+        {
+            return [];
+        }
+
+        var pairs = JsonSerializer.Deserialize<string[][]>(json) ?? [];
+        return pairs
+            .Where(pair => pair.Length == 2)
+            .Select(pair => new EdgeKindPair(pair[0], pair[1]))
+            .ToList();
+    }
+
+    private static List<string> DeserializeNames(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json) || json == "[]")
+        {
+            return [];
+        }
+
+        return JsonSerializer.Deserialize<string[]>(json)?.ToList() ?? [];
+    }
+
+    private static async Task<bool> ExistsInactiveEdgeTypeAsync(
+        SqliteConnection connection,
+        SqliteTransaction? transaction,
+        string edgeType,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT 1 FROM edge_type WHERE name = $name COLLATE NOCASE AND active = 0 LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$name", edgeType);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static string DescribePairs(EdgeTypeDefinition definition)
+        => definition.Pairs.Count == 0
+            ? "any"
+            : string.Join(", ", definition.Pairs.Select(pair => $"{pair.Source}->{pair.Destination}"));
+
+    private static async Task<KnowledgeEdge?> FindEdgeAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long source,
+        long destination,
+        EdgeTypeDefinition definition,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id, created_at FROM edge
+            WHERE source = $source AND destination = $destination AND edge_type_id = $type;
+            """;
+        command.Parameters.AddWithValue("$source", source);
+        command.Parameters.AddWithValue("$destination", destination);
+        command.Parameters.AddWithValue("$type", definition.Id);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new KnowledgeEdge
+        {
+            Id = reader.GetInt64(0),
+            Source = source,
+            Destination = destination,
+            EdgeType = definition.Name,
+            CreatedAt = ParseTime(reader.GetString(1)),
+        };
+    }
+
+    /// <summary>True when <paramref name="to"/> is reachable from <paramref name="from"/> along the edge type.</summary>
+    private static async Task<bool> ReachesAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string edgeType,
+        long from,
+        long to,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            WITH RECURSIVE reach(id) AS (
+                SELECT $from
+                UNION
+                SELECT e.destination
+                FROM reach
+                JOIN edge e ON e.source = reach.id
+                JOIN edge_type t ON t.id = e.edge_type_id
+                WHERE t.name = $type COLLATE NOCASE
+            )
+            SELECT 1 FROM reach WHERE id = $to LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$from", from);
+        command.Parameters.AddWithValue("$to", to);
+        command.Parameters.AddWithValue("$type", edgeType);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    /// <summary>
+    /// A symmetric relation is undirected however it is stored, and an inverse name
+    /// reads the stored edge from the opposite end.
+    /// </summary>
+    private static EdgeDirection EffectiveDirection(EdgeTypeResolution resolution, EdgeDirection requested)
+    {
+        if (resolution.Definition.Symmetric)
+        {
+            return EdgeDirection.Both;
+        }
+
+        return resolution.Reversed ? Flip(requested) : requested;
+    }
+
+    private static EdgeDirection Flip(EdgeDirection direction) => direction switch
+    {
+        EdgeDirection.Outgoing => EdgeDirection.Incoming,
+        EdgeDirection.Incoming => EdgeDirection.Outgoing,
+        _ => EdgeDirection.Both,
+    };
+
+    /// <summary>Canonical stored name for a traversal filter, or null when unset.</summary>
+    private string? CanonicalEdgeType(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        return _vocabulary.TryGetCanonicalEdgeTypeName(name, out var canonical)
+            ? canonical
+            : KnowledgeVocabularyLoader.NormalizeName(name);
+    }
+
+    /// <summary>
+    /// Edges are stored in the canonical direction only. Naming the inverse on a write
+    /// is a mistake worth reporting precisely, not a silent swap.
+    /// </summary>
+    private KnowledgeValidationException InverseEdgeTypeException(string edgeType)
+        => _vocabulary.TryResolveEdgeType(edgeType, out var resolution) && resolution.Reversed
+            ? new KnowledgeValidationException(
+                $"'{edgeType}' is the inverse of '{resolution.Definition.Name}'; add the edge as '{resolution.Definition.Name}' from the opposite endpoint")
+            : new KnowledgeValidationException($"unknown edge type '{edgeType}'");
+
+    private static string NamesJson(IEnumerable<string> names)
+        => JsonSerializer.Serialize(names.Order(StringComparer.OrdinalIgnoreCase).ToArray());
 
     private static string JoinKinds(IReadOnlySet<string> kinds)
         => string.Join(",", kinds.Order(StringComparer.OrdinalIgnoreCase));

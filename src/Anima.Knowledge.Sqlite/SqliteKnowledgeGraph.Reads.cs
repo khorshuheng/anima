@@ -57,10 +57,23 @@ public sealed partial class SqliteKnowledgeGraph
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await EnsureNodeAsync(connection, query.NodeId, cancellationToken);
 
+        string? edgeType = null;
+        var direction = query.Direction;
+        if (query.EdgeType is not null)
+        {
+            if (!_vocabulary.TryResolveEdgeType(query.EdgeType, out var resolution))
+            {
+                return [];
+            }
+
+            edgeType = resolution.Definition.Name;
+            direction = EffectiveDirection(resolution, direction);
+        }
+
         var edges = new List<(long Id, long Source, long Destination, string Type, DateTimeOffset Created)>();
         await using (var command = connection.CreateCommand())
         {
-            var typeFilter = query.EdgeType is null
+            var typeFilter = edgeType is null
                 ? string.Empty
                 : " AND t.name = $type COLLATE NOCASE";
             command.CommandText = $"""
@@ -70,9 +83,9 @@ public sealed partial class SqliteKnowledgeGraph
                 ORDER BY e.id;
                 """;
             command.Parameters.AddWithValue("$id", query.NodeId);
-            if (query.EdgeType is not null)
+            if (edgeType is not null)
             {
-                command.Parameters.AddWithValue("$type", query.EdgeType);
+                command.Parameters.AddWithValue("$type", edgeType);
             }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -91,7 +104,7 @@ public sealed partial class SqliteKnowledgeGraph
         foreach (var edge in edges)
         {
             if (edge.Source == query.NodeId &&
-                query.Direction is EdgeDirection.Outgoing or EdgeDirection.Both)
+                direction is EdgeDirection.Outgoing or EdgeDirection.Both)
             {
                 var node = await LoadNodeAsync(connection, null, edge.Destination, cancellationToken);
                 results.Add(new NeighborResult(
@@ -108,7 +121,7 @@ public sealed partial class SqliteKnowledgeGraph
             }
 
             if (edge.Destination == query.NodeId &&
-                query.Direction is EdgeDirection.Incoming or EdgeDirection.Both)
+                direction is EdgeDirection.Incoming or EdgeDirection.Both)
             {
                 var node = await LoadNodeAsync(connection, null, edge.Source, cancellationToken);
                 results.Add(new NeighborResult(
@@ -133,7 +146,10 @@ public sealed partial class SqliteKnowledgeGraph
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT id, name, description FROM node_kind ORDER BY id;";
+        command.CommandText = """
+            SELECT id, name, description, required_props, traits, source, deprecated
+            FROM node_kind WHERE active = 1 AND deprecated = 0 ORDER BY id;
+            """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var kinds = new List<NodeKindDefinition>();
         while (await reader.ReadAsync(cancellationToken))
@@ -141,7 +157,13 @@ public sealed partial class SqliteKnowledgeGraph
             kinds.Add(new NodeKindDefinition(
                 (int)reader.GetInt64(0),
                 reader.GetString(1),
-                reader.GetString(2)));
+                reader.GetString(2))
+            {
+                RequiredProps = DeserializeNames(reader.GetString(3)),
+                Traits = DeserializeNames(reader.GetString(4)),
+                Source = reader.GetString(5),
+                Deprecated = reader.GetInt64(6) != 0,
+            });
         }
 
         return kinds;
@@ -153,8 +175,9 @@ public sealed partial class SqliteKnowledgeGraph
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT id, name, description, resolves, single_outgoing, source_kinds, destination_kinds
-            FROM edge_type ORDER BY id;
+            SELECT id, name, description, resolves, single_outgoing, source_kinds, destination_kinds,
+                   pairs, inverse_name, symmetric, acyclic, traits, source, deprecated
+            FROM edge_type WHERE active = 1 AND deprecated = 0 ORDER BY id;
             """;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         var edgeTypes = new List<EdgeTypeDefinition>();
@@ -167,7 +190,16 @@ public sealed partial class SqliteKnowledgeGraph
                 ParseKinds(reader.GetString(5)),
                 ParseKinds(reader.GetString(6)),
                 reader.GetInt64(3) != 0,
-                reader.GetInt64(4) != 0));
+                reader.GetInt64(4) != 0)
+            {
+                Pairs = DeserializePairs(reader.GetString(7)),
+                InverseName = await reader.IsDBNullAsync(8, cancellationToken) ? null : reader.GetString(8),
+                Symmetric = reader.GetInt64(9) != 0,
+                Acyclic = reader.GetInt64(10) != 0,
+                Traits = DeserializeNames(reader.GetString(11)),
+                Source = reader.GetString(12),
+                Deprecated = reader.GetInt64(13) != 0,
+            });
         }
 
         return edgeTypes;
@@ -204,7 +236,7 @@ public sealed partial class SqliteKnowledgeGraph
         var sinceFilter = query.SinceId is null ? string.Empty : " WHERE id > $sinceId";
         var nodeFilter = query.SinceId is null ? string.Empty : " WHERE n.id > $sinceId";
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        using var transaction = connection.BeginTransaction();
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
 
         var nodes = new List<GraphSnapshotNode>();
         await using (var command = connection.CreateCommand())
@@ -280,7 +312,7 @@ public sealed partial class SqliteKnowledgeGraph
             edgeCount = (int)reader.GetInt64(1);
         }
 
-        transaction.Commit();
+        await transaction.CommitAsync(cancellationToken);
         return new GraphSnapshot(
             nodes,
             edges,
@@ -481,11 +513,12 @@ public sealed partial class SqliteKnowledgeGraph
             }
         }
 
+        var viaType = CanonicalEdgeType(via);
         var hop = new HashSet<long>();
         foreach (var edge in edges)
         {
-            if (via is not null &&
-                !string.Equals(edge.Type, via, StringComparison.OrdinalIgnoreCase))
+            if (viaType is not null &&
+                !string.Equals(edge.Type, viaType, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
@@ -502,24 +535,29 @@ public sealed partial class SqliteKnowledgeGraph
         }
 
         var reachable = new HashSet<long>(hop);
-        if (descend is not null)
+        if (descend is not null && _vocabulary.TryResolveEdgeType(descend, out var descendResolution))
         {
+            // descend narrows away from the hop nodes. Children are always the edge's
+            // source side (they point at their parent), so naming the relation by its
+            // inverse changes which edges match, never the walk direction.
+            var descendType = descendResolution.Definition.Name;
             var queue = new Queue<long>(hop);
             while (queue.Count > 0)
             {
                 var current = queue.Dequeue();
                 foreach (var edge in edges)
                 {
-                    if (!string.Equals(edge.Type, descend, StringComparison.OrdinalIgnoreCase) ||
-                        edge.Destination != current)
+                    if (!string.Equals(edge.Type, descendType, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
 
-                    if (reachable.Add(edge.Source))
+                    if (edge.Destination != current || !reachable.Add(edge.Source))
                     {
-                        queue.Enqueue(edge.Source);
+                        continue;
                     }
+
+                    queue.Enqueue(edge.Source);
                 }
             }
         }
@@ -561,67 +599,39 @@ public sealed partial class SqliteKnowledgeGraph
         SqliteConnection connection,
         CancellationToken cancellationToken)
     {
-        var nodes = new List<(long Id, string Kind)>();
-        await using (var nodeCommand = connection.CreateCommand())
-        {
-            nodeCommand.CommandText = """
-                SELECT n.id, k.name FROM node n JOIN node_kind k ON k.id = n.kind_id
-                WHERE k.name IN ('task', 'goal');
-                """;
-            await using var reader = await nodeCommand.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                nodes.Add((reader.GetInt64(0), reader.GetString(1)));
-            }
-        }
-
-        var edges = new List<(long Source, long Destination, string Type)>();
-        await using (var edgeCommand = connection.CreateCommand())
-        {
-            edgeCommand.CommandText = """
-                SELECT e.source, e.destination, t.name
-                FROM edge e JOIN edge_type t ON t.id = e.edge_type_id
-                WHERE t.name IN ('part_of', 'belongs_to');
-                """;
-            await using var reader = await edgeCommand.ExecuteReaderAsync(cancellationToken);
-            while (await reader.ReadAsync(cancellationToken))
-            {
-                edges.Add((reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2)));
-            }
-        }
-
-        var kinds = nodes.ToDictionary(node => node.Id, node => node.Kind);
-        var parent = edges
-            .Where(edge => edge.Type == "part_of")
-            .GroupBy(edge => edge.Source)
-            .ToDictionary(group => group.Key, group => group.First().Destination);
-        var anchored = edges
-            .Where(edge => edge.Type == "belongs_to")
-            .Select(edge => edge.Source)
-            .ToHashSet();
-
-        return nodes.Count(node => !IsAnchored(node.Id));
-
-        bool IsAnchored(long id)
-        {
-            var seen = new HashSet<long>();
-            var current = id;
-            while (seen.Add(current))
-            {
-                if (kinds.TryGetValue(current, out var kind) &&
-                    kind == KnowledgeKinds.Goal &&
-                    anchored.Contains(current))
-                {
-                    return true;
-                }
-
-                if (!parent.TryGetValue(current, out current))
-                {
-                    return false;
-                }
-            }
-
-            return false;
-        }
+        // One recursive walk instead of loading every plannable node and every
+        // hierarchy/anchor edge into memory: a node is anchored when an ancestor
+        // reached through hierarchy edges carries an anchor edge.
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            WITH RECURSIVE
+                plannable(id) AS (
+                    SELECT n.id
+                    FROM node n JOIN node_kind k ON k.id = n.kind_id
+                    WHERE k.name IN (SELECT value FROM json_each($plannable))
+                ),
+                ancestor(node, current) AS (
+                    SELECT id, id FROM plannable
+                    UNION
+                    SELECT ancestor.node, e.destination
+                    FROM ancestor
+                    JOIN edge e ON e.source = ancestor.current
+                    JOIN edge_type t ON t.id = e.edge_type_id
+                    WHERE t.name IN (SELECT value FROM json_each($hierarchy))
+                ),
+                anchored(id) AS (
+                    SELECT DISTINCT ancestor.node
+                    FROM ancestor
+                    JOIN edge e ON e.source = ancestor.current
+                    JOIN edge_type t ON t.id = e.edge_type_id
+                    WHERE t.name IN (SELECT value FROM json_each($anchor))
+                )
+            SELECT (SELECT COUNT(*) FROM plannable) - (SELECT COUNT(*) FROM anchored);
+            """;
+        command.Parameters.AddWithValue("$plannable", _plannableKindsJson);
+        command.Parameters.AddWithValue("$hierarchy", _hierarchyEdgesJson);
+        command.Parameters.AddWithValue("$anchor", _anchorEdgesJson);
+        var unanchored = await command.ExecuteScalarAsync(cancellationToken);
+        return Convert.ToInt32(unanchored, CultureInfo.InvariantCulture);
     }
 }
