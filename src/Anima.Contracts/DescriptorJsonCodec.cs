@@ -139,7 +139,7 @@ public sealed class DescriptorJsonCodec : IMessageCodec
             }
 
             var items = new JsonArray();
-            for (var index = 0; index < array.Count; index++)
+            for (int index = 0; index < array.Count; index++)
             {
                 items.Add(NormalizeSingle(field, array[index], $"{path}[{index}]"));
             }
@@ -186,7 +186,7 @@ public sealed class DescriptorJsonCodec : IMessageCodec
                 throw new ContractValidationException($"{path}[{pair.Key}]: map values cannot be null");
             }
 
-            var key = NormalizeMapKey(keyField, pair.Key, path);
+            string key = NormalizeMapKey(keyField, pair.Key, path);
             result[key] = NormalizeField(valueField, pair.Value, $"{path}[{pair.Key}]");
         }
 
@@ -257,7 +257,7 @@ public sealed class DescriptorJsonCodec : IMessageCodec
                 return JsonValue.Create(kind == JsonValueKind.True);
 
             case FieldType.Bytes:
-                var bytes = RequireString(value, kind, path);
+                string bytes = RequireString(value, kind, path);
                 try
                 {
                     _ = Convert.FromBase64String(bytes);
@@ -304,7 +304,7 @@ public sealed class DescriptorJsonCodec : IMessageCodec
         switch (descriptor.FullName)
         {
             case "google.protobuf.Timestamp":
-                var timestamp = RequireString(value, value.GetValueKind(), path);
+                string timestamp = RequireString(value, value.GetValueKind(), path);
                 if (!DateTimeOffset.TryParse(timestamp, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _))
                 {
                     throw new ContractValidationException($"{path}: expected an RFC 3339 timestamp");
@@ -313,7 +313,7 @@ public sealed class DescriptorJsonCodec : IMessageCodec
                 return JsonValue.Create(timestamp);
 
             case "google.protobuf.Duration":
-                var duration = RequireString(value, value.GetValueKind(), path);
+                string duration = RequireString(value, value.GetValueKind(), path);
                 if (!duration.EndsWith('s') || !double.TryParse(
                         duration[..^1],
                         NumberStyles.Float,
@@ -368,7 +368,7 @@ public sealed class DescriptorJsonCodec : IMessageCodec
     {
         if (kind == JsonValueKind.String)
         {
-            var name = value.GetValue<string>();
+            string name = value.GetValue<string>();
             var enumValue = field.EnumType.FindValueByName(name)
                 ?? throw new ContractValidationException(
                     $"{path}: unknown value '{name}' for enum {field.EnumType.FullName}");
@@ -395,7 +395,7 @@ public sealed class DescriptorJsonCodec : IMessageCodec
 
         if (kind == JsonValueKind.String)
         {
-            var text = value.GetValue<string>();
+            string text = value.GetValue<string>();
             if (text is "NaN" or "Infinity" or "-Infinity")
             {
                 return JsonValue.Create(text);
@@ -407,8 +407,8 @@ public sealed class DescriptorJsonCodec : IMessageCodec
 
     private static int ParseInt32(JsonNode value, JsonValueKind kind, string path)
     {
-        if (TryGetIntegralText(value, kind, out var text) &&
-            int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        if (TryGetIntegralText(value, kind, out string? text) &&
+            int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
         {
             return parsed;
         }
@@ -418,8 +418,8 @@ public sealed class DescriptorJsonCodec : IMessageCodec
 
     private static uint ParseUInt32(JsonNode value, JsonValueKind kind, string path)
     {
-        if (TryGetIntegralText(value, kind, out var text) &&
-            uint.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        if (TryGetIntegralText(value, kind, out string? text) &&
+            uint.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out uint parsed))
         {
             return parsed;
         }
@@ -429,8 +429,8 @@ public sealed class DescriptorJsonCodec : IMessageCodec
 
     private static long ParseInt64(JsonNode value, JsonValueKind kind, string path)
     {
-        if (TryGetIntegralText(value, kind, out var text) &&
-            long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        if (TryGetIntegralText(value, kind, out string? text) &&
+            long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsed))
         {
             return parsed;
         }
@@ -440,8 +440,8 @@ public sealed class DescriptorJsonCodec : IMessageCodec
 
     private static ulong ParseUInt64(JsonNode value, JsonValueKind kind, string path)
     {
-        if (TryGetIntegralText(value, kind, out var text) &&
-            ulong.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        if (TryGetIntegralText(value, kind, out string? text) &&
+            ulong.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out ulong parsed))
         {
             return parsed;
         }

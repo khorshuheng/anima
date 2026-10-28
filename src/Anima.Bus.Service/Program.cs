@@ -13,7 +13,7 @@ builder.Services.AddRepoContracts();
 builder.Services.AddInProcBus();
 builder.Services.Configure<BusOptions>(builder.Configuration.GetSection("Anima:Bus"));
 
-var allowedOrigins = builder.Configuration.GetSection("Anima:Bus:AllowedOrigins").Get<string[]>()
+string[] allowedOrigins = builder.Configuration.GetSection("Anima:Bus:AllowedOrigins").Get<string[]>()
     ?? ["http://127.0.0.1:7415", "http://localhost:7415", "http://127.0.0.1:5173", "http://localhost:5173"];
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
     policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod()));
@@ -28,7 +28,7 @@ app.MapPost("/api/bus/publish", async (
     IMessageCodec codec,
     CancellationToken cancellationToken) =>
 {
-    var contentType = request.ContentType ?? ContractContentTypes.ProtobufJson;
+    string contentType = request.ContentType ?? ContractContentTypes.ProtobufJson;
     byte[] payload;
 
     if (!string.IsNullOrWhiteSpace(request.PayloadBase64))
@@ -110,7 +110,7 @@ app.MapGet("/api/bus/stream", async (
     IMessageBus bus,
     CancellationToken cancellationToken) =>
 {
-    var topics = context.Request.Query["topics"].FirstOrDefault() ?? BusTopics.All;
+    string topics = context.Request.Query["topics"].FirstOrDefault() ?? BusTopics.All;
     context.Response.Headers.ContentType = "text/event-stream";
     context.Response.Headers.CacheControl = "no-cache";
 
@@ -140,7 +140,7 @@ app.MapGet("/api/bus/stream", async (
         // the response stream.
         await foreach (var envelope in channel.Reader.ReadAllAsync(cancellationToken))
         {
-            var json = JsonSerializer.Serialize(BusEnvelopeJson.ToJson(envelope), BusJson.Sse);
+            string json = JsonSerializer.Serialize(BusEnvelopeJson.ToJson(envelope), BusJson.Sse);
             await context.Response.WriteAsync($"event: message\ndata: {json}\n\n", cancellationToken);
             await context.Response.Body.FlushAsync(cancellationToken);
         }

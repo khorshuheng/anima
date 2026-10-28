@@ -44,7 +44,7 @@ public sealed class BusClientTests
             "anima.test.v1.Ping",
             Encoding.UTF8.GetBytes("""{"text":"hi"}"""),
             ContractContentTypes.ProtobufJson);
-        var frame = "event: message\ndata: " + BusEnvelopeJson.ToJson(envelope).ToJsonString() + "\n\n";
+        string frame = "event: message\ndata: " + BusEnvelopeJson.ToJson(envelope).ToJsonString() + "\n\n";
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(frame));
 
         var items = new List<MessageEnvelope>();
@@ -65,10 +65,10 @@ public sealed class BusClientTests
             "anima.test.v1.Ping",
             Encoding.UTF8.GetBytes("{}"),
             ContractContentTypes.ProtobufJson);
-        var frame = "event: ready\ndata: {}\n\n" +
+        string frame = "event: ready\ndata: {}\n\n" +
                     "event: message\ndata: " + BusEnvelopeJson.ToJson(envelope).ToJsonString() + "\n\n";
         await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(frame));
-        var ready = false;
+        bool ready = false;
 
         var items = new List<MessageEnvelope>();
         await foreach (var item in SseEnvelopeReader.ReadAsync(

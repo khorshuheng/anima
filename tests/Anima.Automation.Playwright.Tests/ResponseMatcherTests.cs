@@ -16,10 +16,7 @@ public sealed class GlobPatternTests
     [InlineData("http://uat.local/x", null, true)]
     [InlineData(null, "*", false)]
     [InlineData("", "*", true)]
-    public void Glob_matches_expected_urls(string? value, string? pattern, bool expected)
-    {
-        Assert.Equal(expected, GlobPattern.IsMatch(value, pattern));
-    }
+    public void Glob_matches_expected_urls(string? value, string? pattern, bool expected) => Assert.Equal(expected, GlobPattern.IsMatch(value, pattern));
 }
 
 public sealed class ResponseMatcherTests
@@ -36,10 +33,7 @@ public sealed class ResponseMatcherTests
         };
 
     [Fact]
-    public void Empty_matcher_matches_any_response()
-    {
-        Assert.True(new ResponseMatcher().Matches(Response()));
-    }
+    public void Empty_matcher_matches_any_response() => Assert.True(new ResponseMatcher().Matches(Response()));
 
     [Fact]
     public void Non_response_events_never_match()

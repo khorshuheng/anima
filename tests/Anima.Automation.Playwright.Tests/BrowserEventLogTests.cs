@@ -120,7 +120,7 @@ public sealed class BrowserEventLogTests
     {
         var log = new BrowserEventLog(10);
         using var cancellation = new CancellationTokenSource();
-        var delivered = 0;
+        int delivered = 0;
 
         var reader = Task.Run(async () =>
         {
@@ -153,7 +153,7 @@ public sealed class BrowserEventLogTests
             ValueTask<bool> pending = enumeration.MoveNextAsync();
 
             // Far more than the subscriber channel capacity: appends must not block.
-            for (var index = 0; index < 1_000; index++)
+            for (int index = 0; index < 1_000; index++)
             {
                 log.Append(new BrowserEvent { Kind = BrowserEventKind.Console, Text = "line" });
             }
@@ -164,7 +164,7 @@ public sealed class BrowserEventLogTests
 
             // The subscriber fell behind and lost its oldest events; how many it kept
             // is a Channel implementation detail, so only forward progress is asserted.
-            var first = enumeration.Current.Sequence;
+            long first = enumeration.Current.Sequence;
 
             log.Append(new BrowserEvent { Kind = BrowserEventKind.Console, Text = "after" });
             Assert.True(await enumeration.MoveNextAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5)));
@@ -187,7 +187,7 @@ public sealed class BrowserEventLogTests
         using var stop = new CancellationTokenSource();
         var writer = Task.Run(async () =>
         {
-            var sequence = 0;
+            int sequence = 0;
             while (!stop.IsCancellationRequested)
             {
                 log.Append(new BrowserEvent { Kind = BrowserEventKind.Console, Text = $"live-{sequence++}" });
@@ -272,7 +272,7 @@ public sealed class BrowserEventLogTests
 
     private static BrowserEventLog Record(BrowserEventLog log, int count)
     {
-        for (var index = 0; index < count; index++)
+        for (int index = 0; index < count; index++)
         {
             log.Append(new BrowserEvent { Kind = BrowserEventKind.Navigation, Url = $"/page/{index}" });
         }

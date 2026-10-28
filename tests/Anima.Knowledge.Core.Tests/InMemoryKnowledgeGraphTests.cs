@@ -175,7 +175,7 @@ public sealed class InMemoryKnowledgeGraphTests
         Assert.Equal(4, all.NodeCount);
         Assert.Equal(4, all.EdgeCount);
         Assert.Equal(
-            new[] { repo.Id, plan.Goal!.Id, plan.Tasks[0].Node.Id, plan.Tasks[1].Node.Id },
+            [repo.Id, plan.Goal!.Id, plan.Tasks[0].Node.Id, plan.Tasks[1].Node.Id],
             all.Nodes.Select(node => node.Id));
 
         var capped = await graph.GetGraphAsync(new GraphSnapshotQuery { MaxNodes = 2, MaxEdges = 1 });
@@ -205,7 +205,7 @@ public sealed class InMemoryKnowledgeGraphTests
 
         var all = await graph.GetGraphAsync(new GraphSnapshotQuery { Newest = true });
 
-        Assert.Equal(new[] { ui.Id, api.Id, plan.Goal!.Id, repo.Id }, all.Nodes.Select(node => node.Id));
+        Assert.Equal([ui.Id, api.Id, plan.Goal!.Id, repo.Id], all.Nodes.Select(node => node.Id));
         Assert.Equal(
             all.Edges.Select(edge => edge.Id).OrderDescending(),
             all.Edges.Select(edge => edge.Id));
@@ -213,7 +213,7 @@ public sealed class InMemoryKnowledgeGraphTests
         var window = await graph.GetGraphAsync(new GraphSnapshotQuery { Newest = true, MaxNodes = 2 });
 
         Assert.True(window.Truncated);
-        Assert.Equal(new[] { ui.Id, api.Id }, window.Nodes.Select(node => node.Id));
+        Assert.Equal([ui.Id, api.Id], window.Nodes.Select(node => node.Id));
         Assert.Equal(4, window.NodeCount);
         var edge = Assert.Single(window.Edges);
         Assert.Equal((ui.Id, api.Id, KnowledgeEdgeTypes.DependsOn), (edge.Source, edge.Destination, edge.EdgeType));
@@ -237,7 +237,7 @@ public sealed class InMemoryKnowledgeGraphTests
         var delta = await graph.GetGraphAsync(new GraphSnapshotQuery { SinceId = goal.Id });
 
         Assert.Equal(
-            new[] { plan.Tasks[0].Node.Id, plan.Tasks[1].Node.Id },
+            [plan.Tasks[0].Node.Id, plan.Tasks[1].Node.Id],
             delta.Nodes.Select(node => node.Id));
         Assert.Equal(4, delta.NodeCount);
         Assert.True(delta.Truncated);
@@ -563,10 +563,10 @@ public sealed class EdgeSemanticsTests
                 Descend = descend,
                 Scope = KnowledgeScope.All,
             });
-            return page.Items.Select(item => item.Name).Order(StringComparer.Ordinal).ToArray();
+            return [.. page.Items.Select(item => item.Name).Order(StringComparer.Ordinal)];
         }
 
-        var canonical = await Names(Responds);
+        string[] canonical = await Names(Responds);
         Assert.Equal(new[] { "a1", "a2" }, canonical);
         Assert.Equal(canonical, await Names(RespondedBy));
         Assert.Equal(canonical, await Names(RespondedBy.ToUpperInvariant()));

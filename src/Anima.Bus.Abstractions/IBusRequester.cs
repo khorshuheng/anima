@@ -40,7 +40,7 @@ public sealed class BusRequester : IBusRequester
         ArgumentNullException.ThrowIfNull(request);
         options ??= new BusRequestOptions();
 
-        var replyTopic = options.ReplyTopic ?? $"{BusTopics.ReplyPrefix}.{request.MessageId}";
+        string replyTopic = options.ReplyTopic ?? $"{BusTopics.ReplyPrefix}.{request.MessageId}";
         var reply = new TaskCompletionSource<MessageEnvelope>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var subscription = await _subscriber.SubscribeAsync(

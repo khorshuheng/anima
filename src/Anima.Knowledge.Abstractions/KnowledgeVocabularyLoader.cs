@@ -67,7 +67,7 @@ public sealed class KnowledgeVocabularyCatalog
     /// </summary>
     public bool TryResolveEdgeType(string name, out EdgeTypeResolution resolution)
     {
-        var normalized = KnowledgeVocabularyLoader.NormalizeName(name);
+        string normalized = KnowledgeVocabularyLoader.NormalizeName(name);
         if (_edgeTypes.TryGetValue(normalized, out var direct))
         {
             resolution = new EdgeTypeResolution(direct, Reversed: false);
@@ -114,8 +114,8 @@ public sealed class KnowledgeVocabularyCatalog
             return false;
         }
 
-        var source = KnowledgeVocabularyLoader.NormalizeName(sourceKind);
-        var destination = KnowledgeVocabularyLoader.NormalizeName(destinationKind);
+        string source = KnowledgeVocabularyLoader.NormalizeName(sourceKind);
+        string destination = KnowledgeVocabularyLoader.NormalizeName(destinationKind);
         foreach (var pair in definition.Pairs)
         {
             if (Matches(pair.Source, source) && Matches(pair.Destination, destination))
@@ -139,17 +139,15 @@ public sealed class KnowledgeVocabularyCatalog
 
     /// <summary>Node kinds carrying <paramref name="trait"/>, ordered by id.</summary>
     public IReadOnlyList<NodeKindDefinition> NodeKindsWithTrait(string trait)
-        => NodeKinds
+        => [.. NodeKinds
             .Where(kind => kind.Traits.Contains(trait, StringComparer.OrdinalIgnoreCase))
-            .OrderBy(kind => kind.Id)
-            .ToArray();
+            .OrderBy(kind => kind.Id)];
 
     /// <summary>Edge types carrying <paramref name="trait"/>, ordered by id.</summary>
     public IReadOnlyList<EdgeTypeDefinition> EdgeTypesWithTrait(string trait)
-        => EdgeTypes
+        => [.. EdgeTypes
             .Where(edgeType => edgeType.Traits.Contains(trait, StringComparer.OrdinalIgnoreCase))
-            .OrderBy(edgeType => edgeType.Id)
-            .ToArray();
+            .OrderBy(edgeType => edgeType.Id)];
 }
 
 /// <summary>
@@ -179,9 +177,7 @@ public static class KnowledgePropertyRules
                 .Select(pair => pair.Key),
             StringComparer.OrdinalIgnoreCase);
 
-        var missing = kind.RequiredProps
-            .Where(required => !present.Contains(required))
-            .ToArray();
+        string[] missing = [.. kind.RequiredProps.Where(required => !present.Contains(required))];
         if (missing.Length > 0)
         {
             throw new KnowledgeValidationException(
@@ -242,7 +238,7 @@ public static class KnowledgeVocabularyLoader
     {
         var core = LoadEmbeddedCore();
         var accepted = new List<VocabularyPack>();
-        foreach (var path in packPaths ?? [])
+        foreach (string path in packPaths ?? [])
         {
             VocabularyPack pack;
             try
@@ -286,7 +282,7 @@ public static class KnowledgeVocabularyLoader
     public static VocabularyPack LoadEmbeddedCore()
     {
         var assembly = typeof(KnowledgeVocabularyLoader).Assembly;
-        var resource = assembly.GetManifestResourceNames()
+        string resource = assembly.GetManifestResourceNames()
             .SingleOrDefault(name => name.EndsWith(CoreResourceSuffix, StringComparison.Ordinal))
             ?? throw new KnowledgeVocabularyException($"{CoreResourceSuffix} is not embedded in {assembly.GetName().Name}");
         using var stream = assembly.GetManifestResourceStream(resource)
@@ -316,7 +312,7 @@ public static class KnowledgeVocabularyLoader
             AddDirectory(files, seen, Path.Combine(repoRoot, "config", "knowledge"));
         }
 
-        var userRoot = userConfigRoot ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        string userRoot = userConfigRoot ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         if (string.IsNullOrWhiteSpace(userRoot))
         {
             userRoot = Path.Combine(
@@ -329,7 +325,7 @@ public static class KnowledgeVocabularyLoader
             AddDirectory(files, seen, Path.Combine(userRoot, "anima", "knowledge"));
         }
 
-        foreach (var entry in configured ?? [])
+        foreach (string entry in configured ?? [])
         {
             if (string.IsNullOrWhiteSpace(entry))
             {
@@ -344,17 +340,17 @@ public static class KnowledgeVocabularyLoader
 
     private static void AddEntry(List<string> files, HashSet<string> seen, string entry)
     {
-        var expanded = Environment.ExpandEnvironmentVariables(entry.Trim());
+        string expanded = Environment.ExpandEnvironmentVariables(entry.Trim());
         if (Directory.Exists(expanded))
         {
             AddDirectory(files, seen, expanded);
             return;
         }
 
-        var directory = Path.GetDirectoryName(expanded);
+        string? directory = Path.GetDirectoryName(expanded);
         if (!string.IsNullOrWhiteSpace(directory) && !File.Exists(expanded) && Directory.Exists(directory))
         {
-            foreach (var match in Directory.EnumerateFiles(directory, Path.GetFileName(expanded)).Order(StringComparer.Ordinal))
+            foreach (string? match in Directory.EnumerateFiles(directory, Path.GetFileName(expanded)).Order(StringComparer.Ordinal))
             {
                 AddFile(files, seen, match);
             }
@@ -373,7 +369,7 @@ public static class KnowledgeVocabularyLoader
             return;
         }
 
-        foreach (var match in Directory.EnumerateFiles(directory, "*.json").Order(StringComparer.Ordinal))
+        foreach (string? match in Directory.EnumerateFiles(directory, "*.json").Order(StringComparer.Ordinal))
         {
             AddFile(files, seen, match);
         }
@@ -381,7 +377,7 @@ public static class KnowledgeVocabularyLoader
 
     private static void AddFile(List<string> files, HashSet<string> seen, string path)
     {
-        var full = Path.GetFullPath(path);
+        string full = Path.GetFullPath(path);
         if (seen.Add(full))
         {
             files.Add(full);
@@ -433,7 +429,7 @@ public static class KnowledgeVocabularyLoader
         var packNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pack in Enumerate(core, packs))
         {
-            var isCore = ReferenceEquals(pack, core);
+            bool isCore = ReferenceEquals(pack, core);
             ValidateHeader(pack, isCore);
             if (!packNames.Add(pack.Name))
             {
@@ -443,7 +439,7 @@ public static class KnowledgeVocabularyLoader
 
             foreach (var spec in pack.NodeKinds)
             {
-                var name = NormalizeName(spec.Name);
+                string name = NormalizeName(spec.Name);
                 if (name.Length == 0)
                 {
                     throw new KnowledgeVocabularyException($"{pack.Name}: node kind name must not be empty");
@@ -471,14 +467,14 @@ public static class KnowledgeVocabularyLoader
 
             foreach (var spec in pack.EdgeTypes)
             {
-                var name = NormalizeName(spec.Name);
+                string name = NormalizeName(spec.Name);
                 if (name.Length == 0)
                 {
                     throw new KnowledgeVocabularyException($"{pack.Name}: edge type name must not be empty");
                 }
 
                 var pairs = NormalizePairs(spec, pack, name);
-                if (edgeOwner.TryGetValue(name, out var owner))
+                if (edgeOwner.TryGetValue(name, out string? owner))
                 {
                     // Widening names an existing entry, so it keeps that entry's name.
                     Widen(edges, edgeIds, pack, spec, name, owner, pairs);
@@ -523,7 +519,7 @@ public static class KnowledgeVocabularyLoader
     /// </summary>
     private static void EnsurePackPrefix(string packName, string name, string kind)
     {
-        var prefix = NormalizeName(packName) + ":";
+        string prefix = NormalizeName(packName) + ":";
         if (!name.StartsWith(prefix, StringComparison.Ordinal) || name.Length == prefix.Length)
         {
             throw new KnowledgeVocabularyException(
@@ -602,7 +598,7 @@ public static class KnowledgeVocabularyLoader
     {
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(usedIds);
-        return AllocateId(NormalizeName(name), new HashSet<int>(usedIds));
+        return AllocateId(NormalizeName(name), [.. usedIds]);
     }
 
     /// <summary>
@@ -611,17 +607,17 @@ public static class KnowledgeVocabularyLoader
     /// </summary>
     private static int AllocateId(string name, HashSet<int> usedIds)
     {
-        var hash = 2166136261u;
-        foreach (var character in name)
+        uint hash = 2166136261u;
+        foreach (char character in name)
         {
             hash ^= char.ToLowerInvariant(character);
             hash *= 16777619u;
         }
 
-        var offset = (int)(hash % PackIdBand);
-        for (var attempt = 0; attempt < PackIdBand; attempt++)
+        int offset = (int)(hash % PackIdBand);
+        for (int attempt = 0; attempt < PackIdBand; attempt++)
         {
-            var candidate = KnowledgeVocabularyCatalog.PackIdFloor + ((offset + attempt) % PackIdBand);
+            int candidate = KnowledgeVocabularyCatalog.PackIdFloor + ((offset + attempt) % PackIdBand);
             if (usedIds.Add(candidate))
             {
                 return candidate;
@@ -651,16 +647,16 @@ public static class KnowledgeVocabularyLoader
                     NormalizeEndpoint(pair.Destination, pack, name)));
             }
 
-            return explicitPairs.Distinct().ToList();
+            return [.. explicitPairs.Distinct()];
         }
 
         IReadOnlyList<string> sourceKinds = sources.Count == 0 ? [KnowledgeVocabularyCatalog.Wildcard] : sources;
         IReadOnlyList<string> destinationKinds = destinations.Count == 0 ? [KnowledgeVocabularyCatalog.Wildcard] : destinations;
 
         var crossProduct = new List<EdgeKindPair>();
-        foreach (var source in sourceKinds)
+        foreach (string source in sourceKinds)
         {
-            foreach (var destination in destinationKinds)
+            foreach (string destination in destinationKinds)
             {
                 crossProduct.Add(new EdgeKindPair(source, destination));
             }
@@ -707,7 +703,7 @@ public static class KnowledgeVocabularyLoader
 
     private static string? ResolveInverse(EdgeTypeSpec spec, string name, string packName)
     {
-        var inverse = NormalizeOptional(spec.InverseName);
+        string? inverse = NormalizeOptional(spec.InverseName);
         if (spec.Symmetric != true)
         {
             return inverse;
@@ -730,7 +726,7 @@ public static class KnowledgeVocabularyLoader
         var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var pair in pairs)
         {
-            var endpoint = selector(pair);
+            string endpoint = selector(pair);
             if (endpoint == KnowledgeVocabularyCatalog.Wildcard)
             {
                 return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -756,7 +752,7 @@ public static class KnowledgeVocabularyLoader
             throw new KnowledgeVocabularyException($"{pack.Name}: edge type '{name}' is defined twice in the same pack");
         }
 
-        var index = edges.FindIndex(edge => string.Equals(edge.Name, name, StringComparison.OrdinalIgnoreCase));
+        int index = edges.FindIndex(edge => string.Equals(edge.Name, name, StringComparison.OrdinalIgnoreCase));
         var existing = edges[index];
         // Every core-owned field is inherited when the widening entry omits it, so a
         // pack can widen pairs without restating flags, traits or the inverse name.
@@ -780,7 +776,7 @@ public static class KnowledgeVocabularyLoader
         }
 
         var merged = existing.Pairs.ToList();
-        var widened = false;
+        bool widened = false;
         foreach (var pair in pairs)
         {
             if (merged.Contains(pair))
@@ -813,7 +809,7 @@ public static class KnowledgeVocabularyLoader
         {
             foreach (var pair in edge.Pairs)
             {
-                foreach (var endpoint in new[] { pair.Source, pair.Destination })
+                foreach (string? endpoint in new[] { pair.Source, pair.Destination })
                 {
                     if (endpoint != KnowledgeVocabularyCatalog.Wildcard && !known.Contains(endpoint))
                     {
@@ -859,7 +855,7 @@ public static class KnowledgeVocabularyLoader
                         $"edge type '{edge.Name}' declares inverse_name '{edge.InverseName}', which is also a defined edge type ('{shadowed.Name}'); define the relation once");
                 }
 
-                if (claimed.TryGetValue(edge.InverseName, out var owner))
+                if (claimed.TryGetValue(edge.InverseName, out string? owner))
                 {
                     throw new KnowledgeVocabularyException(
                         $"edge types '{owner}' and '{edge.Name}' both claim inverse_name '{edge.InverseName}'");
@@ -872,8 +868,8 @@ public static class KnowledgeVocabularyLoader
             var mirrored = new HashSet<EdgeKindPair>();
             foreach (var pair in edge.Pairs)
             {
-                var source = pair.Destination;
-                var destination = pair.Source;
+                string source = pair.Destination;
+                string destination = pair.Source;
                 mirrored.Add(new EdgeKindPair(source, destination));
             }
 
@@ -911,9 +907,9 @@ public static class KnowledgeVocabularyLoader
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var normalized = new List<string>(values.Count);
-        foreach (var value in values)
+        foreach (string value in values)
         {
-            var name = NormalizeName(value);
+            string name = NormalizeName(value);
             if (name.Length > 0 && seen.Add(name))
             {
                 normalized.Add(name);

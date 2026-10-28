@@ -20,36 +20,36 @@ public sealed class GitPushPayloadParser
             throw new DeployValidationException("push payload must be a JSON object");
         }
 
-        var repository = FirstNonEmpty(
+        string repository = FirstNonEmpty(
             GetString(root, "repository.full_name"),
             GetString(root, "repository.name"),
             GetString(root, "project.path_with_namespace"),
             GetString(root, "project.name"),
             "unknown");
 
-        var reference = FirstNonEmpty(
+        string reference = FirstNonEmpty(
             GetString(root, "ref"),
             GetString(root, "branch"),
             GetString(root, "checkout_sha"),
             "refs/heads/unknown");
 
-        var before = GetString(root, "before") ?? GetString(root, "oldrev");
-        var after = GetString(root, "after") ?? GetString(root, "newrev") ?? GetString(root, "checkout_sha");
+        string? before = GetString(root, "before") ?? GetString(root, "oldrev");
+        string? after = GetString(root, "after") ?? GetString(root, "newrev") ?? GetString(root, "checkout_sha");
 
-        var pusher = FirstNonEmpty(
+        string pusher = FirstNonEmpty(
             GetString(root, "pusher.name"),
             GetString(root, "pusher_name"),
             GetString(root, "user_name"),
             GetString(root, "sender.login"),
             "unknown");
 
-        var deleted = IsTrue(root, "deleted") || IsZeroSha(after);
-        var created = IsZeroSha(before) || IsTrue(root, "created");
+        bool deleted = IsTrue(root, "deleted") || IsZeroSha(after);
+        bool created = IsZeroSha(before) || IsTrue(root, "created");
 
         var commits = ReadCommitMessages(root);
         if (commits.Count == 0)
         {
-            var head = GetString(root, "head_commit.message");
+            string? head = GetString(root, "head_commit.message");
             if (!string.IsNullOrWhiteSpace(head))
             {
                 commits.Add(head);
@@ -78,7 +78,7 @@ public sealed class GitPushPayloadParser
 
         foreach (var commit in commits.EnumerateArray())
         {
-            var message = commit.ValueKind == JsonValueKind.Object
+            string? message = commit.ValueKind == JsonValueKind.Object
                 ? GetString(commit, "message")
                 : null;
 
@@ -94,7 +94,7 @@ public sealed class GitPushPayloadParser
     private static string? GetString(JsonElement element, string path)
     {
         var current = element;
-        foreach (var segment in path.Split('.'))
+        foreach (string segment in path.Split('.'))
         {
             if (current.ValueKind != JsonValueKind.Object ||
                 !current.TryGetProperty(segment, out current))

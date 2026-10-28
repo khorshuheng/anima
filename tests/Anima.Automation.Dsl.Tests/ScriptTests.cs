@@ -90,7 +90,7 @@ public sealed class ScriptTests
     [Fact]
     public void Catalog_loads_repo_style_yaml_from_a_directory()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "anima-specs-" + Guid.NewGuid().ToString("n"));
+        string directory = Path.Combine(Path.GetTempPath(), "anima-specs-" + Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(directory);
         File.WriteAllText(Path.Combine(directory, "login-smoke.yaml"), LoginScript);
 

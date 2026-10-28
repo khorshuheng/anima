@@ -40,7 +40,7 @@ internal static class PlaywrightEventCapture
 
         var capture = new PageEventCapture();
         var inFlight = new ConcurrentDictionary<IRequest, Exchange>();
-        var exchangeCounter = 0;
+        int exchangeCounter = 0;
 
         page.Console += (_, message) => log.Append(new BrowserEvent
         {
@@ -199,7 +199,7 @@ internal static class PlaywrightEventCapture
 
         // BodyAsync has no size limit, so an oversized response would be fully
         // buffered before Truncate cuts it. Skip it when the length is declared.
-        var declaredLength = ParseContentLength(response.Headers);
+        long? declaredLength = ParseContentLength(response.Headers);
         if (declaredLength > MaxCapturedBodyBytes)
         {
             bodySkipped = $"body-skipped:{declaredLength} bytes";
@@ -239,7 +239,7 @@ internal static class PlaywrightEventCapture
         IDialog dialog,
         BrowserDialogBehavior behavior)
     {
-        var accepted = behavior == BrowserDialogBehavior.Accept;
+        bool accepted = behavior == BrowserDialogBehavior.Accept;
 
         log.Append(new BrowserEvent
         {
@@ -322,7 +322,7 @@ internal static class PlaywrightEventCapture
         foreach (var header in headers)
         {
             if (string.Equals(header.Key, "content-length", StringComparison.OrdinalIgnoreCase)
-                && long.TryParse(header.Value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var length))
+                && long.TryParse(header.Value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long length))
             {
                 return length;
             }
@@ -346,7 +346,7 @@ internal sealed class PageEventCapture
 
     private readonly Queue<string> _order = new();
     private readonly Dictionary<string, IResponse> _responses = new(StringComparer.Ordinal);
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
 
     public void Remember(string? requestId, IResponse response)
     {
@@ -404,7 +404,7 @@ internal sealed class PageEventCapture
 
         try
         {
-            var bytes = await response.BodyAsync().ConfigureAwait(false);
+            byte[] bytes = await response.BodyAsync().ConfigureAwait(false);
             return new ResponseBody(System.Text.Encoding.UTF8.GetString(bytes), null);
         }
         catch (PlaywrightException)

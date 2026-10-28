@@ -27,10 +27,10 @@ public sealed class PackDiscoveryTests : IDisposable
     [Fact]
     public void Discovers_repo_then_user_then_configured_packs()
     {
-        var repoB = Touch(RepoPacks, "b.json");
-        var repoA = Touch(RepoPacks, "a.json");
-        var user = Touch(UserPacks, "c-extra.json");
-        var explicitFile = Touch(Path.Combine(_root, "explicit"), "d.json");
+        string repoB = Touch(RepoPacks, "b.json");
+        string repoA = Touch(RepoPacks, "a.json");
+        string user = Touch(UserPacks, "c-extra.json");
+        string explicitFile = Touch(Path.Combine(_root, "explicit"), "d.json");
 
         var discovered = KnowledgeVocabularyLoader.DiscoverPackFiles(
             [explicitFile, Path.Combine(_root, "explicit", "*.json"), Path.Combine(_root, "explicit")],
@@ -54,7 +54,7 @@ public sealed class PackDiscoveryTests : IDisposable
     [Fact]
     public void Missing_explicit_pack_is_reported_by_the_loader()
     {
-        var missing = Path.Combine(_root, "nope", "missing.json");
+        string missing = Path.Combine(_root, "nope", "missing.json");
         var discovered = KnowledgeVocabularyLoader.DiscoverPackFiles([missing], RepoRoot, UserRoot);
 
         Assert.Equal(new[] { Path.GetFullPath(missing) }, discovered.ToArray());
@@ -123,7 +123,7 @@ public sealed class PackDiscoveryTests : IDisposable
     private static string Touch(string directory, string name)
     {
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, name);
+        string path = Path.Combine(directory, name);
         File.WriteAllText(path, """{ "schema_version": 1, "name": "pack" }""");
         return Path.GetFullPath(path);
     }

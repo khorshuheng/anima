@@ -7,16 +7,10 @@ public sealed class BrowserUrlResolverTests
     [Theory]
     [InlineData("/login")]
     [InlineData("/login?next=%2Fhome")]
-    public void Rooted_paths_resolve_against_the_base_url(string url)
-    {
-        Assert.Equal("http://127.0.0.1:8080/login" + Suffix(url), BrowserUrlResolver.Resolve(url, BaseUrl));
-    }
+    public void Rooted_paths_resolve_against_the_base_url(string url) => Assert.Equal("http://127.0.0.1:8080/login" + Suffix(url), BrowserUrlResolver.Resolve(url, BaseUrl));
 
     [Fact]
-    public void Relative_paths_resolve_against_the_base_path()
-    {
-        Assert.Equal("http://127.0.0.1:8080/app/page", BrowserUrlResolver.Resolve("page", BaseUrl));
-    }
+    public void Relative_paths_resolve_against_the_base_path() => Assert.Equal("http://127.0.0.1:8080/app/page", BrowserUrlResolver.Resolve("page", BaseUrl));
 
     [Fact]
     public void Rooted_paths_are_not_mistaken_for_file_uris()
@@ -42,28 +36,16 @@ public sealed class BrowserUrlResolverTests
     [InlineData("data:text/html,<h1>hi</h1>")]
     [InlineData("about:blank")]
     [InlineData("https://example.test/x")]
-    public void Non_file_schemes_are_never_rebased(string url)
-    {
-        Assert.Equal(url, BrowserUrlResolver.Resolve(url, BaseUrl));
-    }
+    public void Non_file_schemes_are_never_rebased(string url) => Assert.Equal(url, BrowserUrlResolver.Resolve(url, BaseUrl));
 
     [Fact]
-    public void Resolved_urls_are_escaped()
-    {
-        Assert.Equal("http://127.0.0.1:8080/app/a%20b", BrowserUrlResolver.Resolve("a b", BaseUrl));
-    }
+    public void Resolved_urls_are_escaped() => Assert.Equal("http://127.0.0.1:8080/app/a%20b", BrowserUrlResolver.Resolve("a b", BaseUrl));
 
     [Fact]
-    public void Relative_urls_without_a_base_are_returned_unchanged()
-    {
-        Assert.Equal("/login", BrowserUrlResolver.Resolve("/login", baseUrl: null));
-    }
+    public void Relative_urls_without_a_base_are_returned_unchanged() => Assert.Equal("/login", BrowserUrlResolver.Resolve("/login", baseUrl: null));
 
     [Fact]
-    public void Empty_targets_are_returned_unchanged()
-    {
-        Assert.Equal(string.Empty, BrowserUrlResolver.Resolve(string.Empty, BaseUrl));
-    }
+    public void Empty_targets_are_returned_unchanged() => Assert.Equal(string.Empty, BrowserUrlResolver.Resolve(string.Empty, BaseUrl));
 
     private static string Suffix(string url)
         => url["/login".Length..];

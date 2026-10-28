@@ -18,7 +18,7 @@ public static class GlobPattern
             return true;
         }
 
-        var regex = "^" + Regex.Escape(pattern)
+        string regex = "^" + Regex.Escape(pattern)
             .Replace(@"\*\*", ".*", StringComparison.Ordinal)
             .Replace(@"\*", "[^/]*", StringComparison.Ordinal)
             .Replace(@"\?", ".", StringComparison.Ordinal) + "$";

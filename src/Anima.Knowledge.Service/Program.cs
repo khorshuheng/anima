@@ -38,7 +38,7 @@ builder.Services.AddSingleton(serviceProvider =>
 builder.Services.AddSingleton(serviceProvider =>
     serviceProvider.GetRequiredService<KnowledgeVocabularyLoad>().Catalog);
 
-var provider = (builder.Configuration["Anima:Knowledge:Provider"] ?? "Sqlite").Trim();
+string provider = (builder.Configuration["Anima:Knowledge:Provider"] ?? "Sqlite").Trim();
 if (string.Equals(provider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddSqliteKnowledgeGraph(options =>
@@ -194,7 +194,7 @@ app.MapGet("/api/nodes", async (
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
-    var kindName = kind;
+    string? kindName = kind;
     if (kindName is null && kindId is { } id)
     {
         var kinds = await graph.GetKindsAsync(cancellationToken);
@@ -231,7 +231,7 @@ app.MapPost("/api/nodes", async (
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
-    var kind = request.Kind;
+    string? kind = request.Kind;
     if (kind is null && request.KindId is { } kindId)
     {
         var kinds = await graph.GetKindsAsync(cancellationToken);
@@ -282,7 +282,7 @@ app.MapDelete("/api/nodes/{id:long}", async (
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
-    var deleted = await graph.DeleteNodeAsync(id, cancellationToken);
+    bool deleted = await graph.DeleteNodeAsync(id, cancellationToken);
     return deleted ? Results.NoContent() : Results.NotFound(new { message = $"node {id} does not exist" });
 });
 
@@ -294,7 +294,7 @@ app.MapGet("/api/nodes/{id:long}/neighbors", async (
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
-    var typeName = edgeType;
+    string? typeName = edgeType;
     if (typeName is null && edgeTypeId is { } typeId)
     {
         var edgeTypes = await graph.GetEdgeTypesAsync(cancellationToken);
@@ -323,7 +323,7 @@ app.MapPost("/api/edges", async (
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
-    var typeName = request.EdgeType;
+    string? typeName = request.EdgeType;
     if (typeName is null && request.EdgeTypeId is { } typeId)
     {
         var edgeTypes = await graph.GetEdgeTypesAsync(cancellationToken);
@@ -352,7 +352,7 @@ app.MapDelete("/api/edges", async (
     IKnowledgeGraph graph,
     CancellationToken cancellationToken) =>
 {
-    var typeName = edgeType;
+    string? typeName = edgeType;
     if (typeName is null && edgeTypeId is { } typeId)
     {
         var edgeTypes = await graph.GetEdgeTypesAsync(cancellationToken);
@@ -365,7 +365,7 @@ app.MapDelete("/api/edges", async (
         throw new KnowledgeValidationException("edge_type or edge_type_id is required");
     }
 
-    var removed = await graph.RemoveEdgeAsync(source, destination, typeName, cancellationToken);
+    bool removed = await graph.RemoveEdgeAsync(source, destination, typeName, cancellationToken);
     return removed ? Results.NoContent() : Results.NotFound(new { message = "edge does not exist" });
 });
 
@@ -468,7 +468,7 @@ app.MapPost("/api/plans", async (
         request.Goal?.Content,
         request.Anchor is null ? null : new PlanAnchor(request.Anchor.NodeId, request.Anchor.EdgeType),
         request.GoalId,
-        (request.Tasks ?? [])
+        [.. (request.Tasks ?? [])
             .Select(task => new PlanTaskDraft(
                 task.Key,
                 task.Name,
@@ -477,8 +477,7 @@ app.MapPost("/api/plans", async (
                 task.Properties,
                 task.Parent,
                 task.DependsOn,
-                task.Affects))
-            .ToArray());
+                task.Affects))]);
 
     var result = await graph.CreatePlanAsync(plan, cancellationToken);
     var vocabulary = await graph.VocabularyAsync(cancellationToken);

@@ -49,7 +49,7 @@ public sealed class HttpMessageBus : IMessageBus, IAsyncDisposable
             using var response = await _http.PostAsync("api/bus/publish", content, timeout.Token);
             if (!response.IsSuccessStatusCode)
             {
-                var body = await response.Content.ReadAsStringAsync(timeout.Token);
+                string body = await response.Content.ReadAsStringAsync(timeout.Token);
                 throw new InvalidOperationException(
                     $"bus publish failed ({(int)response.StatusCode}): {body}");
             }
@@ -72,7 +72,7 @@ public sealed class HttpMessageBus : IMessageBus, IAsyncDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var id = $"http-sub-{Interlocked.Increment(ref _counter)}";
+        string id = $"http-sub-{Interlocked.Increment(ref _counter)}";
         var subscription = new HttpSubscription(
             id,
             options?.Name ?? topicPattern,

@@ -40,34 +40,34 @@ public static class BrowserUrlSanitizer
             return url;
         }
 
-        var queryStart = url.IndexOf('?', StringComparison.Ordinal);
+        int queryStart = url.IndexOf('?', StringComparison.Ordinal);
         if (queryStart < 0)
         {
             return url;
         }
 
-        var fragmentStart = url.IndexOf('#', queryStart);
-        var queryEnd = fragmentStart < 0 ? url.Length : fragmentStart;
-        var query = url[(queryStart + 1)..queryEnd];
+        int fragmentStart = url.IndexOf('#', queryStart);
+        int queryEnd = fragmentStart < 0 ? url.Length : fragmentStart;
+        string query = url[(queryStart + 1)..queryEnd];
 
         if (query.Length == 0)
         {
             return url;
         }
 
-        var parameters = query.Split('&');
-        var changed = false;
+        string[] parameters = query.Split('&');
+        bool changed = false;
 
-        for (var index = 0; index < parameters.Length; index++)
+        for (int index = 0; index < parameters.Length; index++)
         {
-            var parameter = parameters[index];
+            string parameter = parameters[index];
             if (parameter.Length == 0)
             {
                 continue;
             }
 
-            var separator = parameter.IndexOf('=', StringComparison.Ordinal);
-            var name = separator < 0 ? parameter : parameter[..separator];
+            int separator = parameter.IndexOf('=', StringComparison.Ordinal);
+            string name = separator < 0 ? parameter : parameter[..separator];
 
             if (!SensitiveKeys.Contains(Uri.UnescapeDataString(name)))
             {
@@ -83,7 +83,7 @@ public static class BrowserUrlSanitizer
             return url;
         }
 
-        var suffix = fragmentStart < 0 ? string.Empty : url[fragmentStart..];
+        string suffix = fragmentStart < 0 ? string.Empty : url[fragmentStart..];
         return $"{url[..queryStart]}?{string.Join('&', parameters)}{suffix}";
     }
 }

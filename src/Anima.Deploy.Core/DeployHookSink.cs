@@ -46,14 +46,14 @@ public sealed class DeployHookSink : IDeployHookSink
 
         if (_options.VerifySignature && !string.IsNullOrEmpty(_options.Secret))
         {
-            var signatureHeader = provider.ToLowerInvariant() switch
+            string signatureHeader = provider.ToLowerInvariant() switch
             {
                 "github" => "X-Hub-Signature-256",
                 "gitea" => "X-Gitea-Signature",
                 _ => "X-Anima-Signature",
             };
 
-            var signature = GetHeader(headers, signatureHeader);
+            string? signature = GetHeader(headers, signatureHeader);
             if (!HookSignatureValidator.Verify(_options.Secret, payload, signature))
             {
                 throw new DeploySignatureException($"invalid or missing {signatureHeader} header");

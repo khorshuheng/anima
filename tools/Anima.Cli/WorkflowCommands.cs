@@ -52,9 +52,9 @@ internal static class WorkflowCommands
 
     private static async Task<int> StartAsync(HttpClient http, string[] args)
     {
-        var name = CliJson.Option(args, "--name") ?? "workflow";
-        var requirement = CliJson.Option(args, "--requirement");
-        var requirementFile = CliJson.Option(args, "--requirement-file");
+        string name = CliJson.Option(args, "--name") ?? "workflow";
+        string? requirement = CliJson.Option(args, "--requirement");
+        string? requirementFile = CliJson.Option(args, "--requirement-file");
         if (requirement is null && requirementFile is not null)
         {
             requirement = await File.ReadAllTextAsync(requirementFile);
@@ -65,9 +65,9 @@ internal static class WorkflowCommands
             throw new WorkflowValidationException("--requirement or --requirement-file is required");
         }
 
-        var repo = CliJson.Option(args, "--repo") ?? Directory.GetCurrentDirectory();
-        var baseRef = CliJson.Option(args, "--base-ref") ?? "main";
-        var tasksFile = CliJson.Option(args, "--tasks");
+        string repo = CliJson.Option(args, "--repo") ?? Directory.GetCurrentDirectory();
+        string baseRef = CliJson.Option(args, "--base-ref") ?? "main";
+        string? tasksFile = CliJson.Option(args, "--tasks");
         var tasks = tasksFile is null
             ? null
             : CliJson.Deserialize<List<SpecTaskInput>>(await File.ReadAllTextAsync(tasksFile));
@@ -82,13 +82,13 @@ internal static class WorkflowCommands
 
     private static async Task<int> QuestionsAsync(HttpClient http, string[] args)
     {
-        var open = !CliJson.HasFlag(args, "--all");
+        bool open = !CliJson.HasFlag(args, "--all");
         return await GetAsync(http, $"api/workflows/{RequireId(args)}/questions?open={open.ToString().ToLowerInvariant()}");
     }
 
     private static async Task<int> AskAsync(HttpClient http, string[] args)
     {
-        var file = CliJson.Option(args, "--file");
+        string? file = CliJson.Option(args, "--file");
         List<QuestionInput> questions;
         if (file is not null)
         {
@@ -96,7 +96,7 @@ internal static class WorkflowCommands
         }
         else
         {
-            var text = CliJson.Option(args, "--text");
+            string? text = CliJson.Option(args, "--text");
             if (string.IsNullOrWhiteSpace(text))
             {
                 throw new WorkflowValidationException("--text or --file is required");
@@ -110,7 +110,7 @@ internal static class WorkflowCommands
 
     private static async Task<int> AnswerAsync(HttpClient http, string[] args)
     {
-        var file = CliJson.Option(args, "--file");
+        string? file = CliJson.Option(args, "--file");
         List<AnswerInput> answers;
         if (file is not null)
         {
@@ -119,11 +119,11 @@ internal static class WorkflowCommands
         else
         {
             answers = [];
-            foreach (var pair in CliJson.OptionValues(args, "--answer"))
+            foreach (string pair in CliJson.OptionValues(args, "--answer"))
             {
-                var separator = pair.IndexOf('=', StringComparison.Ordinal);
+                int separator = pair.IndexOf('=', StringComparison.Ordinal);
                 if (separator <= 0 ||
-                    !long.TryParse(pair[..separator], out var questionId))
+                    !long.TryParse(pair[..separator], out long questionId))
                 {
                     throw new WorkflowValidationException("--answer must be <questionId>=<text>");
                 }
@@ -145,9 +145,9 @@ internal static class WorkflowCommands
 
     private static async Task<int> SpecWriteAsync(HttpClient http, string[] args)
     {
-        var file = CliJson.Option(args, "--file") ?? throw new WorkflowValidationException("--file is required");
-        var markdown = await File.ReadAllTextAsync(file);
-        var tasksFile = CliJson.Option(args, "--tasks");
+        string file = CliJson.Option(args, "--file") ?? throw new WorkflowValidationException("--file is required");
+        string markdown = await File.ReadAllTextAsync(file);
+        string? tasksFile = CliJson.Option(args, "--tasks");
         var tasks = tasksFile is null
             ? []
             : CliJson.Deserialize<List<SpecTaskInput>>(await File.ReadAllTextAsync(tasksFile)) ?? [];
@@ -160,10 +160,10 @@ internal static class WorkflowCommands
 
     private static async Task<int> AssignAsync(HttpClient http, string[] args)
     {
-        var taskKey = CliJson.Option(args, "--task") ?? throw new WorkflowValidationException("--task is required");
-        var agent = CliJson.Option(args, "--agent") ?? throw new WorkflowValidationException("--agent is required");
-        var path = CliJson.Option(args, "--path") ?? throw new WorkflowValidationException("--path is required");
-        var branch = CliJson.Option(args, "--branch") ?? throw new WorkflowValidationException("--branch is required");
+        string taskKey = CliJson.Option(args, "--task") ?? throw new WorkflowValidationException("--task is required");
+        string agent = CliJson.Option(args, "--agent") ?? throw new WorkflowValidationException("--agent is required");
+        string path = CliJson.Option(args, "--path") ?? throw new WorkflowValidationException("--path is required");
+        string branch = CliJson.Option(args, "--branch") ?? throw new WorkflowValidationException("--branch is required");
 
         return await PostAsync(
             http,
@@ -179,7 +179,7 @@ internal static class WorkflowCommands
 
     private static async Task<int> AckAsync(HttpClient http, string[] args)
     {
-        var taskKey = CliJson.Option(args, "--task") ?? throw new WorkflowValidationException("--task is required");
+        string taskKey = CliJson.Option(args, "--task") ?? throw new WorkflowValidationException("--task is required");
         return await PostAsync(
             http,
             $"api/workflows/{RequireId(args)}/assignments/{Uri.EscapeDataString(taskKey)}/ack",
@@ -188,21 +188,21 @@ internal static class WorkflowCommands
 
     private static async Task<int> UnassignAsync(HttpClient http, string[] args)
     {
-        var taskKey = CliJson.Option(args, "--task") ?? throw new WorkflowValidationException("--task is required");
+        string taskKey = CliJson.Option(args, "--task") ?? throw new WorkflowValidationException("--task is required");
         return await SendAsync(http, HttpMethod.Delete, $"api/workflows/{RequireId(args)}/assignments/{Uri.EscapeDataString(taskKey)}", null);
     }
 
     private static async Task<int> ResultAsync(HttpClient http, string[] args)
     {
-        var summary = CliJson.Option(args, "--summary") ?? throw new WorkflowValidationException("--summary is required");
+        string summary = CliJson.Option(args, "--summary") ?? throw new WorkflowValidationException("--summary is required");
         var kind = Enum.TryParse<WorkflowResultKind>(CliJson.Option(args, "--kind"), ignoreCase: true, out var parsedKind)
             ? parsedKind
             : WorkflowResultKind.Implementation;
-        var success = !CliJson.HasFlag(args, "--failure");
+        bool success = !CliJson.HasFlag(args, "--failure");
         var findings = new List<FindingInput>();
-        foreach (var value in CliJson.OptionValues(args, "--finding"))
+        foreach (string value in CliJson.OptionValues(args, "--finding"))
         {
-            var separator = value.IndexOf(':', StringComparison.Ordinal);
+            int separator = value.IndexOf(':', StringComparison.Ordinal);
             var severity = separator > 0 &&
                            Enum.TryParse<FindingSeverity>(value[..separator], ignoreCase: true, out var parsedSeverity)
                 ? parsedSeverity
@@ -230,21 +230,19 @@ internal static class WorkflowCommands
                 CliJson.Option(args, "--branch"),
                 CliJson.Option(args, "--base-ref"),
                 CliJson.Option(args, "--run-id"),
-                CliJson.OptionValues(args, "--test")
-                    .Concat(CliJson.OptionValues(args, "--test-command"))
-                    .ToArray(),
-                CliJson.OptionValues(args, "--artifact")
-                    .Concat(CliJson.OptionValues(args, "--artifact-path"))
-                    .ToArray()));
+                [.. CliJson.OptionValues(args, "--test")
+, .. CliJson.OptionValues(args, "--test-command")],
+                [.. CliJson.OptionValues(args, "--artifact")
+, .. CliJson.OptionValues(args, "--artifact-path")]));
     }
 
     private static async Task<int> DispatchAsync(HttpClient http, string[] args)
     {
-        var agent = CliJson.Option(args, "--agent") ?? throw new WorkflowValidationException("--agent is required");
-        var role = CliJson.Option(args, "--role") ?? throw new WorkflowValidationException("--role is required");
-        var instructions = CliJson.Option(args, "--instructions") ?? throw new WorkflowValidationException("--instructions is required");
-        var context = CliJson.Option(args, "--context");
-        var contextJson = context is null ? null : await File.ReadAllTextAsync(context);
+        string agent = CliJson.Option(args, "--agent") ?? throw new WorkflowValidationException("--agent is required");
+        string role = CliJson.Option(args, "--role") ?? throw new WorkflowValidationException("--role is required");
+        string instructions = CliJson.Option(args, "--instructions") ?? throw new WorkflowValidationException("--instructions is required");
+        string? context = CliJson.Option(args, "--context");
+        string? contextJson = context is null ? null : await File.ReadAllTextAsync(context);
 
         return await PostAsync(
             http,
@@ -269,7 +267,7 @@ internal static class WorkflowCommands
         }
 
         var method = new HttpMethod(args[1].ToUpperInvariant());
-        var body = args.Length > 3 ? await CliJson.ReadPayloadAsync(args[3]) : null;
+        string? body = args.Length > 3 ? await CliJson.ReadPayloadAsync(args[3]) : null;
         return await SendAsync(http, method, args[2], body);
     }
 
@@ -288,7 +286,7 @@ internal static class WorkflowCommands
         }
 
         using var response = await http.SendAsync(request);
-        var text = await response.Content.ReadAsStringAsync();
+        string text = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
             Console.Error.WriteLine($"error {(int)response.StatusCode}: {text}");
@@ -305,7 +303,7 @@ internal static class WorkflowCommands
 
     private static long RequireId(string[] args)
     {
-        if (args.Length < 2 || !long.TryParse(args[1], out var id))
+        if (args.Length < 2 || !long.TryParse(args[1], out long id))
         {
             throw new WorkflowValidationException("workflow id is required");
         }

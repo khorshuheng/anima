@@ -11,8 +11,8 @@ internal static class KnowledgeEndpointMappings
         this KnowledgeNode node,
         IReadOnlyDictionary<string, int> kindIds) => new
         {
-            Id = node.Id,
-            Kind = node.Kind,
+            node.Id,
+            node.Kind,
             KindId = kindIds.GetValueOrDefault(node.Kind),
             node.Name,
             node.Description,
@@ -30,7 +30,7 @@ internal static class KnowledgeEndpointMappings
             edge.Id,
             edge.Source,
             edge.Destination,
-            EdgeType = edge.EdgeType,
+            edge.EdgeType,
             EdgeTypeId = edgeTypeIds.GetValueOrDefault(edge.EdgeType),
             edge.CreatedAt,
         };

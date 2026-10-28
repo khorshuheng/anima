@@ -16,7 +16,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
 });
 
-var knowledgeTransport = (builder.Configuration["Anima:Knowledge:Transport"] ?? "Http").Trim();
+string knowledgeTransport = (builder.Configuration["Anima:Knowledge:Transport"] ?? "Http").Trim();
 if (string.Equals(knowledgeTransport, "Http", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddKnowledgeClient(options =>
@@ -35,7 +35,7 @@ else
         $"Unsupported Anima:Knowledge:Transport '{knowledgeTransport}'. Use 'Http' or 'InMemory' (tests only).");
 }
 
-var busTransport = (builder.Configuration["Anima:Bus:Transport"] ?? "Http").Trim();
+string busTransport = (builder.Configuration["Anima:Bus:Transport"] ?? "Http").Trim();
 if (string.Equals(busTransport, "Http", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddHttpBus(options =>
@@ -245,11 +245,11 @@ app.MapPost("/api/workflows/{id:long}/dispatch", async (
 {
     WorkflowDispatchValidation.Validate(request);
 
-    var messageId = WorkflowMessageId.Normalize(request.MessageId);
+    string messageId = WorkflowMessageId.Normalize(request.MessageId);
     var normalized = request with { MessageId = messageId };
-    var hasTask = !string.IsNullOrWhiteSpace(request.TaskKey);
-    var hasWorktree = !string.IsNullOrWhiteSpace(request.WorktreePath);
-    var hasBranch = !string.IsNullOrWhiteSpace(request.Branch);
+    bool hasTask = !string.IsNullOrWhiteSpace(request.TaskKey);
+    bool hasWorktree = !string.IsNullOrWhiteSpace(request.WorktreePath);
+    bool hasBranch = !string.IsNullOrWhiteSpace(request.Branch);
 
     if (hasTask || hasWorktree || hasBranch)
     {

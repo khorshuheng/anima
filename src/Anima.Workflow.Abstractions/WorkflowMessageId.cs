@@ -15,7 +15,7 @@ public static class WorkflowMessageId
             return Guid.NewGuid().ToString("n");
         }
 
-        var messageId = value.Trim();
+        string messageId = value.Trim();
         if (messageId.Length > MaxLength ||
             !messageId.All(character =>
                 char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))

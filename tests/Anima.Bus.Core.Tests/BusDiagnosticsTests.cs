@@ -29,7 +29,7 @@ public sealed class BusDiagnosticsTests
     public async Task Snapshot_tracks_subscription_deliveries()
     {
         await using var bus = CreateBus();
-        var delivered = 0;
+        int delivered = 0;
         await using var subscription = await bus.SubscribeAsync(
             "anima.test.topic",
             (_, _) =>
@@ -147,7 +147,7 @@ public sealed class BusDiagnosticsTests
 
         var publishers = Enumerable.Range(0, 4).Select(worker => Task.Run(async () =>
         {
-            for (var i = 0; i < 100; i++)
+            for (int i = 0; i < 100; i++)
             {
                 await bus.PublishAsync(CreateEnvelope("anima.test.topic", "anima.test.v1.Ping", $"worker-{worker}"));
             }
@@ -155,7 +155,7 @@ public sealed class BusDiagnosticsTests
 
         var readers = Enumerable.Range(0, 4).Select(index => Task.Run(async () =>
         {
-            for (var i = 0; i < 100; i++)
+            for (int i = 0; i < 100; i++)
             {
                 _ = bus.GetSnapshot();
                 await Task.Yield();
@@ -175,7 +175,7 @@ public sealed class BusDiagnosticsTests
     {
         await using var bus = CreateBus(new BusOptions { MaxTrackedTopics = 2, RetryDelay = TimeSpan.Zero });
 
-        for (var index = 0; index < 5; index++)
+        for (int index = 0; index < 5; index++)
         {
             await bus.PublishAsync(CreateEnvelope($"anima.test.topic{index}", "anima.test.v1.Ping", "alice"));
         }
@@ -207,7 +207,7 @@ public sealed class BusDiagnosticsTests
             RetryDelay = TimeSpan.Zero,
         });
 
-        for (var index = 0; index < 5; index++)
+        for (int index = 0; index < 5; index++)
         {
             await bus.PublishAsync(CreateEnvelope(
                 "anima.test.topic",
@@ -228,7 +228,7 @@ public sealed class BusDiagnosticsTests
         await using var bus = CreateBus(new BusOptions { MaxSnapshotTopics = 2, RetryDelay = TimeSpan.Zero });
 
         await bus.PublishAsync(CreateEnvelope("anima.test.quiet", "anima.test.v1.Ping", "alice"));
-        for (var index = 0; index < 3; index++)
+        for (int index = 0; index < 3; index++)
         {
             await bus.PublishAsync(CreateEnvelope("anima.test.busy", "anima.test.v1.Ping", "alice"));
         }

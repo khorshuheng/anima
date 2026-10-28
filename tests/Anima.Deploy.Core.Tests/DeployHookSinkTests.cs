@@ -48,7 +48,7 @@ public sealed class DeployHookSinkTests
     [Fact]
     public async Task External_rules_path_is_merged_and_ref_mismatch_is_skipped()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"anima-rules-{Guid.NewGuid():n}.json");
+        string path = Path.Combine(Path.GetTempPath(), $"anima-rules-{Guid.NewGuid():n}.json");
         await File.WriteAllTextAsync(path, """
             [
               {

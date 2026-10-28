@@ -32,7 +32,7 @@ public static class BrowserExecutableLocator
         var readEnvironment = environment ?? (name => Environment.GetEnvironmentVariable(name));
         var exists = fileExists ?? (path => File.Exists(path));
 
-        var overridePath = readEnvironment("ANIMA_CHROME_PATH");
+        string? overridePath = readEnvironment("ANIMA_CHROME_PATH");
         if (!string.IsNullOrWhiteSpace(overridePath))
         {
             return exists(overridePath) ? overridePath : null;
@@ -50,9 +50,9 @@ public static class BrowserExecutableLocator
         ArgumentNullException.ThrowIfNull(roots);
 
         var candidates = new List<string>();
-        var programFiles = roots.ProgramFiles;
-        var programFilesX86 = roots.ProgramFilesX86;
-        var localAppData = roots.LocalAppData;
+        string? programFiles = roots.ProgramFiles;
+        string? programFilesX86 = roots.ProgramFilesX86;
+        string? localAppData = roots.LocalAppData;
 
         switch (browserName.Trim().ToLowerInvariant())
         {

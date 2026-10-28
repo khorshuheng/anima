@@ -39,7 +39,7 @@ public sealed class GoalExplorer
         var knowledge = _httpClientFactory.CreateClient(DashboardUpstreams.Knowledge);
         var workflow = _httpClientFactory.CreateClient(DashboardUpstreams.Workflow);
 
-        var goalPath = repoId is { } scope
+        string goalPath = repoId is { } scope
             ? $"api/nodes?within={scope}&via=belongs_to&descend=part_of&kind=goal&scope=all&summary=true"
             : "api/nodes?kind=goal&scope=all&summary=true";
         var (goalNodes, _) = await QueryAllAsync(knowledge, goalPath, cancellationToken);
@@ -57,7 +57,7 @@ public sealed class GoalExplorer
             await gate.WaitAsync(cancellationToken);
             try
             {
-                var taskPath =
+                string taskPath =
                     $"api/nodes?within={goal.Id}&via=part_of&descend=part_of&kind=task&scope=all&summary=true";
                 return await QueryAllAsync(knowledge, taskPath, cancellationToken);
             }
@@ -70,8 +70,8 @@ public sealed class GoalExplorer
         var items = goalNodes.Select((goal, index) =>
         {
             var (tasks, tasksComplete) = taskLists[index];
-            var resolvedTasks = tasks.Count(task => task.Resolved);
-            var workflowStatus = workflowByGoal.GetValueOrDefault(goal.Id);
+            int resolvedTasks = tasks.Count(task => task.Resolved);
+            string? workflowStatus = workflowByGoal.GetValueOrDefault(goal.Id);
             var completion = GoalCompletion.Compute(
                 goal.Resolved,
                 workflowStatus,
@@ -106,9 +106,9 @@ public sealed class GoalExplorer
     {
         const int pageSize = 500;
         var items = new List<NodeDto>();
-        for (var offset = 0; offset < 10_000; offset += pageSize)
+        for (int offset = 0; offset < 10_000; offset += pageSize)
         {
-            var separator = path.Contains('?') ? "&" : "?";
+            string separator = path.Contains('?') ? "&" : "?";
             var page = await client.GetFromJsonAsync<NodeEnvelope>(
                 $"{path}{separator}limit={pageSize}&offset={offset}",
                 JsonOptions,

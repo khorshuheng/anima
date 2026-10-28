@@ -49,7 +49,7 @@ public sealed class SessionRegistry : IAsyncDisposable
     public Entry? Get(string id)
         => _sessions.TryGetValue(id, out var entry) ? entry : null;
 
-    public IReadOnlyList<Entry> List() => _sessions.Values.OrderBy(entry => entry.StartedAt).ToArray();
+    public IReadOnlyList<Entry> List() => [.. _sessions.Values.OrderBy(entry => entry.StartedAt)];
 
     private static BrowserDialogBehavior ParseDialogBehavior(string? value)
     {

@@ -50,7 +50,7 @@ public sealed class DashboardProxy
                 pathAndQuery,
                 HttpCompletionOption.ResponseHeadersRead,
                 requestTimeout.Token);
-            var body = await response.Content.ReadAsByteArrayAsync(requestTimeout.Token);
+            byte[] body = await response.Content.ReadAsByteArrayAsync(requestTimeout.Token);
             return new UpstreamResponse(
                 (int)response.StatusCode,
                 response.Content.Headers.ContentType?.ToString(),
@@ -108,7 +108,7 @@ public sealed class DashboardProxy
             }
 
             await using var body = await upstream.Content.ReadAsStreamAsync(cancellationToken);
-            var buffer = ArrayPool<byte>.Shared.Rent(8192);
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(8192);
             try
             {
                 int read;

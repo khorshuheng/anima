@@ -23,7 +23,7 @@ var app = builder.Build();
 // The dashboard owns `/` (ui/dist), so it does not map the shared service-info root.
 app.UseAnimaServiceDefaults("dashboard", mapServiceInfo: false);
 
-var uiRoot = Path.Combine(RepoLayout.Root, "ui", "dist");
+string uiRoot = Path.Combine(RepoLayout.Root, "ui", "dist");
 if (Directory.Exists(uiRoot))
 {
     var uiFiles = new PhysicalFileProvider(uiRoot);

@@ -19,7 +19,7 @@ public static class SseEnvelopeReader
 
         while (true)
         {
-            var line = await reader.ReadLineAsync(cancellationToken);
+            string? line = await reader.ReadLineAsync(cancellationToken);
             if (line is null)
             {
                 break;

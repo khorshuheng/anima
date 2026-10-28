@@ -42,6 +42,11 @@ dotnet_diagnostic.CA1873.severity = none
 dotnet_diagnostic.IDE0005.severity = warning
 dotnet_diagnostic.IDE0058.severity = none
 
+# Namespaces are product-scoped (Anima.Knowledge, Anima.Automation) rather than
+# mirroring project folders, so IDE0130's folder rule does not apply. Renaming them
+# would change every public type's fully-qualified name.
+dotnet_diagnostic.IDE0130.severity = none
+
 [tests/**/*.cs]
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1861.severity = none

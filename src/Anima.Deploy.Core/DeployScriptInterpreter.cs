@@ -23,7 +23,7 @@ public static class DeployScriptInterpreter
             return new DeployInterpreter(options.Shell, [], ScriptIsExecutable: false);
         }
 
-        var extension = Path.GetExtension(script).ToLowerInvariant();
+        string extension = Path.GetExtension(script).ToLowerInvariant();
         switch (extension)
         {
             case ".exe":

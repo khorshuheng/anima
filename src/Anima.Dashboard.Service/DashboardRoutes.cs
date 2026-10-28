@@ -9,8 +9,8 @@ public static class DashboardRoutes
     /// <summary><c>/api/dashboard/workflows[/{id}[/...]]</c> -> workflow <c>api/workflows[/{id}[/...]]</c>.</summary>
     public static string Workflows(string? remainder, string? queryString = null)
     {
-        var trimmed = (remainder ?? string.Empty).Trim('/');
-        var path = trimmed.Length == 0 ? "api/workflows" : $"api/workflows/{trimmed}";
+        string trimmed = (remainder ?? string.Empty).Trim('/');
+        string path = trimmed.Length == 0 ? "api/workflows" : $"api/workflows/{trimmed}";
         return path + queryString;
     }
 

@@ -14,16 +14,16 @@ public sealed class SqliteKnowledgeOptions
 
     public static string ResolveDefaultPath()
     {
-        var configured = Environment.GetEnvironmentVariable("ANIMA_KNOWLEDGE_DB");
+        string? configured = Environment.GetEnvironmentVariable("ANIMA_KNOWLEDGE_DB");
         if (!string.IsNullOrWhiteSpace(configured))
         {
             return Path.GetFullPath(configured);
         }
 
-        var data = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string data = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(data))
         {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             data = Path.Combine(home, ".local", "share");
         }
 

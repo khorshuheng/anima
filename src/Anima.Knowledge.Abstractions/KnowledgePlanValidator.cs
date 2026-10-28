@@ -36,7 +36,7 @@ public static class KnowledgePlanValidator
                 }
             }
 
-            foreach (var dependency in task.DependsOn ?? [])
+            foreach (string dependency in task.DependsOn ?? [])
             {
                 if (dependency == task.Key)
                 {
@@ -53,7 +53,7 @@ public static class KnowledgePlanValidator
 
         var visiting = new HashSet<string>(StringComparer.Ordinal);
         var visited = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var key in byKey.Keys)
+        foreach (string key in byKey.Keys)
         {
             Visit(key);
         }
@@ -78,7 +78,7 @@ public static class KnowledgePlanValidator
                 Visit(parent);
             }
 
-            foreach (var dependency in task.DependsOn ?? [])
+            foreach (string dependency in task.DependsOn ?? [])
             {
                 Visit(dependency);
             }

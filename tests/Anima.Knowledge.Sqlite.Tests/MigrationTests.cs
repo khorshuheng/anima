@@ -23,7 +23,7 @@ public sealed class MigrationTests : IDisposable
     [Fact]
     public void Fresh_database_gets_tables_triggers_and_one_journal_entry()
     {
-        var path = Path.Combine(_directory, "knowledge.db");
+        string path = Path.Combine(_directory, "knowledge.db");
         using var graph = CreateGraph(path);
         using var connection = Open(path);
 
@@ -42,7 +42,7 @@ public sealed class MigrationTests : IDisposable
     [Fact]
     public async Task Reopening_the_database_does_not_reapply_scripts()
     {
-        var path = Path.Combine(_directory, "knowledge.db");
+        string path = Path.Combine(_directory, "knowledge.db");
         long nodeId;
         using (var first = CreateGraph(path))
         {
@@ -60,7 +60,7 @@ public sealed class MigrationTests : IDisposable
     [Fact]
     public void Vocabulary_columns_exist_with_defaults()
     {
-        var path = Path.Combine(_directory, "knowledge.db");
+        string path = Path.Combine(_directory, "knowledge.db");
         using var graph = CreateGraph(path);
         using var connection = Open(path);
 
@@ -106,7 +106,7 @@ public sealed class MigrationTests : IDisposable
     [Fact]
     public void DbUp_journal_is_the_schema_version_source()
     {
-        var path = Path.Combine(_directory, "knowledge.db");
+        string path = Path.Combine(_directory, "knowledge.db");
         using var graph = CreateGraph(path);
         using var connection = Open(path);
 
@@ -118,7 +118,7 @@ public sealed class MigrationTests : IDisposable
     [Fact]
     public void Database_from_an_earlier_pre_release_schema_fails_at_startup()
     {
-        var path = Path.Combine(_directory, "legacy.db");
+        string path = Path.Combine(_directory, "legacy.db");
         SeedLegacyDatabase(path);
 
         var exception = Assert.Throws<InvalidOperationException>(() => CreateGraph(path));
@@ -184,14 +184,14 @@ public sealed class MigrationTests : IDisposable
     [Fact]
     public void Schema_contract_matches_the_migrated_schema()
     {
-        var path = Path.Combine(_directory, "knowledge.db");
+        string path = Path.Combine(_directory, "knowledge.db");
         using var graph = CreateGraph(path);
         using var connection = Open(path);
 
         foreach (var (table, expected) in SchemaContract.Columns)
         {
             var actual = ColumnNames(connection, table);
-            var missing = expected.Where(column => !actual.Contains(column)).ToArray();
+            string[] missing = expected.Where(column => !actual.Contains(column)).ToArray();
             Assert.True(
                 missing.Length == 0,
                 $"{table} is missing {string.Join(", ", missing)}; update SchemaContract with Migrations/*.sql");

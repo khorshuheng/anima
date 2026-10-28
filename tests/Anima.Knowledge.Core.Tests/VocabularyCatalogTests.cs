@@ -243,7 +243,7 @@ public class VocabularyPackMergeTests
         Assert.True(resolution.Reversed);
         Assert.Equal("acme:billed_to", resolution.Definition.Name);
         Assert.Equal("acme:billed_from", catalog.RequireEdgeType("acme:billed_to").InverseName);
-        Assert.Equal("acme:billed_to", catalog.TryGetCanonicalEdgeTypeName("acme:billed_from", out var canonical) ? canonical : null);
+        Assert.Equal("acme:billed_to", catalog.TryGetCanonicalEdgeTypeName("acme:billed_from", out string? canonical) ? canonical : null);
     }
 
     [Fact]
@@ -363,9 +363,9 @@ public class VocabularyPackMergeTests
         var catalog = KnowledgeVocabularyLoader.Build(Core, [pack]);
 
         var partOf = catalog.RequireEdgeType(KnowledgeEdgeTypes.PartOf);
-        Assert.Equal([KnowledgeTraits.Hierarchy], partOf.Traits.ToArray());
+        Assert.Equal([KnowledgeTraits.Hierarchy], [.. partOf.Traits]);
         Assert.True(catalog.AllowsPair(KnowledgeEdgeTypes.PartOf, "acme:invoice", "acme:invoice"));
-        Assert.Equal([KnowledgeEdgeTypes.PartOf], catalog.EdgeTypesWithTrait(KnowledgeTraits.Hierarchy).Select(edge => edge.Name).ToArray());
+        Assert.Equal([KnowledgeEdgeTypes.PartOf], [.. catalog.EdgeTypesWithTrait(KnowledgeTraits.Hierarchy).Select(edge => edge.Name)]);
     }
 
     [Fact]
@@ -459,7 +459,7 @@ public sealed class VocabularyPolicyTests
     [Fact]
     public void Warn_mode_skips_the_bad_pack_and_keeps_the_rest()
     {
-        var directory = Path.Combine(Path.GetTempPath(), "anima-warn-" + Guid.NewGuid().ToString("n"));
+        string directory = Path.Combine(Path.GetTempPath(), "anima-warn-" + Guid.NewGuid().ToString("n"));
         Directory.CreateDirectory(directory);
         try
         {

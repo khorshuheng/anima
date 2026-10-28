@@ -13,7 +13,7 @@ public sealed class FileDescriptorSetCatalog : ISchemaCatalog, IDisposable
 {
     private readonly SchemaCatalogOptions _options;
     private readonly ILogger<FileDescriptorSetCatalog> _logger;
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly ConcurrentDictionary<string, bool> _loadFailures = new(StringComparer.Ordinal);
 
     private Dictionary<string, MessageDescriptor> _messages = new(StringComparer.Ordinal);
@@ -42,7 +42,7 @@ public sealed class FileDescriptorSetCatalog : ISchemaCatalog, IDisposable
         {
             lock (_gate)
             {
-                return _messages.Values.ToArray();
+                return [.. _messages.Values];
             }
         }
     }
@@ -73,7 +73,7 @@ public sealed class FileDescriptorSetCatalog : ISchemaCatalog, IDisposable
 
     public void Reload()
     {
-        var directory = ResolveDirectory();
+        string directory = ResolveDirectory();
         var loaded = new Dictionary<string, MessageDescriptor>(StringComparer.Ordinal);
 
         if (!Directory.Exists(directory))
@@ -88,7 +88,7 @@ public sealed class FileDescriptorSetCatalog : ISchemaCatalog, IDisposable
             return;
         }
 
-        foreach (var path in Directory.EnumerateFiles(directory, _options.FilePattern, SearchOption.TopDirectoryOnly)
+        foreach (string? path in Directory.EnumerateFiles(directory, _options.FilePattern, SearchOption.TopDirectoryOnly)
                      .Order(StringComparer.Ordinal))
         {
             try
@@ -145,7 +145,7 @@ public sealed class FileDescriptorSetCatalog : ISchemaCatalog, IDisposable
 
     private string ResolveDirectory()
     {
-        var configured = _options.DescriptorDirectory;
+        string configured = _options.DescriptorDirectory;
         if (string.IsNullOrWhiteSpace(configured))
         {
             configured = "contracts/descriptors";
@@ -158,7 +158,7 @@ public sealed class FileDescriptorSetCatalog : ISchemaCatalog, IDisposable
 
     private void StartWatcher()
     {
-        var directory = ResolveDirectory();
+        string directory = ResolveDirectory();
         if (!Directory.Exists(directory))
         {
             _logger.LogWarning("Cannot watch {Directory}: it does not exist.", directory);

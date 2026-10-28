@@ -15,7 +15,7 @@ public sealed class BrowserResponseWaiter
     private readonly BrowserEventLog _log;
     private readonly HashSet<string> _consumed = new(StringComparer.Ordinal);
     private readonly Queue<string> _consumedOrder = new();
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
 
     public BrowserResponseWaiter(BrowserEventLog log)
     {
@@ -41,7 +41,7 @@ public sealed class BrowserResponseWaiter
         // Captured before the scan: anything recorded from here on is either in the
         // buffer below or replayed by the subscription, so the write cannot slip
         // through the gap between "look back" and "start listening".
-        var cursor = _log.LatestSequence;
+        long cursor = _log.LatestSequence;
 
         if (TryTakeRecorded(matcher) is { } recorded)
         {
@@ -76,7 +76,7 @@ public sealed class BrowserResponseWaiter
         // is the one belonging to the action that just ran.
         var recorded = _log.Read(0, int.MaxValue);
 
-        for (var index = recorded.Count - 1; index >= 0; index--)
+        for (int index = recorded.Count - 1; index >= 0; index--)
         {
             if (matcher.Matches(recorded[index]) && TryConsume(recorded[index]))
             {
@@ -93,7 +93,7 @@ public sealed class BrowserResponseWaiter
     /// </summary>
     private bool TryConsume(BrowserEvent item)
     {
-        var key = item.RequestId ?? $"seq:{item.Sequence}";
+        string key = item.RequestId ?? $"seq:{item.Sequence}";
 
         lock (_gate)
         {

@@ -27,7 +27,7 @@ public static class SessionEventSse
         ArgumentNullException.ThrowIfNull(response);
         ArgumentNullException.ThrowIfNull(item);
 
-        var payload = JsonSerializer.Serialize(item, JsonOptions);
+        string payload = JsonSerializer.Serialize(item, JsonOptions);
         await response.WriteAsync($"event: browser-event\ndata: {payload}\n\n", cancellationToken);
         await response.Body.FlushAsync(cancellationToken);
     }

@@ -34,7 +34,7 @@ public sealed class DeployTests
     public void Signature_verification_accepts_github_and_raw_forms()
     {
         const string secret = "s3cret";
-        var expected = HookSignatureValidator.Compute(secret, GithubPayload);
+        string expected = HookSignatureValidator.Compute(secret, GithubPayload);
 
         Assert.True(HookSignatureValidator.Verify(secret, GithubPayload, "sha256=" + expected));
         Assert.True(HookSignatureValidator.Verify(secret, GithubPayload, expected));
@@ -51,15 +51,12 @@ public sealed class DeployTests
     [InlineData("refs/heads/*", "refs/heads/feature/login", false)]
     [InlineData("refs/heads/**", "refs/heads/feature/login", true)]
     [InlineData("*", "anything/goes", true)]
-    public void Glob_matching_respects_segments(string pattern, string value, bool expected)
-    {
-        Assert.Equal(expected, GlobPattern.IsMatch(pattern, value));
-    }
+    public void Glob_matching_respects_segments(string pattern, string value, bool expected) => Assert.Equal(expected, GlobPattern.IsMatch(pattern, value));
 
     [Fact]
     public void Deploy_rule_loader_reads_json_rules()
     {
-        var path = Path.Combine(Path.GetTempPath(), $"anima-rules-{Guid.NewGuid():n}.json");
+        string path = Path.Combine(Path.GetTempPath(), $"anima-rules-{Guid.NewGuid():n}.json");
         File.WriteAllText(path, """
             [
               { "name": "uat", "repositoryPattern": "acme/*", "refPattern": "refs/heads/main", "script": "deploy-uat.sh", "environment": "uat" }

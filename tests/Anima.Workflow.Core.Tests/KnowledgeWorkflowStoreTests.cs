@@ -39,7 +39,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         Assert.Empty(duplicate);
 
         var answers = await store.AddAnswersAsync(workflow.Id,
-            questions.Select(question => new AnswerInput(question.Id, "answer " + question.Id)).ToArray());
+            [.. questions.Select(question => new AnswerInput(question.Id, "answer " + question.Id))]);
         Assert.Equal(2, answers.Count);
         Assert.Equal(WorkflowStatus.Analysis, (await store.GetAsync(workflow.Id))!.Status);
 
@@ -282,7 +282,7 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
             new SpecTaskInput("three", "Three"),
         ]));
 
-        foreach (var key in new[] { "one", "two", "three" })
+        foreach (string? key in new[] { "one", "two", "three" })
         {
             await store.AddResultAsync(workflow.Id, Result(
                 key,
@@ -461,12 +461,12 @@ public sealed class KnowledgeWorkflowStoreTests : IDisposable
         Assert.Equal("anima/api", evidence.Branch);
         Assert.Equal("main", evidence.BaseRef);
         Assert.Equal("run-7", evidence.RunId);
-        Assert.Equal(["dotnet test Anima.Workflow.slnf"], evidence.TestCommands.ToArray());
-        Assert.Equal(["artifacts/api.trx"], evidence.ArtifactPaths.ToArray());
+        Assert.Equal(["dotnet test Anima.Workflow.slnf"], [.. evidence.TestCommands]);
+        Assert.Equal(["artifacts/api.trx"], [.. evidence.ArtifactPaths]);
 
         var context = await store.GetContextAsync(workflow.Id, "api");
         Assert.Equal("abc1234", context.LastResult!.HeadSha);
-        Assert.Equal(["artifacts/api.trx"], context.LastResult.ArtifactPaths.ToArray());
+        Assert.Equal(["artifacts/api.trx"], [.. context.LastResult.ArtifactPaths]);
 
         await store.AddResultAsync(workflow.Id, new ResultInput(
             "docs",

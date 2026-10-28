@@ -29,7 +29,7 @@ internal static class CliJson
 
     public static string? Option(string[] args, string name)
     {
-        for (var index = 0; index < args.Length - 1; index++)
+        for (int index = 0; index < args.Length - 1; index++)
         {
             if (string.Equals(args[index], name, StringComparison.Ordinal))
             {
@@ -43,7 +43,7 @@ internal static class CliJson
     public static IReadOnlyList<string> OptionValues(string[] args, string name)
     {
         var values = new List<string>();
-        for (var index = 0; index < args.Length - 1; index++)
+        for (int index = 0; index < args.Length - 1; index++)
         {
             if (string.Equals(args[index], name, StringComparison.Ordinal))
             {

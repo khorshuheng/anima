@@ -13,17 +13,16 @@ public sealed class DistributionTests
     [Fact]
     public void Image_copies_repo_config_for_vocabulary_packs()
     {
-        var dockerfile = File.ReadAllText(Path.Combine(RepositoryRoot, "docker", "Dockerfile"));
+        string dockerfile = File.ReadAllText(Path.Combine(RepositoryRoot, "docker", "Dockerfile"));
         Assert.Contains("COPY config", dockerfile, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Build_context_does_not_exclude_repo_config()
     {
-        var lines = File.ReadAllLines(Path.Combine(RepositoryRoot, ".dockerignore"))
+        string[] lines = [.. File.ReadAllLines(Path.Combine(RepositoryRoot, ".dockerignore"))
             .Select(line => line.Trim())
-            .Where(line => line.Length > 0 && !line.StartsWith('#'))
-            .ToArray();
+            .Where(line => line.Length > 0 && !line.StartsWith('#'))];
 
         Assert.DoesNotContain("config", lines);
         Assert.DoesNotContain("config/**", lines);
@@ -33,12 +32,12 @@ public sealed class DistributionTests
     [Fact]
     public void Every_repo_pack_loads()
     {
-        var directory = Path.Combine(RepositoryRoot, "config", "knowledge");
+        string directory = Path.Combine(RepositoryRoot, "config", "knowledge");
         Assert.True(Directory.Exists(directory), $"missing repo pack directory {directory}");
 
         // Committing a repo-owned pack here is the documented first pack location, so the
         // guard checks that each one still loads rather than forbidding *.json.
-        foreach (var pack in Directory.EnumerateFiles(directory, "*.json").Order(StringComparer.Ordinal))
+        foreach (string? pack in Directory.EnumerateFiles(directory, "*.json").Order(StringComparer.Ordinal))
         {
             var catalog = KnowledgeVocabularyLoader.Load([pack]);
             Assert.Contains(
@@ -51,7 +50,7 @@ public sealed class DistributionTests
     [Fact]
     public void Shipped_example_pack_still_loads()
     {
-        var path = Path.Combine(RepositoryRoot, "examples", "packs", "example-vocabulary.json");
+        string path = Path.Combine(RepositoryRoot, "examples", "packs", "example-vocabulary.json");
         var catalog = KnowledgeVocabularyLoader.Load([path]);
 
         var kind = catalog.RequireKind("example:invoice");

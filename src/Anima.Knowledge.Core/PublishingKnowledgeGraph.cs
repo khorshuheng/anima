@@ -66,7 +66,7 @@ public sealed class PublishingKnowledgeGraph : IKnowledgeGraph, IAsyncDisposable
     public async Task<bool> DeleteNodeAsync(long id, CancellationToken cancellationToken = default)
     {
         var node = await _inner.GetNodeAsync(id, cancellationToken);
-        var deleted = await _inner.DeleteNodeAsync(id, cancellationToken);
+        bool deleted = await _inner.DeleteNodeAsync(id, cancellationToken);
         if (deleted)
         {
             await PublishAsync("node.deleted", node, null, cancellationToken);
@@ -93,7 +93,7 @@ public sealed class PublishingKnowledgeGraph : IKnowledgeGraph, IAsyncDisposable
 
     public async Task<bool> RemoveEdgeAsync(long source, long destination, string edgeType, CancellationToken cancellationToken = default)
     {
-        var removed = await _inner.RemoveEdgeAsync(source, destination, edgeType, cancellationToken);
+        bool removed = await _inner.RemoveEdgeAsync(source, destination, edgeType, cancellationToken);
         if (removed)
         {
             await PublishAsync(

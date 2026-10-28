@@ -4,7 +4,7 @@ public sealed class PngSizeTests
 {
     private static byte[] Png(int width, int height)
     {
-        var header = new byte[24];
+        byte[] header = new byte[24];
         byte[] signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
         signature.CopyTo(header, 0);
 
@@ -26,7 +26,7 @@ public sealed class PngSizeTests
     [InlineData(1568, 4000)]
     public void Reads_dimensions_from_a_png_header(int width, int height)
     {
-        Assert.True(PngSize.TryRead(Png(width, height), out var readWidth, out var readHeight));
+        Assert.True(PngSize.TryRead(Png(width, height), out int readWidth, out int readHeight));
         Assert.Equal(width, readWidth);
         Assert.Equal(height, readHeight);
     }
@@ -40,8 +40,5 @@ public sealed class PngSizeTests
     }
 
     [Fact]
-    public void Rejects_a_png_with_zero_dimensions()
-    {
-        Assert.False(PngSize.TryRead(Png(0, 0), out _, out _));
-    }
+    public void Rejects_a_png_with_zero_dimensions() => Assert.False(PngSize.TryRead(Png(0, 0), out _, out _));
 }

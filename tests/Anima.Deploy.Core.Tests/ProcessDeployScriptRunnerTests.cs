@@ -13,9 +13,9 @@ public sealed class ProcessDeployScriptRunnerTests
             return;
         }
 
-        var root = Path.Combine(Path.GetTempPath(), $"anima-deploy-{Guid.NewGuid():n}");
+        string root = Path.Combine(Path.GetTempPath(), $"anima-deploy-{Guid.NewGuid():n}");
         Directory.CreateDirectory(root);
-        var script = Path.Combine(root, "deploy.sh");
+        string script = Path.Combine(root, "deploy.sh");
         await File.WriteAllTextAsync(script, """
             #!/usr/bin/env bash
             set -eu
@@ -57,9 +57,9 @@ public sealed class ProcessDeployScriptRunnerTests
             return;
         }
 
-        var root = Path.Combine(Path.GetTempPath(), $"anima-deploy-{Guid.NewGuid():n}");
+        string root = Path.Combine(Path.GetTempPath(), $"anima-deploy-{Guid.NewGuid():n}");
         Directory.CreateDirectory(root);
-        var script = Path.Combine(root, "fail.sh");
+        string script = Path.Combine(root, "fail.sh");
         await File.WriteAllTextAsync(script, "#!/usr/bin/env bash\nexit 7\n");
         File.SetUnixFileMode(
             script,

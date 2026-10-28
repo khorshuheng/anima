@@ -30,8 +30,8 @@ public sealed class BrowserExecutableLocatorTests
     {
         var candidates = BrowserExecutableLocator.Candidates("chrome", WindowsRoots);
 
-        var system = candidates.ToList().FindIndex(path => path.Contains("Program Files", StringComparison.Ordinal) && !path.Contains("(x86)", StringComparison.Ordinal));
-        var perUser = candidates.ToList().FindIndex(path => path.Contains("AppData", StringComparison.Ordinal));
+        int system = candidates.ToList().FindIndex(path => path.Contains("Program Files", StringComparison.Ordinal) && !path.Contains("(x86)", StringComparison.Ordinal));
+        int perUser = candidates.ToList().FindIndex(path => path.Contains("AppData", StringComparison.Ordinal));
 
         Assert.True(system >= 0);
         Assert.True(perUser > system);
@@ -66,9 +66,9 @@ public sealed class BrowserExecutableLocatorTests
     [Fact]
     public void Find_returns_the_first_existing_candidate()
     {
-        var expected = BrowserExecutableLocator.Candidates("chrome", WindowsRoots)[1];
+        string expected = BrowserExecutableLocator.Candidates("chrome", WindowsRoots)[1];
 
-        var path = BrowserExecutableLocator.Find(
+        string? path = BrowserExecutableLocator.Find(
             "chrome",
             WindowsRoots,
             environment: _ => null,
@@ -80,7 +80,7 @@ public sealed class BrowserExecutableLocatorTests
     [Fact]
     public void Find_honours_the_chrome_path_override()
     {
-        var path = BrowserExecutableLocator.Find(
+        string? path = BrowserExecutableLocator.Find(
             "chrome",
             WindowsRoots,
             environment: name => name == "ANIMA_CHROME_PATH" ? @"D:\chrome\chrome.exe" : null,
@@ -92,7 +92,7 @@ public sealed class BrowserExecutableLocatorTests
     [Fact]
     public void Find_reports_nothing_when_the_override_is_missing()
     {
-        var path = BrowserExecutableLocator.Find(
+        string? path = BrowserExecutableLocator.Find(
             "chrome",
             WindowsRoots,
             environment: name => name == "ANIMA_CHROME_PATH" ? @"D:\gone\chrome.exe" : null,

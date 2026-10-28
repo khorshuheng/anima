@@ -213,16 +213,14 @@ public static class WorkflowSummaryBuilder
             tasks.Count(task => Role(task.Role) == "verification"),
             tasks.Count(task => Role(task.Role) == "documentation"));
 
-        var agentIds = assignments.Select(assignment => assignment.AgentId)
+        string[] agentIds = [.. assignments.Select(assignment => assignment.AgentId)
             .Concat(results.Where(result => result.AgentId is not null).Select(result => result.AgentId!))
             .Where(agent => !string.IsNullOrWhiteSpace(agent))
             .Distinct(StringComparer.Ordinal)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        var runIds = assignments.Where(assignment => !string.IsNullOrWhiteSpace(assignment.RunId)).Select(assignment => assignment.RunId!)
+            .Order(StringComparer.Ordinal)];
+        string[] runIds = [.. assignments.Where(assignment => !string.IsNullOrWhiteSpace(assignment.RunId)).Select(assignment => assignment.RunId!)
             .Concat(results.Where(result => !string.IsNullOrWhiteSpace(result.RunId)).Select(result => result.RunId!))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+            .Distinct(StringComparer.Ordinal)];
 
         var allReviews = results
             .Where(result => Kind(result.Kind) == "review")
@@ -279,7 +277,7 @@ public static class WorkflowSummaryBuilder
             resultSummary,
             evidence,
             reviews,
-            assignments.Select(assignment => new SummaryAssignment(
+            [.. assignments.Select(assignment => new SummaryAssignment(
                 assignment.Id,
                 assignment.TaskKey,
                 assignment.AgentId,
@@ -287,13 +285,13 @@ public static class WorkflowSummaryBuilder
                 assignment.MessageId,
                 assignment.AcknowledgedAt,
                 assignment.RunId,
-                assignment.UpdatedAt)).ToArray(),
-            phases.Select(phase => new SummaryPhase(
+                assignment.UpdatedAt))],
+            [.. phases.Select(phase => new SummaryPhase(
                 phase.Id,
                 phase.Name,
                 phase.Status,
                 phase.Summary,
-                phase.CreatedAt)).ToArray());
+                phase.CreatedAt))]);
     }
 
     private static string Role(string? role) => string.IsNullOrWhiteSpace(role)

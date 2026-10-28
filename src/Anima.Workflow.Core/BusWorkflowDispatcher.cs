@@ -55,8 +55,8 @@ public sealed class BusWorkflowDispatcher : IWorkflowDispatcher
             ["context"] = context.DeepClone(),
         };
 
-        var messageId = WorkflowMessageId.Normalize(request.MessageId);
-        var topic = BusTopics.AgentInbox(request.AgentId);
+        string messageId = WorkflowMessageId.Normalize(request.MessageId);
+        string topic = BusTopics.AgentInbox(request.AgentId);
         var envelope = MessageEnvelope.Create(
             topic,
             "anima.workflow.v1.WorkflowRoleTask",

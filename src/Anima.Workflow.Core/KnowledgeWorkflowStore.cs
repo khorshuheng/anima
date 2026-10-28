@@ -155,7 +155,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             },
             cancellationToken);
 
-        return page.Items.OrderBy(node => node.Id).Select(MapQuestion).ToArray();
+        return [.. page.Items.OrderBy(node => node.Id).Select(MapQuestion)];
     }
 
     public async Task<IReadOnlyList<QuestionView>> AddQuestionsAsync(
@@ -197,7 +197,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         var added = new List<QuestionView>();
         foreach (var input in toCreate)
         {
-            var text = input.Text.Trim();
+            string text = input.Text.Trim();
             var node = await _graph.CreateNodeAsync(
                 new NodeDraft(
                     KnowledgeKinds.Question,
@@ -218,7 +218,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 workflowId,
                 "question.added",
                 ParseStatus((await RequireWorkflowAsync(workflowId, cancellationToken)).Properties),
-                added.Select(question => question.Id).ToArray(),
+                [.. added.Select(question => question.Id)],
                 $"{added.Count} question(s) added",
                 cancellationToken);
             await RefreshStatusAsync(workflowId, "questions added", cancellationToken);
@@ -263,7 +263,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 throw new WorkflowValidationException($"node {question.Id} is not a question");
             }
 
-            if (!question.Properties.TryGetValue("workflowId", out var owner) ||
+            if (!question.Properties.TryGetValue("workflowId", out string? owner) ||
                 owner != Id(workflowId))
             {
                 throw new WorkflowValidationException(
@@ -312,7 +312,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 workflowId,
                 "answer.added",
                 ParseStatus((await RequireWorkflowAsync(workflowId, cancellationToken)).Properties),
-                created.Select(answer => answer.Id).ToArray(),
+                [.. created.Select(answer => answer.Id)],
                 $"{created.Count} answer(s) added",
                 cancellationToken);
             await RefreshStatusAsync(workflowId, "answers added", cancellationToken);
@@ -339,22 +339,21 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             },
             cancellationToken);
 
-        return page.Items
+        return [.. page.Items
             .Where(node => node.Id > sinceId)
             .OrderBy(node => node.Id)
             .Select(node => new AnswerView(
                 node.Id,
                 ParseLong(node.Properties.GetValueOrDefault("questionId")),
                 node.Content,
-                node.CreatedAt))
-            .ToArray();
+                node.CreatedAt))];
     }
 
     public async Task<SpecView?> GetSpecAsync(long workflowId, CancellationToken cancellationToken = default)
     {
         var workflow = await RequireWorkflowAsync(workflowId, cancellationToken);
-        if (!workflow.Properties.TryGetValue("specId", out var specIdText) ||
-            !long.TryParse(specIdText, CultureInfo.InvariantCulture, out var specId))
+        if (!workflow.Properties.TryGetValue("specId", out string? specIdText) ||
+            !long.TryParse(specIdText, CultureInfo.InvariantCulture, out long specId))
         {
             return null;
         }
@@ -391,7 +390,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         var workflow = await RequireWorkflowAsync(workflowId, cancellationToken);
         var tasks = spec.Tasks ?? [];
         if (tasks.Count == 0 &&
-            workflow.Properties.TryGetValue("plannedTasks", out var plannedTasks))
+            workflow.Properties.TryGetValue("plannedTasks", out string? plannedTasks))
         {
             try
             {
@@ -415,8 +414,8 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         }
 
         var previous = await GetSpecAsync(workflowId, cancellationToken);
-        var version = (previous?.Version ?? 0) + 1;
-        var hash = ComputeSpecHash(spec.Markdown, tasks);
+        int version = (previous?.Version ?? 0) + 1;
+        string hash = ComputeSpecHash(spec.Markdown, tasks);
         var specNode = await _graph.CreateNodeAsync(
             new NodeDraft(
                 KnowledgeKinds.Spec,
@@ -441,7 +440,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 cancellationToken);
         }
 
-        var goalId = ParseLong(workflow.Properties.GetValueOrDefault("goalId"));
+        long goalId = ParseLong(workflow.Properties.GetValueOrDefault("goalId"));
         var taskViews = new List<SpecTaskView>(tasks.Count);
         foreach (var task in tasks)
         {
@@ -533,7 +532,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             },
             cancellationToken);
 
-        return page.Items.OrderBy(node => node.Id).Select(MapAssignment).ToArray();
+        return [.. page.Items.OrderBy(node => node.Id).Select(MapAssignment)];
     }
 
     public async Task<AssignmentView> RegisterAssignmentAsync(
@@ -569,12 +568,12 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
                 $"task '{assignment.TaskKey}' is not part of workflow {workflowId}; post the spec first");
 
         var existing = await FindAssignmentNodeAsync(workflowId, assignment.TaskKey, cancellationToken);
-        var sameAgent = existing is not null &&
+        bool sameAgent = existing is not null &&
                         string.Equals(
                             existing.Properties.GetValueOrDefault("agentId"),
                             assignment.AgentId,
                             StringComparison.Ordinal);
-        var samePacket = sameAgent &&
+        bool samePacket = sameAgent &&
                          string.Equals(
                              existing!.Properties.GetValueOrDefault("messageId"),
                              assignment.MessageId,
@@ -787,10 +786,9 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             .GroupBy(node => node.Properties.GetValueOrDefault("resultId") ?? string.Empty)
             .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
 
-        return results
+        return [.. results
             .OrderBy(node => node.Id)
-            .Select(node => MapResult(node, findingsByResult.GetValueOrDefault(Id(node.Id)) ?? []))
-            .ToArray();
+            .Select(node => MapResult(node, findingsByResult.GetValueOrDefault(Id(node.Id)) ?? []))];
     }
 
     public async Task<ResultView> AddResultAsync(
@@ -817,7 +815,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         ArgumentNullException.ThrowIfNull(result);
         Require(result.Summary, "summary");
         var workflow = await RequireWorkflowAsync(workflowId, cancellationToken);
-        var taskKey = result.TaskKey.Trim();
+        string taskKey = result.TaskKey.Trim();
         var taskNode = taskKey.Length == 0
             ? null
             : await FindTaskNodeAsync(workflowId, taskKey, cancellationToken);
@@ -845,7 +843,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         var implementationTasks = spec?.Tasks
             .Where(task => task.Role == WorkflowTaskRole.Implementation)
             .ToArray() ?? [];
-        var allImplemented = implementationTasks.Length > 0 &&
+        bool allImplemented = implementationTasks.Length > 0 &&
                              implementationTasks.All(task =>
                                  latestByTask.TryGetValue(task.Key, out var item) && item.Success);
         var latestMerge = Latest(existingResults, WorkflowResultKind.Merge);
@@ -997,15 +995,14 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         var results = await GetResultsAsync(workflowId, cancellationToken);
 
         return new TimelineView(
-            phases.Items
+            [.. phases.Items
                 .OrderBy(node => node.CreatedAt)
                 .Select(node => new PhaseView(
                     node.Id,
                     node.Name,
                     ParseStatus(node.Properties),
                     node.Description,
-                    node.CreatedAt))
-                .ToArray(),
+                    node.CreatedAt))],
             results);
     }
 
@@ -1059,9 +1056,9 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         NodeQuery query,
         CancellationToken cancellationToken)
     {
-        var pageSize = Math.Max(1, _options.MaxPageSize);
+        int pageSize = Math.Max(1, _options.MaxPageSize);
         var items = new List<KnowledgeNode>();
-        var offset = 0;
+        int offset = 0;
         while (true)
         {
             var page = await _graph.QueryNodesAsync(
@@ -1139,7 +1136,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         var questions = await GetQuestionsAsync(workflow.Id, openOnly: true, cancellationToken);
         var spec = await GetSpecAsync(workflow.Id, cancellationToken);
         var results = await GetResultsAsync(workflow.Id, cancellationToken);
-        var completed = results
+        int completed = results
             .Where(result => result.Kind == WorkflowResultKind.Implementation && result.Success)
             .Select(result => result.TaskKey)
             .Distinct(StringComparer.Ordinal)
@@ -1189,7 +1186,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
         var implementationTasks = spec.Tasks
             .Where(task => task.Role == WorkflowTaskRole.Implementation)
             .ToArray();
-        var allImplemented = implementationTasks.Length > 0 &&
+        bool allImplemented = implementationTasks.Length > 0 &&
                              implementationTasks.All(task =>
                                  latestByTask.TryGetValue(task.Key, out var item) && item.Success);
         var review = Latest(results, WorkflowResultKind.Review);
@@ -1420,7 +1417,7 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             return page.Items[0];
         }
 
-        var name = Path.GetFileName(repoPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        string name = Path.GetFileName(repoPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         return await _graph.CreateNodeAsync(
             new NodeDraft(
                 KnowledgeKinds.Repo,
@@ -1496,11 +1493,11 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             node.Description,
             DeserializeList(node.Properties.GetValueOrDefault("changedFiles")),
             DeserializeList(node.Properties.GetValueOrDefault("conflicts")),
-            findings.Select(finding => new FindingView(
+            [.. findings.Select(finding => new FindingView(
                 ParseSeverity(finding.Properties.GetValueOrDefault("severity")),
                 finding.Name,
                 NullIfEmpty(finding.Properties.GetValueOrDefault("path")),
-                ParseNullableInt(finding.Properties.GetValueOrDefault("line")))).ToArray(),
+                ParseNullableInt(finding.Properties.GetValueOrDefault("line"))))],
             NullIfEmpty(node.Properties.GetValueOrDefault("agentId")),
             NullIfEmpty(node.Properties.GetValueOrDefault("headSha")),
             NullIfEmpty(node.Properties.GetValueOrDefault("branch")),
@@ -1587,10 +1584,10 @@ public sealed class KnowledgeWorkflowStore : IWorkflowStore, IDisposable
             : FindingSeverity.Info;
 
     private static long ParseLong(string? value)
-        => long.TryParse(value, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
+        => long.TryParse(value, CultureInfo.InvariantCulture, out long parsed) ? parsed : 0;
 
     private static int? ParseNullableInt(string? value)
-        => int.TryParse(value, CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+        => int.TryParse(value, CultureInfo.InvariantCulture, out int parsed) ? parsed : null;
 
     private static string? NullIfEmpty(string? value)
         => string.IsNullOrEmpty(value) ? null : value;

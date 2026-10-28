@@ -153,7 +153,7 @@ app.MapPost("/api/sessions/{id}/scripts", async (
         result.Steps,
         result.Variables,
         result.Error,
-        Format = runner.Format,
+        runner.Format,
     });
 });
 
@@ -164,7 +164,7 @@ app.MapPost("/api/scripts/validate", (ValidateScriptRequest request, IScriptRunn
     {
         result.IsValid,
         result.Diagnostics,
-        Format = runner.Format,
+        runner.Format,
     });
 });
 
@@ -215,7 +215,7 @@ app.MapGet("/api/sessions/{id}/screenshot", async (
 
     try
     {
-        var content = await File.ReadAllBytesAsync(shot.Path, cancellationToken);
+        byte[] content = await File.ReadAllBytesAsync(shot.Path, cancellationToken);
         return Results.File(content, "image/png", $"session-{id}.png");
     }
     finally
@@ -335,8 +335,8 @@ static async Task<ActionOutcome> ExecuteActionAsync(
             break;
         case "scroll":
             {
-                var deltaX = request.X ?? 0;
-                var deltaY = request.Y ?? 0;
+                int deltaX = request.X ?? 0;
+                int deltaY = request.Y ?? 0;
 
                 if (deltaX == 0 && deltaY == 0)
                 {
@@ -370,12 +370,12 @@ static async Task<ActionOutcome> ExecuteActionAsync(
             break;
         case "text":
             {
-                var text = await session.GetTextAsync(Require(request.Target), cancellationToken);
+                string? text = await session.GetTextAsync(Require(request.Target), cancellationToken);
                 return new ActionOutcome(new { Output = text }, text);
             }
         case "attribute":
             {
-                var attribute = await session.GetAttributeAsync(
+                string? attribute = await session.GetAttributeAsync(
                     Require(request.Target),
                     Require(request.Value),
                     cancellationToken);
@@ -384,7 +384,7 @@ static async Task<ActionOutcome> ExecuteActionAsync(
             }
         case "value":
             {
-                var inputValue = await session.GetValueAsync(Require(request.Target), cancellationToken);
+                string? inputValue = await session.GetValueAsync(Require(request.Target), cancellationToken);
                 return new ActionOutcome(new { Output = inputValue }, inputValue);
             }
         case "texts":
@@ -394,32 +394,32 @@ static async Task<ActionOutcome> ExecuteActionAsync(
             }
         case "count":
             {
-                var count = await session.CountAsync(Require(request.Target), cancellationToken);
+                int count = await session.CountAsync(Require(request.Target), cancellationToken);
                 return new ActionOutcome(new { Count = count }, count.ToString(CultureInfo.InvariantCulture));
             }
         case "html":
             {
-                var html = await session.GetHtmlAsync(Require(request.Target), cancellationToken);
+                string? html = await session.GetHtmlAsync(Require(request.Target), cancellationToken);
                 return new ActionOutcome(new { Output = html }, html);
             }
         case "aria":
             {
-                var snapshot = await session.AriaSnapshotAsync(request.Target, cancellationToken);
+                string snapshot = await session.AriaSnapshotAsync(request.Target, cancellationToken);
                 return new ActionOutcome(new { Output = snapshot }, snapshot);
             }
         case "isvisible":
             {
-                var visible = await session.IsVisibleAsync(Require(request.Target), cancellationToken);
+                bool visible = await session.IsVisibleAsync(Require(request.Target), cancellationToken);
                 return new ActionOutcome(new { Value = visible }, visible.ToString());
             }
         case "isenabled":
             {
-                var enabled = await session.IsEnabledAsync(Require(request.Target), cancellationToken);
+                bool enabled = await session.IsEnabledAsync(Require(request.Target), cancellationToken);
                 return new ActionOutcome(new { Value = enabled }, enabled.ToString());
             }
         case "ischecked":
             {
-                var checkedState = await session.IsCheckedAsync(Require(request.Target), cancellationToken);
+                bool checkedState = await session.IsCheckedAsync(Require(request.Target), cancellationToken);
                 return new ActionOutcome(new { Value = checkedState }, checkedState.ToString());
             }
         case "box":
@@ -487,7 +487,7 @@ static async Task<ActionOutcome> ExecuteActionAsync(
                     throw new InvalidOperationException("height must be greater than zero");
                 }
 
-                var fullPage = string.Equals(request.Value, "fullpage", StringComparison.OrdinalIgnoreCase);
+                bool fullPage = string.Equals(request.Value, "fullpage", StringComparison.OrdinalIgnoreCase);
                 var shot = await session.TakeScreenshotAsync(
                     new BrowserScreenshotOptions
                     {
@@ -536,7 +536,7 @@ static async Task<ActionOutcome> ExecuteActionAsync(
             break;
         case "eval":
             {
-                var value = await session.EvaluateAsync(Require(request.Target), cancellationToken);
+                string value = await session.EvaluateAsync(Require(request.Target), cancellationToken);
                 return new ActionOutcome(new { Output = value }, value);
             }
         case "waitforresponse":
@@ -625,7 +625,7 @@ app.MapPost("/api/sessions/{id}/actions/batch", async (
         });
     }
 
-    for (var index = 0; index < request.Count; index++)
+    for (int index = 0; index < request.Count; index++)
     {
         if (request[index] is null)
         {
@@ -633,12 +633,12 @@ app.MapPost("/api/sessions/{id}/actions/batch", async (
         }
     }
 
-    var stopOnError = parsed.StopOnError ?? true;
+    bool stopOnError = parsed.StopOnError ?? true;
     var results = new List<object>(request.Count);
-    var success = true;
+    bool success = true;
     string? error = null;
 
-    for (var index = 0; index < request.Count; index++)
+    for (int index = 0; index < request.Count; index++)
     {
         var step = request[index];
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -662,7 +662,7 @@ app.MapPost("/api/sessions/{id}/actions/batch", async (
                 step.Action,
                 Success = true,
                 DurationMs = stopwatch.ElapsedMilliseconds,
-                Output = outcome.Output,
+                outcome.Output,
                 Error = (string?)null,
             });
         }
@@ -716,7 +716,7 @@ app.MapPost("/api/sessions/{id}/cdp", async (
         return Results.BadRequest(new { message = "this driver does not expose CDP" });
     }
 
-    var result = await cdp.SendAsync(request.Method, request.ParametersJson, cancellationToken);
+    string result = await cdp.SendAsync(request.Method, request.ParametersJson, cancellationToken);
     return Results.Ok(new { Result = result });
 });
 
@@ -737,7 +737,7 @@ static async Task<T> WithTimeoutAsync<T>(IBrowserSession session, int? timeoutMs
         throw new InvalidOperationException("timeoutMs must be greater than zero");
     }
 
-    var previous = session.TimeoutOverrideMs;
+    double? previous = session.TimeoutOverrideMs;
     session.TimeoutOverrideMs = requested;
 
     try
@@ -809,8 +809,8 @@ static WaitState ParseWaitState(string? state) => (state ?? "visible").ToLowerIn
 // does not grow the artifact directory without limit.
 static string StableCaptureName(string sessionId, bool fullPage, string? target)
 {
-    var mode = target is not null ? "element" : fullPage ? "full" : "viewport";
-    var suffix = target is null ? string.Empty : "-" + Slug(target);
+    string mode = target is not null ? "element" : fullPage ? "full" : "viewport";
+    string suffix = target is null ? string.Empty : "-" + Slug(target);
     return $"session-{sessionId}-{mode}{suffix}";
 }
 
@@ -818,7 +818,7 @@ static string Slug(string value)
 {
     var builder = new System.Text.StringBuilder(Math.Min(value.Length, 24));
 
-    foreach (var character in value)
+    foreach (char character in value)
     {
         if (builder.Length == 24)
         {

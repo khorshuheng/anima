@@ -43,7 +43,7 @@ public sealed class AutomationScriptParser
                 return new ScriptParseResult(null, diagnostics);
             }
 
-            var name = Scalar(GetNode(root, "name")) ?? "unnamed";
+            string name = Scalar(GetNode(root, "name")) ?? "unnamed";
             var variables = ParseVariables(GetNode(root, "variables"), diagnostics);
             var steps = ParseSteps(GetNode(root, "steps"), diagnostics);
 
@@ -76,8 +76,8 @@ public sealed class AutomationScriptParser
 
         foreach (var pair in mapping.Children)
         {
-            var key = Scalar(pair.Key);
-            var value = Scalar(pair.Value);
+            string? key = Scalar(pair.Key);
+            string? value = Scalar(pair.Value);
             if (string.IsNullOrWhiteSpace(key) || value is null)
             {
                 diagnostics.Add(new ScriptDiagnostic(
@@ -109,7 +109,7 @@ public sealed class AutomationScriptParser
             return steps;
         }
 
-        for (var index = 0; index < sequence.Children.Count; index++)
+        for (int index = 0; index < sequence.Children.Count; index++)
         {
             var child = sequence.Children[index];
             if (child is not YamlMappingNode mapping || mapping.Children.Count != 1)
@@ -122,7 +122,7 @@ public sealed class AutomationScriptParser
             }
 
             var entry = mapping.Children.First();
-            var verb = Scalar(entry.Key)?.Trim().ToLowerInvariant();
+            string? verb = Scalar(entry.Key)?.Trim().ToLowerInvariant();
             var value = entry.Value;
             var step = ParseStep(verb, value, index, diagnostics);
             if (step is not null)
@@ -197,7 +197,7 @@ public sealed class AutomationScriptParser
                     return null;
                 }
 
-                if (!TryIntField(value, "delay", "type", index, diagnostics, 0, out var typeDelay))
+                if (!TryIntField(value, "delay", "type", index, diagnostics, 0, out int? typeDelay))
                 {
                     return null;
                 }
@@ -235,8 +235,8 @@ public sealed class AutomationScriptParser
                     return null;
                 }
 
-                if (!TryIntField(value, "x", "scroll", index, diagnostics, null, out var scrollX)
-                    || !TryIntField(value, "y", "scroll", index, diagnostics, null, out var scrollY))
+                if (!TryIntField(value, "x", "scroll", index, diagnostics, null, out int? scrollX)
+                    || !TryIntField(value, "y", "scroll", index, diagnostics, null, out int? scrollY))
                 {
                     return null;
                 }
@@ -294,7 +294,7 @@ public sealed class AutomationScriptParser
                         .Select(item => item!)]
                     : null;
 
-                var singleValue = Field(value, "value");
+                string? singleValue = Field(value, "value");
 
                 if (selectValues is null && singleValue is null)
                 {
@@ -315,7 +315,7 @@ public sealed class AutomationScriptParser
                 }
 
                 var state = ParseWaitState(Field(value, "state"), index, diagnostics);
-                if (!TryIntField(value, "timeout", "waitFor", index, diagnostics, 1, out var timeout))
+                if (!TryIntField(value, "timeout", "waitFor", index, diagnostics, 1, out int? timeout))
                 {
                     return null;
                 }
@@ -328,7 +328,7 @@ public sealed class AutomationScriptParser
                     return null;
                 }
 
-                if (!TryIntField(value, "timeout", "waitForText", index, diagnostics, 1, out var textTimeout))
+                if (!TryIntField(value, "timeout", "waitForText", index, diagnostics, 1, out int? textTimeout))
                 {
                     return null;
                 }
@@ -363,8 +363,8 @@ public sealed class AutomationScriptParser
                 return expect;
 
             case "waitforresponse":
-                if (!TryIntField(value, "status", "waitForResponse", index, diagnostics, null, out var status)
-                    || !TryIntField(value, "timeout", "waitForResponse", index, diagnostics, 1, out var responseTimeout))
+                if (!TryIntField(value, "status", "waitForResponse", index, diagnostics, null, out int? status)
+                    || !TryIntField(value, "timeout", "waitForResponse", index, diagnostics, 1, out int? responseTimeout))
                 {
                     return null;
                 }
@@ -398,11 +398,11 @@ public sealed class AutomationScriptParser
                 }
 
                 var fields = new Dictionary<string, FormFieldValue>(StringComparer.Ordinal);
-                var valid = true;
+                bool valid = true;
 
                 foreach (var pair in form.Children)
                 {
-                    var selector = Scalar(pair.Key);
+                    string? selector = Scalar(pair.Key);
                     if (string.IsNullOrWhiteSpace(selector))
                     {
                         diagnostics.Add(new ScriptDiagnostic(
@@ -419,7 +419,7 @@ public sealed class AutomationScriptParser
                             sequence.Children.Select(Scalar).Where(item => item is not null).Select(item => item!)),
                         // An unquoted true/false is a toggle; a quoted one stays text.
                         YamlScalarNode { Style: ScalarStyle.Plain } plain
-                            when bool.TryParse(plain.Value, out var toggle) => FormFieldValue.FromToggle(toggle),
+                            when bool.TryParse(plain.Value, out bool toggle) => FormFieldValue.FromToggle(toggle),
                         YamlScalarNode scalar => FormFieldValue.FromText(scalar.Value ?? string.Empty),
                         _ => FormFieldValue.FromText(string.Empty),
                     };
@@ -489,9 +489,9 @@ public sealed class AutomationScriptParser
         }
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var field in fields)
+        foreach (string field in fields)
         {
-            var value = Field(mapping, field);
+            string? value = Field(mapping, field);
             if (string.IsNullOrWhiteSpace(value))
             {
                 diagnostics.Add(new ScriptDiagnostic(
@@ -540,13 +540,13 @@ public sealed class AutomationScriptParser
         out int? parsed)
     {
         parsed = null;
-        var text = Field(value, field);
+        string? text = Field(value, field);
         if (text is null)
         {
             return true;
         }
 
-        if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+        if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
         {
             diagnostics.Add(new ScriptDiagnostic(
                 DiagnosticCode(verb),
@@ -596,7 +596,7 @@ public sealed class AutomationScriptParser
     {
         var builder = new System.Text.StringBuilder("script.");
 
-        foreach (var character in verb)
+        foreach (char character in verb)
         {
             if (char.IsUpper(character) && builder.Length > "script.".Length)
             {

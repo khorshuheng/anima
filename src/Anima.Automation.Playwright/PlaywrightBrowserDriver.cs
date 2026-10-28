@@ -263,7 +263,7 @@ public sealed class PlaywrightBrowserDriver : IBrowserDriver, IAsyncDisposable
 
     private async Task<BrowserHost> LaunchWithProfileAsync(IBrowserType browserType, BrowserLaunchPlan plan)
     {
-        var directory = plan.UserDataDirectory!;
+        string directory = plan.UserDataDirectory!;
         Directory.CreateDirectory(directory);
 
         var context = await browserType.LaunchPersistentContextAsync(
@@ -464,11 +464,9 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         return new InteractionScope(this);
     }
 
-    private readonly struct InteractionScope : IDisposable
+    private readonly struct InteractionScope(PlaywrightBrowserSession session) : IDisposable
     {
-        private readonly PlaywrightBrowserSession _session;
-
-        public InteractionScope(PlaywrightBrowserSession session) => _session = session;
+        private readonly PlaywrightBrowserSession _session = session;
 
         public void Dispose()
         {
@@ -491,7 +489,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     {
         try
         {
-            var matched = await _page.Locator(selector).CountAsync().ConfigureAwait(false);
+            int matched = await _page.Locator(selector).CountAsync().ConfigureAwait(false);
 
             return matched > 0
                 ? $"matched {matched} element(s), but the action never became possible " +
@@ -542,7 +540,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     {
         try
         {
-            var matches = await _page.EvaluateAsync<string[]>(NearMatchScript, selector).ConfigureAwait(false);
+            string[] matches = await _page.EvaluateAsync<string[]>(NearMatchScript, selector).ConfigureAwait(false);
             return matches.Length == 0
                 ? string.Empty
                 : $"near matches: {string.Join(", ", matches)}\n";
@@ -616,7 +614,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         await InteractAsync(target, () => _page.Locator(target).ClickAsync(new LocatorClickOptions
         {
             Button = options?.Button is { } button ? ParseMouseButton(button) : null,
-            ClickCount = options is null ? null : options.ClickCount,
+            ClickCount = options?.ClickCount,
             Modifiers = options?.Modifiers?.Select(ParseModifier).ToArray(),
             Position = ToPosition(options?.Position),
         }));
@@ -732,8 +730,8 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         // an operator-chosen directory.
         if (!string.IsNullOrWhiteSpace(_uploadDirectory))
         {
-            var root = Path.GetFullPath(_uploadDirectory);
-            var candidate = Path.GetFullPath(path);
+            string root = Path.GetFullPath(_uploadDirectory);
+            string candidate = Path.GetFullPath(path);
 
             if (!candidate.StartsWith(
                     root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar,
@@ -824,7 +822,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         // the multiple form accepts exactly what the single form accepts. Doing it in
         // one evaluate also turns "no such option" into an immediate error instead of
         // a 30s selection timeout that blames the locator.
-        var resolved = await locator.EvaluateAsync<string?[]>(
+        string?[] resolved = await locator.EvaluateAsync<string?[]>(
             """
             (element, wanted) => {
                 const options = Array.from(element.options || []);
@@ -838,11 +836,11 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             """,
             values.ToArray());
 
-        var missing = values.Where((value, index) => resolved[index] is null).ToArray();
+        string[] missing = [.. values.Where((value, index) => resolved[index] is null)];
 
         if (missing.Length > 0)
         {
-            var available = await locator.EvaluateAllAsync<string[]>(
+            string[] available = await locator.EvaluateAllAsync<string[]>(
                 "elements => elements.flatMap(element => Array.from(element.options || []).map(option => option.value))");
 
             throw new InvalidOperationException(
@@ -893,7 +891,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
     {
         cancellationToken.ThrowIfCancellationRequested();
         var values = await _page.Locator(target).AllTextContentsAsync();
-        return values.ToArray();
+        return [.. values];
     }
 
     public async Task<string> EvaluateAsync(string expression, CancellationToken cancellationToken = default)
@@ -924,7 +922,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             catch (Exception exception) when (
                 exception is TimeoutException or InvalidOperationException or PlaywrightException)
             {
-                var done = results.Count == 0
+                string done = results.Count == 0
                     ? "no earlier fields were changed"
                     : $"already set: {string.Join(", ", results.Select(field => field.Selector))}";
 
@@ -955,14 +953,8 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             case "text":
                 // A boolean aimed at a text control is still fillable ("true"/"false"),
                 // so the parser's kind inference cannot make a field unfillable.
-                var text = value.Text
-                    ?? (value.Toggle is { } toggle ? (toggle ? "true" : "false") : null);
-
-                if (text is null)
-                {
-                    throw new InvalidOperationException("a text control needs a text value");
-                }
-
+                string? text = (value.Text
+                    ?? (value.Toggle is { } toggle ? (toggle ? "true" : "false") : null)) ?? throw new InvalidOperationException("a text control needs a text value");
                 await _page.Locator(selector).FillAsync(text).ConfigureAwait(false);
                 break;
 
@@ -1002,7 +994,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         }
 
         var after = await ReadFieldAsync(selector).ConfigureAwait(false);
-        var verified = Matches(value, after);
+        bool verified = Matches(value, after);
 
         if (!verified)
         {
@@ -1069,7 +1061,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
 
         var dropdown = _page.Locator(".ant-select-dropdown:not(.ant-select-dropdown-hidden)").Last;
 
-        foreach (var choice in choices)
+        foreach (string choice in choices)
         {
             // Clear the filter first: antd usually resets the search input on select,
             // but relying on that would concatenate filters where it does not.
@@ -1117,7 +1109,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
 
         if (!string.IsNullOrWhiteSpace(root))
         {
-            var matched = await _page.Locator(root).CountAsync().ConfigureAwait(false);
+            int matched = await _page.Locator(root).CountAsync().ConfigureAwait(false);
 
             if (matched == 0)
             {
@@ -1127,7 +1119,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
 
         // Returned as JSON text: Playwright's object mapping does not preserve the
         // classifier's shape reliably for an array of objects.
-        var elements = await _page.EvaluateAsync<string[]>(
+        string[] elements = await _page.EvaluateAsync<string[]>(
             $"rootSelector => {{ const classify = {ClassifyScript}; " +
             "const root = document.querySelector(rootSelector) || document.body; " +
             "return [...root.querySelectorAll(" +
@@ -1478,7 +1470,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
 
         // Cursor first: a navigation that commits between the check below and the
         // subscription must still be replayed, otherwise the wait misses its wakeup.
-        var cursor = _events.LatestSequence;
+        long cursor = _events.LatestSequence;
 
         if (GlobPattern.IsMatch(_page.Url, urlPattern))
         {
@@ -1533,7 +1525,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
 
             if (stopwatch.Elapsed >= timeout)
             {
-                var actual = await _page.Locator(target).CountAsync();
+                int actual = await _page.Locator(target).CountAsync();
                 throw new TimeoutException(
                     $"'{target}' had {actual} match(es) after {timeout.TotalSeconds:0.#}s, expected {count}.");
             }
@@ -1568,14 +1560,14 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(requestedCap);
         }
 
-        var directory = _screenshotDirectory ?? DefaultScreenshotDirectory;
+        string directory = _screenshotDirectory ?? DefaultScreenshotDirectory;
         Directory.CreateDirectory(directory);
 
-        var path = options.Path ?? Path.Combine(
+        string path = options.Path ?? Path.Combine(
             directory,
             (options.Name ?? $"shot-{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}") + ".png");
 
-        var documentHeight = await _page.EvaluateAsync<int>("document.documentElement.scrollHeight");
+        int documentHeight = await _page.EvaluateAsync<int>("document.documentElement.scrollHeight");
         byte[] content;
 
         if (!string.IsNullOrWhiteSpace(options.Target))
@@ -1591,8 +1583,8 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
         {
             // Clip rather than scale: without an image library the only way to keep a
             // long page inside a vision budget is to bound the captured height.
-            var width = await _page.EvaluateAsync<int>("window.innerWidth");
-            var height = options.MaxHeight is { } cap ? Math.Min(documentHeight, cap) : documentHeight;
+            int width = await _page.EvaluateAsync<int>("window.innerWidth");
+            int height = options.MaxHeight is { } cap ? Math.Min(documentHeight, cap) : documentHeight;
 
             // Clip only reaches past the viewport when fullPage is set as well;
             // without it the capture silently came back viewport-sized.
@@ -1604,7 +1596,7 @@ internal sealed class PlaywrightBrowserSession : IBrowserSession
             });
         }
 
-        var read = PngSize.TryRead(content, out var pixelWidth, out var pixelHeight);
+        bool read = PngSize.TryRead(content, out int pixelWidth, out int pixelHeight);
 
         return new BrowserScreenshot
         {

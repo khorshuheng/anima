@@ -60,7 +60,7 @@ public sealed class VocabularyWireTests
         var kinds = await graph.GetKindsAsync();
 
         var task = Assert.Single(kinds, kind => kind.Name == "task");
-        Assert.Equal([KnowledgeTraits.Plannable], task.Traits.ToArray());
+        Assert.Equal([KnowledgeTraits.Plannable], [.. task.Traits]);
         Assert.Equal(KnowledgeVocabularyCatalog.CorePack, task.Source);
 
         var invoice = Assert.Single(kinds, kind => kind.Name == "acme:invoice");
@@ -82,12 +82,12 @@ public sealed class VocabularyWireTests
 
         var partOf = Assert.Single(edgeTypes, edge => edge.Name == KnowledgeEdgeTypes.PartOf);
         Assert.True(partOf.Acyclic);
-        Assert.Equal([KnowledgeTraits.Hierarchy], partOf.Traits.ToArray());
+        Assert.Equal([KnowledgeTraits.Hierarchy], [.. partOf.Traits]);
         Assert.Equal(2, partOf.Pairs.Count);
 
         var billedTo = Assert.Single(edgeTypes, edge => edge.Name == "acme:billed_to");
         Assert.Equal("acme:billed_from", billedTo.InverseName);
-        Assert.Equal([new EdgeKindPair("acme:invoice", KnowledgeKinds.Repo)], billedTo.Pairs.ToArray());
+        Assert.Equal([new EdgeKindPair("acme:invoice", KnowledgeKinds.Repo)], [.. billedTo.Pairs]);
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class VocabularyWireTests
 
         await graph.GetNeighborsAsync(new NeighborQuery(7, EdgeDirection.Outgoing, "acme:billed_from"));
 
-        var request = handler.Requests[handler.Requests.Count - 1];
+        var request = handler.Requests[^1];
         Assert.Contains("direction=outgoing", request.PathAndQuery, StringComparison.Ordinal);
         Assert.Contains("type=acme%3Abilled_from", request.PathAndQuery, StringComparison.Ordinal);
     }
@@ -126,8 +126,8 @@ public sealed class VocabularyWireTests
         {
             var uri = request.RequestUri ?? throw new InvalidOperationException("request has no uri");
             Requests.Add(uri);
-            var key = uri.AbsolutePath.TrimStart('/');
-            if (!responses.TryGetValue(key, out var body))
+            string key = uri.AbsolutePath.TrimStart('/');
+            if (!responses.TryGetValue(key, out string? body))
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
                 {

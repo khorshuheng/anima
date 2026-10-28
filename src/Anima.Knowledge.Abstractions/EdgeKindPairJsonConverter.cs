@@ -20,9 +20,9 @@ public sealed class EdgeKindPairJsonConverter : JsonConverter<EdgeKindPair>
         }
 
         reader.Read();
-        var source = reader.GetString();
+        string? source = reader.GetString();
         reader.Read();
-        var destination = reader.GetString();
+        string? destination = reader.GetString();
         reader.Read();
         if (reader.TokenType != JsonTokenType.EndArray)
         {

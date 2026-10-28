@@ -18,7 +18,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
     [Fact]
     public async Task Nodes_and_properties_survive_a_new_process_instance()
     {
-        var path = Path.Combine(_directory, "knowledge.db");
+        string path = Path.Combine(_directory, "knowledge.db");
         using (var first = CreateGraph(path))
         {
             var node = await first.CreateNodeAsync(new NodeDraft(
@@ -90,7 +90,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
     public async Task Page_totals_remain_correct_when_offset_is_past_the_end()
     {
         using var graph = CreateGraph(Path.Combine(_directory, "knowledge.db"));
-        for (var index = 0; index < 2; index++)
+        for (int index = 0; index < 2; index++)
         {
             await graph.CreateNodeAsync(new NodeDraft(
                 KnowledgeKinds.Memory,
@@ -255,7 +255,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
         Assert.Equal(5, snapshot.NodeCount);
         Assert.Equal(5, snapshot.EdgeCount);
         Assert.Equal(
-            new[] { repo.Id, goal.Id, api.Id, ui.Id, change.Id },
+            [repo.Id, goal.Id, api.Id, ui.Id, change.Id],
             snapshot.Nodes.Select(node => node.Id));
         Assert.Equal(
             snapshot.Edges.Select(edge => edge.Id).Order(),
@@ -293,7 +293,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
         Assert.True(nodeCapped.Truncated);
         Assert.Equal(5, nodeCapped.NodeCount);
         Assert.Equal(5, nodeCapped.EdgeCount);
-        Assert.Equal(new[] { repo.Id, plan.Goal!.Id }, nodeCapped.Nodes.Select(node => node.Id));
+        Assert.Equal([repo.Id, plan.Goal!.Id], nodeCapped.Nodes.Select(node => node.Id));
         Assert.Single(nodeCapped.Edges);
         Assert.Equal(KnowledgeEdgeTypes.BelongsTo, nodeCapped.Edges[0].EdgeType);
 
@@ -357,7 +357,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
 
         var all = await graph.GetGraphAsync(new GraphSnapshotQuery { Newest = true });
 
-        Assert.Equal(new[] { change.Id, ui.Id, api.Id, plan.Goal!.Id, repo.Id }, all.Nodes.Select(node => node.Id));
+        Assert.Equal([change.Id, ui.Id, api.Id, plan.Goal!.Id, repo.Id], all.Nodes.Select(node => node.Id));
         Assert.Equal(
             all.Edges.Select(edge => edge.Id).OrderDescending(),
             all.Edges.Select(edge => edge.Id));
@@ -367,7 +367,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
         var window = await graph.GetGraphAsync(new GraphSnapshotQuery { Newest = true, MaxNodes = 3 });
 
         Assert.True(window.Truncated);
-        Assert.Equal(new[] { change.Id, ui.Id, api.Id }, window.Nodes.Select(node => node.Id));
+        Assert.Equal([change.Id, ui.Id, api.Id], window.Nodes.Select(node => node.Id));
         Assert.Equal(5, window.NodeCount);
         Assert.All(window.Edges, edge =>
         {
@@ -375,7 +375,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
             Assert.Contains(edge.Destination, window.Nodes.Select(node => node.Id));
         });
         Assert.Equal(
-            new[] { KnowledgeEdgeTypes.Implements, KnowledgeEdgeTypes.DependsOn },
+            [KnowledgeEdgeTypes.Implements, KnowledgeEdgeTypes.DependsOn],
             window.Edges.Select(edge => edge.EdgeType));
     }
 
@@ -392,7 +392,7 @@ public sealed class SqliteKnowledgeGraphTests : IDisposable
 
         var delta = await graph.GetGraphAsync(new GraphSnapshotQuery { SinceId = goal.Id });
 
-        Assert.Equal(new[] { task.Id, change.Id }, delta.Nodes.Select(node => node.Id));
+        Assert.Equal([task.Id, change.Id], delta.Nodes.Select(node => node.Id));
         Assert.Equal(4, delta.NodeCount);
         Assert.True(delta.Truncated);
         var edge = Assert.Single(delta.Edges);

@@ -6,10 +6,7 @@ public sealed class DashboardRoutesTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("/")]
-    public void Workflows_root_maps_to_the_workflow_list(string? remainder)
-    {
-        Assert.Equal("api/workflows", DashboardRoutes.Workflows(remainder));
-    }
+    public void Workflows_root_maps_to_the_workflow_list(string? remainder) => Assert.Equal("api/workflows", DashboardRoutes.Workflows(remainder));
 
     [Fact]
     public void Workflows_keeps_id_subpath_and_query()
@@ -20,10 +17,7 @@ public sealed class DashboardRoutesTests
     }
 
     [Fact]
-    public void Graph_without_caps_targets_the_plain_snapshot()
-    {
-        Assert.Equal("api/graph", DashboardRoutes.Graph());
-    }
+    public void Graph_without_caps_targets_the_plain_snapshot() => Assert.Equal("api/graph", DashboardRoutes.Graph());
 
     [Fact]
     public void Graph_forwards_only_the_caps_that_were_requested()
@@ -69,16 +63,10 @@ public sealed class DashboardRoutesTests
     }
 
     [Fact]
-    public void Kinds_targets_the_node_kind_catalog()
-    {
-        Assert.Equal("api/node-kinds", DashboardRoutes.Kinds());
-    }
+    public void Kinds_targets_the_node_kind_catalog() => Assert.Equal("api/node-kinds", DashboardRoutes.Kinds());
 
     [Fact]
-    public void Bus_snapshot_targets_the_bus_diagnostics_endpoint()
-    {
-        Assert.Equal("api/bus/snapshot", DashboardRoutes.BusSnapshot());
-    }
+    public void Bus_snapshot_targets_the_bus_diagnostics_endpoint() => Assert.Equal("api/bus/snapshot", DashboardRoutes.BusSnapshot());
 
     [Fact]
     public void Bus_stream_forwards_the_topics_filter()

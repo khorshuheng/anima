@@ -37,10 +37,9 @@ public sealed partial class SqliteKnowledgeGraph
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
-        var terms = text
+        string[] terms = [.. text
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(term => term.Any(char.IsLetterOrDigit))
-            .ToArray();
+            .Where(term => term.Any(char.IsLetterOrDigit))];
         if (terms.Length == 0)
         {
             return new NodePage([], 0, 0, 0);
@@ -73,7 +72,7 @@ public sealed partial class SqliteKnowledgeGraph
         var edges = new List<(long Id, long Source, long Destination, string Type, DateTimeOffset Created)>();
         await using (var command = connection.CreateCommand())
         {
-            var typeFilter = edgeType is null
+            string typeFilter = edgeType is null
                 ? string.Empty
                 : " AND t.name = $type COLLATE NOCASE";
             command.CommandText = $"""
@@ -208,19 +207,19 @@ public sealed partial class SqliteKnowledgeGraph
     public async Task<GraphHealth> GetHealthAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
-        var nodeCount = (int)ScalarLong(connection, "SELECT COUNT(*) FROM node;");
-        var edgeCount = (int)ScalarLong(connection, "SELECT COUNT(*) FROM edge;");
-        var isolated = (int)ScalarLong(connection, """
+        int nodeCount = (int)ScalarLong(connection, "SELECT COUNT(*) FROM node;");
+        int edgeCount = (int)ScalarLong(connection, "SELECT COUNT(*) FROM edge;");
+        int isolated = (int)ScalarLong(connection, """
             SELECT COUNT(*) FROM node n
             WHERE NOT EXISTS (SELECT 1 FROM edge e WHERE e.source = n.id OR e.destination = n.id);
             """);
-        var duplicates = (int)ScalarLong(connection, """
+        int duplicates = (int)ScalarLong(connection, """
             SELECT COUNT(*) FROM (
                 SELECT source, destination, edge_type_id
                 FROM edge GROUP BY source, destination, edge_type_id HAVING COUNT(*) > 1
             );
             """);
-        var unanchored = await CountUnanchoredAsync(connection, cancellationToken);
+        int unanchored = await CountUnanchoredAsync(connection, cancellationToken);
 
         return new GraphHealth(nodeCount, edgeCount, isolated, unanchored, duplicates);
     }
@@ -230,11 +229,11 @@ public sealed partial class SqliteKnowledgeGraph
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var maxNodes = query.EffectiveMaxNodes;
-        var maxEdges = query.EffectiveMaxEdges;
-        var direction = query.Newest ? "DESC" : "ASC";
-        var sinceFilter = query.SinceId is null ? string.Empty : " WHERE id > $sinceId";
-        var nodeFilter = query.SinceId is null ? string.Empty : " WHERE n.id > $sinceId";
+        int maxNodes = query.EffectiveMaxNodes;
+        int maxEdges = query.EffectiveMaxEdges;
+        string direction = query.Newest ? "DESC" : "ASC";
+        string sinceFilter = query.SinceId is null ? string.Empty : " WHERE id > $sinceId";
+        string nodeFilter = query.SinceId is null ? string.Empty : " WHERE n.id > $sinceId";
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
 
@@ -326,8 +325,8 @@ public sealed partial class SqliteKnowledgeGraph
         string[]? searchText,
         CancellationToken cancellationToken)
     {
-        var limit = Math.Clamp(query.Limit <= 0 ? 100 : query.Limit, 1, _knowledgeOptions.MaxPageSize);
-        var offset = Math.Max(query.Offset, 0);
+        int limit = Math.Clamp(query.Limit <= 0 ? 100 : query.Limit, 1, _knowledgeOptions.MaxPageSize);
+        int offset = Math.Max(query.Offset, 0);
         await using var connection = await OpenConnectionAsync(cancellationToken);
 
         if (query.Within is { } within)
@@ -383,9 +382,9 @@ public sealed partial class SqliteKnowledgeGraph
         CancellationToken cancellationToken)
     {
         var parameters = new List<(string Name, object Value)>();
-        var contentColumn = query.SummaryOnly ? "''" : "n.content";
-        var rankColumn = useFts ? ", bm25(node_fts) AS rank" : string.Empty;
-        var from = useFts
+        string contentColumn = query.SummaryOnly ? "''" : "n.content";
+        string rankColumn = useFts ? ", bm25(node_fts) AS rank" : string.Empty;
+        string from = useFts
             ? " FROM node_fts JOIN node n ON n.id = node_fts.rowid JOIN node_kind k ON k.id = n.kind_id"
             : " FROM node n JOIN node_kind k ON k.id = n.kind_id";
 
@@ -398,9 +397,9 @@ public sealed partial class SqliteKnowledgeGraph
         else if (searchText is not null)
         {
             var parts = new List<string>();
-            for (var index = 0; index < searchText.Length; index++)
+            for (int index = 0; index < searchText.Length; index++)
             {
-                var parameter = $"$like{index}";
+                string parameter = $"$like{index}";
                 parameters.Add((parameter, $"%{searchText[index]}%"));
                 parts.Add($"(n.name LIKE {parameter} OR n.description LIKE {parameter} " +
                           $"OR n.content LIKE {parameter} OR n.properties LIKE {parameter})");
@@ -417,12 +416,12 @@ public sealed partial class SqliteKnowledgeGraph
 
         if (query.Properties is { Count: > 0 } properties)
         {
-            var index = 0;
+            int index = 0;
             foreach (var pair in properties)
             {
-                var alias = $"je{index}";
-                var keyParameter = $"$pk{index}";
-                var valueParameter = $"$pv{index}";
+                string alias = $"je{index}";
+                string keyParameter = $"$pk{index}";
+                string valueParameter = $"$pv{index}";
                 conditions.Add(
                     $"EXISTS (SELECT 1 FROM json_each(n.properties) AS {alias} " +
                     $"WHERE {alias}.key = {keyParameter} AND {alias}.value = {valueParameter})");
@@ -444,8 +443,8 @@ public sealed partial class SqliteKnowledgeGraph
             conditions.Add("n.id IN (SELECT id FROM reachable)");
         }
 
-        var whereSql = " WHERE " + string.Join(" AND ", conditions);
-        var selectSql =
+        string whereSql = " WHERE " + string.Join(" AND ", conditions);
+        string selectSql =
             $"SELECT n.id, k.name, n.name, n.description, {contentColumn} AS content, n.properties, " +
             $"n.created_at, n.updated_at, CASE WHEN {ResolvedExists} THEN 1 ELSE 0 END AS resolved" +
             $"{rankColumn}{from}{whereSql}";
@@ -472,7 +471,7 @@ public sealed partial class SqliteKnowledgeGraph
         await using var countCommand = connection.CreateCommand();
         countCommand.CommandText = $"SELECT COUNT(*){from}{whereSql};";
         ApplyParameters(countCommand);
-        var total = Convert.ToInt32(
+        int total = Convert.ToInt32(
             await countCommand.ExecuteScalarAsync(cancellationToken),
             CultureInfo.InvariantCulture);
 
@@ -513,7 +512,7 @@ public sealed partial class SqliteKnowledgeGraph
             }
         }
 
-        var viaType = CanonicalEdgeType(via);
+        string? viaType = CanonicalEdgeType(via);
         var hop = new HashSet<long>();
         foreach (var edge in edges)
         {
@@ -540,11 +539,11 @@ public sealed partial class SqliteKnowledgeGraph
             // descend narrows away from the hop nodes. Children are always the edge's
             // source side (they point at their parent), so naming the relation by its
             // inverse changes which edges match, never the walk direction.
-            var descendType = descendResolution.Definition.Name;
+            string descendType = descendResolution.Definition.Name;
             var queue = new Queue<long>(hop);
             while (queue.Count > 0)
             {
-                var current = queue.Dequeue();
+                long current = queue.Dequeue();
                 foreach (var edge in edges)
                 {
                     if (!string.Equals(edge.Type, descendType, StringComparison.OrdinalIgnoreCase))
@@ -574,7 +573,7 @@ public sealed partial class SqliteKnowledgeGraph
         await using var insert = connection.CreateCommand();
         insert.CommandText = "INSERT OR IGNORE INTO reachable(id) VALUES($id);";
         var parameter = insert.Parameters.AddWithValue("$id", 0);
-        foreach (var id in reachable)
+        foreach (long id in reachable)
         {
             parameter.Value = id;
             await insert.ExecuteNonQueryAsync(cancellationToken);
@@ -631,7 +630,7 @@ public sealed partial class SqliteKnowledgeGraph
         command.Parameters.AddWithValue("$plannable", _plannableKindsJson);
         command.Parameters.AddWithValue("$hierarchy", _hierarchyEdgesJson);
         command.Parameters.AddWithValue("$anchor", _anchorEdgesJson);
-        var unanchored = await command.ExecuteScalarAsync(cancellationToken);
+        object? unanchored = await command.ExecuteScalarAsync(cancellationToken);
         return Convert.ToInt32(unanchored, CultureInfo.InvariantCulture);
     }
 }

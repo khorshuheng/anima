@@ -13,7 +13,7 @@ public sealed class BrowserEventLog
     /// <summary>Live subscriber capacity; a subscriber that falls this far behind drops its own events.</summary>
     private const int SubscriberCapacity = 256;
 
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly Queue<BrowserEvent> _events = new();
     private readonly List<Channel<BrowserEvent>> _subscribers = [];
     private readonly int _capacity;
@@ -112,10 +112,9 @@ public sealed class BrowserEventLog
 
         lock (_gate)
         {
-            return _events
+            return [.. _events
                 .Where(item => item.Sequence > afterSequence)
-                .Take(limit)
-                .ToArray();
+                .Take(limit)];
         }
     }
 
@@ -165,7 +164,7 @@ public sealed class BrowserEventLog
             // Clamping it keeps the stream alive instead of silently swallowing
             // every future event with Sequence <= cursor.
             lastSeen = Math.Min(afterSequence, _sequence);
-            backlog = _events.Where(item => item.Sequence > lastSeen).ToArray();
+            backlog = [.. _events.Where(item => item.Sequence > lastSeen)];
 
             if (_completed)
             {

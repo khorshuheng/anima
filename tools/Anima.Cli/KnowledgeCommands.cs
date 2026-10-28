@@ -61,9 +61,9 @@ internal static class KnowledgeCommands
 
     private static async Task<int> CreateNodeAsync(HttpClient http, string[] args)
     {
-        var kind = CliJson.Option(args, "--kind") ?? throw new InvalidOperationException("--kind is required");
-        var name = CliJson.Option(args, "--name") ?? throw new InvalidOperationException("--name is required");
-        var properties = CliJson.Option(args, "--properties");
+        string kind = CliJson.Option(args, "--kind") ?? throw new InvalidOperationException("--kind is required");
+        string name = CliJson.Option(args, "--name") ?? throw new InvalidOperationException("--name is required");
+        string? properties = CliJson.Option(args, "--properties");
         var body = new
         {
             kind,
@@ -81,8 +81,8 @@ internal static class KnowledgeCommands
     private static async Task<int> EdgeAsync(HttpClient http, string[] args)
     {
         if (args.Length < 4 ||
-            !long.TryParse(args[1], out var source) ||
-            !long.TryParse(args[2], out var destination))
+            !long.TryParse(args[1], out long source) ||
+            !long.TryParse(args[2], out long destination))
         {
             throw new InvalidOperationException("usage: anima knowledge edge <source> <destination> <edgeType>");
         }
@@ -92,9 +92,9 @@ internal static class KnowledgeCommands
 
     private static async Task<int> PlanAsync(HttpClient http, string[] args)
     {
-        var file = CliJson.Option(args, "--file")
+        string file = CliJson.Option(args, "--file")
             ?? throw new InvalidOperationException("--file is required (memgraph-style plan JSON)");
-        var json = await CliJson.ReadPayloadAsync($"@{file}");
+        string json = await CliJson.ReadPayloadAsync($"@{file}");
         return await PostAsync(http, "api/plans", json);
     }
 
@@ -106,7 +106,7 @@ internal static class KnowledgeCommands
         }
 
         var method = new HttpMethod(args[1].ToUpperInvariant());
-        var body = args.Length > 3 ? await CliJson.ReadPayloadAsync(args[3]) : null;
+        string? body = args.Length > 3 ? await CliJson.ReadPayloadAsync(args[3]) : null;
         return await SendAsync(http, method, args[2], body);
     }
 
@@ -134,7 +134,7 @@ internal static class KnowledgeCommands
             throw new InvalidOperationException("usage: anima knowledge vocabulary validate <pack.json>");
         }
 
-        var path = args[2];
+        string path = args[2];
         if (!File.Exists(path))
         {
             throw new InvalidOperationException($"vocabulary pack '{path}' does not exist");
@@ -161,7 +161,7 @@ internal static class KnowledgeCommands
         }
 
         using var response = await http.SendAsync(request);
-        var text = await response.Content.ReadAsStringAsync();
+        string text = await response.Content.ReadAsStringAsync();
         if (!response.IsSuccessStatusCode)
         {
             Console.Error.WriteLine($"error {(int)response.StatusCode}: {text}");
@@ -177,7 +177,7 @@ internal static class KnowledgeCommands
     }
 
     private static long RequireId(string[] args)
-        => args.Length >= 2 && long.TryParse(args[1], out var id)
+        => args.Length >= 2 && long.TryParse(args[1], out long id)
             ? id
             : throw new InvalidOperationException("node id is required");
 

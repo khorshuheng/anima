@@ -11,12 +11,12 @@ public static class TopicMatcher
         ArgumentException.ThrowIfNullOrWhiteSpace(pattern);
         ArgumentException.ThrowIfNullOrWhiteSpace(topic);
 
-        var patternSegments = pattern.Split('.', StringSplitOptions.RemoveEmptyEntries);
-        var topicSegments = topic.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        string[] patternSegments = pattern.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        string[] topicSegments = topic.Split('.', StringSplitOptions.RemoveEmptyEntries);
 
-        for (var i = 0; i < patternSegments.Length; i++)
+        for (int i = 0; i < patternSegments.Length; i++)
         {
-            var segment = patternSegments[i];
+            string segment = patternSegments[i];
             if (segment == "**")
             {
                 return true;

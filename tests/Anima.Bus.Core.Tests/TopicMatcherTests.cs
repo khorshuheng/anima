@@ -11,8 +11,5 @@ public sealed class TopicMatcherTests
     [InlineData("anima.agent", "anima.agent.worker", false)]
     [InlineData("*", "anima", true)]
     [InlineData("**", "anything.at.all", true)]
-    public void IsMatch_handles_segment_wildcards(string pattern, string topic, bool expected)
-    {
-        Assert.Equal(expected, TopicMatcher.IsMatch(pattern, topic));
-    }
+    public void IsMatch_handles_segment_wildcards(string pattern, string topic, bool expected) => Assert.Equal(expected, TopicMatcher.IsMatch(pattern, topic));
 }

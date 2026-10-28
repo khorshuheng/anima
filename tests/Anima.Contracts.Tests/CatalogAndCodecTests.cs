@@ -61,7 +61,7 @@ public sealed class CatalogAndCodecTests : IDisposable
         var codec = new DescriptorJsonCodec(CreateCatalog());
 
         var payload = codec.Parse("anima.test.v1.Ping", """{"text":"hello","count":"3"}""");
-        var json = codec.ToJson(payload);
+        string json = codec.ToJson(payload);
 
         Assert.Contains("\"hello\"", json, StringComparison.Ordinal);
         Assert.Contains("\"count\":3", json, StringComparison.Ordinal);
@@ -95,7 +95,7 @@ public sealed class CatalogAndCodecTests : IDisposable
         var codec = new DescriptorJsonCodec(CreateCatalog());
 
         var payload = codec.Parse("anima.test.v1.Ping", """{"text":"hello","count":3}""");
-        var bytes = codec.Encode(payload);
+        byte[] bytes = codec.Encode(payload);
         var decoded = codec.Decode("anima.test.v1.Ping", bytes);
 
         Assert.Equal("hello", decoded["text"]!.GetValue<string>());

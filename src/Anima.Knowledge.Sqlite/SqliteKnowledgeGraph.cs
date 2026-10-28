@@ -68,7 +68,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             ? SqliteKnowledgeOptions.ResolveDefaultPath()
             : Path.GetFullPath(_sqliteOptions.DatabasePath);
 
-        var directory = Path.GetDirectoryName(_databasePath);
+        string? directory = Path.GetDirectoryName(_databasePath);
         if (!string.IsNullOrWhiteSpace(directory))
         {
             Directory.CreateDirectory(directory);
@@ -95,13 +95,13 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         ArgumentNullException.ThrowIfNull(draft);
         return await WriteAsync(async (connection, transaction, token) =>
         {
-            var kindId = await ResolveKindAsync(connection, transaction, draft.Kind, token);
+            long kindId = await ResolveKindAsync(connection, transaction, draft.Kind, token);
             if (_vocabulary.TryGetKind(draft.Kind, out var kindDefinition))
             {
                 KnowledgePropertyRules.EnsureRequired(kindDefinition, draft.Properties);
             }
 
-            var id = await InsertNodeAsync(
+            long id = await InsertNodeAsync(
                 connection,
                 transaction,
                 kindId,
@@ -129,16 +129,16 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         return await WriteAsync(async (connection, transaction, token) =>
         {
             var existing = await LoadNodeAsync(connection, transaction, id, token);
-            var name = patch.Name is null ? existing.Name : RequireName(patch.Name);
-            var description = patch.Description ?? existing.Description;
-            var content = patch.Content ?? existing.Content;
+            string name = patch.Name is null ? existing.Name : RequireName(patch.Name);
+            string description = patch.Description ?? existing.Description;
+            string content = patch.Content ?? existing.Content;
             var properties = patch.Properties ?? existing.Properties;
             if (patch.Properties is not null && _vocabulary.TryGetKind(existing.Kind, out var kindDefinition))
             {
                 KnowledgePropertyRules.EnsureRequired(kindDefinition, properties);
             }
 
-            var now = Now();
+            string now = Now();
 
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
@@ -233,8 +233,8 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             }
             else
             {
-                var goalKindId = await ResolveKindAsync(connection, transaction, KnowledgeKinds.Goal, token);
-                var goalNodeId = await InsertNodeAsync(
+                long goalKindId = await ResolveKindAsync(connection, transaction, KnowledgeKinds.Goal, token);
+                long goalNodeId = await InsertNodeAsync(
                     connection,
                     transaction,
                     goalKindId,
@@ -265,8 +265,8 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             var created = new Dictionary<string, KnowledgeNode>(StringComparer.Ordinal);
             foreach (var task in tasks)
             {
-                var kindId = await ResolveKindAsync(connection, transaction, KnowledgeKinds.Task, token);
-                var taskId = await InsertNodeAsync(
+                long kindId = await ResolveKindAsync(connection, transaction, KnowledgeKinds.Task, token);
+                long taskId = await InsertNodeAsync(
                     connection,
                     transaction,
                     kindId,
@@ -281,7 +281,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             foreach (var task in tasks)
             {
                 var node = created[task.Key];
-                var parentId = task.Parent is { } parentKey ? created[parentKey].Id : goal.Id;
+                long parentId = task.Parent is { } parentKey ? created[parentKey].Id : goal.Id;
                 await AddEdgeCoreAsync(
                     connection,
                     transaction,
@@ -290,7 +290,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                     KnowledgeEdgeTypes.PartOf,
                     token);
 
-                foreach (var dependency in task.DependsOn ?? [])
+                foreach (string dependency in task.DependsOn ?? [])
                 {
                     await AddEdgeCoreAsync(
                         connection,
@@ -301,7 +301,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                         token);
                 }
 
-                foreach (var affect in task.Affects ?? [])
+                foreach (long affect in task.Affects ?? [])
                 {
                     await AddEdgeCoreAsync(
                         connection,
@@ -315,10 +315,10 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
 
             return new PlanResult(
                 goal,
-                tasks.Select(task => new PlanTaskResult(
+                [.. tasks.Select(task => new PlanTaskResult(
                     task.Key,
                     created[task.Key],
-                    task.DependsOn ?? [])).ToArray());
+                    task.DependsOn ?? []))]);
         }, cancellationToken);
     }
 
@@ -347,8 +347,8 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                     $"parent references node {parentId}, which is not anchored");
             }
 
-            var kindId = await ResolveKindAsync(connection, transaction, KnowledgeKinds.Task, token);
-            var nodeId = await InsertNodeAsync(
+            long kindId = await ResolveKindAsync(connection, transaction, KnowledgeKinds.Task, token);
+            long nodeId = await InsertNodeAsync(
                 connection,
                 transaction,
                 kindId,
@@ -365,7 +365,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                 KnowledgeEdgeTypes.PartOf,
                 token);
 
-            foreach (var dependency in draft.DependsOn ?? [])
+            foreach (long dependency in draft.DependsOn ?? [])
             {
                 await AddEdgeCoreAsync(
                     connection,
@@ -376,7 +376,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                     token);
             }
 
-            foreach (var affect in draft.Affects ?? [])
+            foreach (long affect in draft.Affects ?? [])
             {
                 await AddEdgeCoreAsync(
                     connection,
@@ -412,9 +412,9 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                     $"node {id} is of kind '{node.Kind}', expected task");
             }
 
-            var name = patch.Name is null ? node.Name : RequireName(patch.Name);
-            var description = patch.Description ?? node.Description;
-            var content = patch.Content ?? node.Content;
+            string name = patch.Name is null ? node.Name : RequireName(patch.Name);
+            string description = patch.Description ?? node.Description;
+            string content = patch.Content ?? node.Content;
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
@@ -458,11 +458,10 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
     /// </summary>
     private void EnsureSchemaShape(SqliteConnection connection)
     {
-        var missing = SchemaContract.Columns
+        string[] missing = [.. SchemaContract.Columns
             .SelectMany(group => group.Value
                 .Where(column => !ColumnNames(connection, group.Key).Contains(column))
-                .Select(column => $"{group.Key}.{column}"))
-            .ToArray();
+                .Select(column => $"{group.Key}.{column}"))];
         if (missing.Length > 0)
         {
             throw new InvalidOperationException(
@@ -587,7 +586,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                 """;
             countCommand.Parameters.AddWithValue("$source", sourceId);
             countCommand.Parameters.AddWithValue("$type", definition.Id);
-            var count = Convert.ToInt64(
+            long count = Convert.ToInt64(
                 await countCommand.ExecuteScalarAsync(cancellationToken),
                 CultureInfo.InvariantCulture);
             if (count > 0)
@@ -597,7 +596,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             }
         }
 
-        var createdAt = Now();
+        string createdAt = Now();
         await using var insertCommand = connection.CreateCommand();
         insertCommand.Transaction = transaction;
         insertCommand.CommandText = """
@@ -609,7 +608,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         insertCommand.Parameters.AddWithValue("$destination", destinationId);
         insertCommand.Parameters.AddWithValue("$type", definition.Id);
         insertCommand.Parameters.AddWithValue("$created", createdAt);
-        var edgeId = Convert.ToInt64(
+        long edgeId = Convert.ToInt64(
             await insertCommand.ExecuteScalarAsync(cancellationToken),
             CultureInfo.InvariantCulture);
 
@@ -633,7 +632,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         IReadOnlyDictionary<string, string>? properties,
         CancellationToken cancellationToken)
     {
-        var now = Now();
+        string now = Now();
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -659,7 +658,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         string kind,
         CancellationToken cancellationToken)
     {
-        var normalized = KnowledgeVocabularyLoader.NormalizeName(Require(kind, "kind"));
+        string normalized = KnowledgeVocabularyLoader.NormalizeName(Require(kind, "kind"));
         var usedIds = new List<int>();
         long? inactiveId = null;
         await using (var select = connection.CreateCommand())
@@ -670,7 +669,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             await using var reader = await select.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
-                var existingId = reader.GetInt64(0);
+                long existingId = reader.GetInt64(0);
                 if (reader.GetInt64(1) != 0)
                 {
                     if (reader.GetInt64(2) != 0)
@@ -710,7 +709,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             }
         }
 
-        var adHocId = KnowledgeVocabularyLoader.AllocatePackId(normalized, usedIds);
+        int adHocId = KnowledgeVocabularyLoader.AllocatePackId(normalized, usedIds);
         await using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
@@ -721,7 +720,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         insert.Parameters.AddWithValue("$id", adHocId);
         insert.Parameters.AddWithValue("$name", normalized);
         insert.Parameters.AddWithValue("$updated", Now());
-        var id = Convert.ToInt64(
+        long id = Convert.ToInt64(
             await insert.ExecuteScalarAsync(cancellationToken),
             CultureInfo.InvariantCulture);
         _logger.LogInformation("Registered ad-hoc node kind {Kind} as id {Id}.", normalized, id);
@@ -858,7 +857,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         CancellationToken cancellationToken)
     {
         var seen = new HashSet<long>();
-        var currentId = nodeId;
+        long currentId = nodeId;
 
         while (seen.Add(currentId))
         {
@@ -882,7 +881,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                     """;
                 anchorCommand.Parameters.AddWithValue("$id", currentId);
                 anchorCommand.Parameters.AddWithValue("$anchor", _anchorEdgesJson);
-                var anchored = Convert.ToInt64(
+                long anchored = Convert.ToInt64(
                     await anchorCommand.ExecuteScalarAsync(cancellationToken),
                     CultureInfo.InvariantCulture);
                 if (anchored > 0)
@@ -899,7 +898,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                 """;
             parentCommand.Parameters.AddWithValue("$id", currentId);
             parentCommand.Parameters.AddWithValue("$hierarchy", _hierarchyEdgesJson);
-            var parent = await parentCommand.ExecuteScalarAsync(cancellationToken);
+            object? parent = await parentCommand.ExecuteScalarAsync(cancellationToken);
             if (parent is null or DBNull)
             {
                 return false;
@@ -936,7 +935,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
                 failed);
         }
 
-        var applied = result.Scripts.Count();
+        int applied = result.Scripts.Count();
         if (applied == 0)
         {
             _logger.LogInformation("SQLite knowledge schema is up to date at {DatabasePath}.", _databasePath);
@@ -953,7 +952,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
     private void Seed(SqliteConnection connection)
     {
         using var transaction = connection.BeginTransaction();
-        var now = Now();
+        string now = Now();
 
         foreach (var kind in _vocabulary.NodeKinds)
         {
@@ -1042,13 +1041,13 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         command.Transaction = transaction;
         command.CommandText = $"SELECT id FROM {table} WHERE name = $name;";
         command.Parameters.AddWithValue("$name", name);
-        var actual = command.ExecuteScalar();
+        object? actual = command.ExecuteScalar();
         if (actual is null or DBNull)
         {
             throw new InvalidOperationException($"{table} row '{name}' disappeared during seeding");
         }
 
-        var actualId = Convert.ToInt64(actual, CultureInfo.InvariantCulture);
+        long actualId = Convert.ToInt64(actual, CultureInfo.InvariantCulture);
         if (actualId != expected)
         {
             throw new InvalidOperationException(
@@ -1122,7 +1121,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             usage.Transaction = transaction;
             usage.CommandText = inUseSql;
             usage.Parameters.AddWithValue("$id", id);
-            var count = Convert.ToInt64(
+            long count = Convert.ToInt64(
                 usage.ExecuteScalar(),
                 CultureInfo.InvariantCulture);
             if (count > 0)
@@ -1158,11 +1157,10 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             return [];
         }
 
-        var pairs = JsonSerializer.Deserialize<string[][]>(json) ?? [];
-        return pairs
+        string[][] pairs = JsonSerializer.Deserialize<string[][]>(json) ?? [];
+        return [.. pairs
             .Where(pair => pair.Length == 2)
-            .Select(pair => new EdgeKindPair(pair[0], pair[1]))
-            .ToList();
+            .Select(pair => new EdgeKindPair(pair[0], pair[1]))];
     }
 
     private static List<string> DeserializeNames(string json)
@@ -1286,7 +1284,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
             return null;
         }
 
-        return _vocabulary.TryGetCanonicalEdgeTypeName(name, out var canonical)
+        return _vocabulary.TryGetCanonicalEdgeTypeName(name, out string? canonical)
             ? canonical
             : KnowledgeVocabularyLoader.NormalizeName(name);
     }
@@ -1308,7 +1306,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
         => string.Join(",", kinds.Order(StringComparer.OrdinalIgnoreCase));
 
     private static HashSet<string> ParseKinds(string value)
-        => new HashSet<string>(
+        => new(
             value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             StringComparer.OrdinalIgnoreCase);
 
@@ -1384,7 +1382,7 @@ public sealed partial class SqliteKnowledgeGraph : IKnowledgeGraph, IDisposable
     {
         using var command = connection.CreateCommand();
         command.CommandText = sql;
-        var value = command.ExecuteScalar();
+        object? value = command.ExecuteScalar();
         return value is null or DBNull
             ? 0
             : Convert.ToInt64(value, CultureInfo.InvariantCulture);

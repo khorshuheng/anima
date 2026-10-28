@@ -26,9 +26,9 @@ internal static class BatchBodyReader
         ArgumentNullException.ThrowIfNull(request);
 
         using var reader = new StreamReader(request.Body);
-        var buffer = new char[MaxBodyChars + 1];
-        var total = 0;
-        var read = 0;
+        char[] buffer = new char[MaxBodyChars + 1];
+        int total = 0;
+        int read = 0;
 
         while (total < buffer.Length && (read = await reader.ReadAsync(buffer.AsMemory(total), cancellationToken)) > 0)
         {
@@ -40,7 +40,7 @@ internal static class BatchBodyReader
             return new ParsedBatch(null, null, $"batch body exceeds {MaxBodyChars} characters");
         }
 
-        var body = new string(buffer, 0, total);
+        string body = new string(buffer, 0, total);
         var trimmed = body.AsSpan().TrimStart();
 
         if (trimmed.IsEmpty)

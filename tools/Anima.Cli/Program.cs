@@ -9,8 +9,8 @@ using Anima.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-var command = args.Length == 0 ? "help" : args[0];
-var rest = args.Skip(1).ToArray();
+string command = args.Length == 0 ? "help" : args[0];
+string[] rest = [.. args.Skip(1)];
 
 try
 {
@@ -83,7 +83,7 @@ static int Browser(string[] args)
         return 2;
     }
 
-    var name = OptionValue(args, "--browser")
+    string name = OptionValue(args, "--browser")
         ?? Environment.GetEnvironmentVariable("ANIMA_BROWSER")
         ?? "chrome";
 
@@ -109,12 +109,12 @@ static int Browser(string[] args)
         Console.WriteLine($"endpoint: {plan.ConnectEndpoint}");
     }
 
-    var path = plan.ExecutablePath;
+    string? path = plan.ExecutablePath;
     if (path is null)
     {
         // Firefox and WebKit never use a system executable; they need the
         // Playwright-managed build.
-        var hint = plan.BrowserName is "firefox" or "webkit"
+        string hint = plan.BrowserName is "firefox" or "webkit"
             ? $" (scripts/install-playwright.sh {plan.BrowserName})"
             : string.Empty;
 
@@ -124,7 +124,7 @@ static int Browser(string[] args)
 
     Console.WriteLine($"{plan.BrowserName}: {path}");
 
-    var version = OperatingSystem.IsWindows()
+    string? version = OperatingSystem.IsWindows()
         ? WindowsBrowserVersion(path)
         : RunBrowserVersion(path);
 
@@ -168,7 +168,7 @@ static string? RunBrowserVersion(string path)
             return null;
         }
 
-        var version = process.StandardOutput.ReadToEnd().Trim();
+        string version = process.StandardOutput.ReadToEnd().Trim();
         process.WaitForExit();
         return version.Length > 0 ? version : null;
     }
@@ -237,7 +237,7 @@ static int Contracts(string[] args)
             }
 
             var codec = new DescriptorJsonCodec(catalog);
-            var json = File.ReadAllText(args[2]);
+            string json = File.ReadAllText(args[2]);
             try
             {
                 Console.WriteLine(codec.ToJson(codec.Parse(args[1], json)));
@@ -256,21 +256,20 @@ static int Contracts(string[] args)
 
 static int CompileContracts(string? descriptorDirectory)
 {
-    var protoRoot = Path.Combine(RepoLayout.ContractsDirectory, "proto");
+    string protoRoot = Path.Combine(RepoLayout.ContractsDirectory, "proto");
     if (!Directory.Exists(protoRoot))
     {
         Console.Error.WriteLine($"proto root '{protoRoot}' does not exist");
         return 1;
     }
 
-    var outputDirectory = descriptorDirectory ?? RepoLayout.DescriptorDirectory;
+    string outputDirectory = descriptorDirectory ?? RepoLayout.DescriptorDirectory;
     Directory.CreateDirectory(outputDirectory);
-    var output = Path.Combine(outputDirectory, "anima.pb");
-    var protoc = Environment.GetEnvironmentVariable("PROTOC") ?? "protoc";
-    var protos = Directory
+    string output = Path.Combine(outputDirectory, "anima.pb");
+    string protoc = Environment.GetEnvironmentVariable("PROTOC") ?? "protoc";
+    string[] protos = [.. Directory
         .EnumerateFiles(protoRoot, "*.proto", SearchOption.AllDirectories)
-        .Order(StringComparer.Ordinal)
-        .ToArray();
+        .Order(StringComparer.Ordinal)];
 
     var startInfo = new ProcessStartInfo
     {
@@ -283,7 +282,7 @@ static int CompileContracts(string? descriptorDirectory)
     startInfo.ArgumentList.Add("--include_imports");
     startInfo.ArgumentList.Add("--include_source_info");
     startInfo.ArgumentList.Add($"--descriptor_set_out={output}");
-    foreach (var proto in protos)
+    foreach (string? proto in protos)
     {
         startInfo.ArgumentList.Add(proto);
     }
@@ -297,8 +296,8 @@ static int CompileContracts(string? descriptorDirectory)
             return 1;
         }
 
-        var stdout = process.StandardOutput.ReadToEnd();
-        var stderr = process.StandardError.ReadToEnd();
+        string stdout = process.StandardOutput.ReadToEnd();
+        string stderr = process.StandardError.ReadToEnd();
         process.WaitForExit();
         if (stdout.Length > 0)
         {
@@ -378,14 +377,14 @@ static async Task<int> ScriptsAsync(string[] args)
                     return 2;
                 }
 
-                var browser = OptionValue(args, "--browser")
+                string browser = OptionValue(args, "--browser")
                     ?? Environment.GetEnvironmentVariable("ANIMA_BROWSER")
                     ?? "chrome";
 
-                var baseUrl = OptionValue(args, "--base-url");
+                string? baseUrl = OptionValue(args, "--base-url");
                 // Headed is the default; --headless opts out. --headed is still
                 // accepted so existing invocations keep working.
-                var headless = args.Contains("--headless", StringComparer.Ordinal);
+                bool headless = args.Contains("--headless", StringComparer.Ordinal);
                 var variables = ParseVariables(args);
 
                 var driver = new PlaywrightBrowserDriver(
@@ -393,9 +392,9 @@ static async Task<int> ScriptsAsync(string[] args)
                     NullLogger<PlaywrightBrowserDriver>.Instance);
                 var runner = new YamlAutomationScriptRunner(parser);
 
-                var showEvents = args.Contains("--events", StringComparer.Ordinal)
+                bool showEvents = args.Contains("--events", StringComparer.Ordinal)
                     || args.Contains("--events-errors", StringComparer.Ordinal);
-                var errorsOnly = args.Contains("--events-errors", StringComparer.Ordinal);
+                bool errorsOnly = args.Contains("--events-errors", StringComparer.Ordinal);
 
                 await using var session = await driver.StartSessionAsync(
                     new SessionOptions
@@ -445,7 +444,7 @@ static string? ValuedOptionWithoutValue(string[] args)
         "--browser", "--mode", "--profile-dir", "--connect", "--base-url", "--dir", "--var",
     ];
 
-    for (var index = 0; index < args.Length; index++)
+    for (int index = 0; index < args.Length; index++)
     {
         if (!valuedOptions.Contains(args[index], StringComparer.Ordinal))
         {
@@ -463,7 +462,7 @@ static string? ValuedOptionWithoutValue(string[] args)
 
 static void PrintEvents(IReadOnlyList<BrowserEvent> events, long dropped, bool errorsOnly)
 {
-    var shown = errorsOnly ? events.Where(IsProblem).ToList() : events;
+    var shown = errorsOnly ? [.. events.Where(IsProblem)] : events;
 
     Console.WriteLine($"events: {shown.Count} shown of {events.Count} captured ({dropped} dropped)");
 
@@ -485,7 +484,7 @@ static bool IsProblem(BrowserEvent item)
 
 static string DescribeEvent(BrowserEvent item)
 {
-    var detail = item.Kind switch
+    string? detail = item.Kind switch
     {
         BrowserEventKind.Console or BrowserEventKind.PageError => item.Text,
         BrowserEventKind.Navigation => item.Url,
@@ -510,7 +509,7 @@ static PlaywrightOptions CreateBrowserOptions(string[] args, string browserName,
 
 static string? OptionValue(string[] args, string name)
 {
-    for (var index = 0; index < args.Length - 1; index++)
+    for (int index = 0; index < args.Length - 1; index++)
     {
         if (string.Equals(args[index], name, StringComparison.Ordinal))
         {
@@ -524,15 +523,15 @@ static string? OptionValue(string[] args, string name)
 static Dictionary<string, string> ParseVariables(string[] args)
 {
     var variables = new Dictionary<string, string>(StringComparer.Ordinal);
-    for (var index = 0; index < args.Length - 1; index++)
+    for (int index = 0; index < args.Length - 1; index++)
     {
         if (!string.Equals(args[index], "--var", StringComparison.Ordinal))
         {
             continue;
         }
 
-        var pair = args[index + 1];
-        var separator = pair.IndexOf('=', StringComparison.Ordinal);
+        string pair = args[index + 1];
+        int separator = pair.IndexOf('=', StringComparison.Ordinal);
         if (separator > 0)
         {
             variables[pair[..separator]] = pair[(separator + 1)..];

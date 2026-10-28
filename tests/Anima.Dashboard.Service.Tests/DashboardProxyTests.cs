@@ -108,7 +108,7 @@ public sealed class DashboardProxyTests
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
 
-        var status = await CreateProxy(client, "bus")
+        int status = await CreateProxy(client, "bus")
             .CopyEventStreamAsync("api/bus/stream?topics=anima.**", context.Response);
 
         Assert.Equal(200, status);
@@ -125,7 +125,7 @@ public sealed class DashboardProxyTests
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
 
-        var status = await CreateProxy(client, "bus")
+        int status = await CreateProxy(client, "bus")
             .CopyEventStreamAsync("api/bus/stream", context.Response);
 
         Assert.Equal(502, status);

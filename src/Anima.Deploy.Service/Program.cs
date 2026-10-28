@@ -23,7 +23,7 @@ app.MapPost("/hooks/git/{provider}", async (
     CancellationToken cancellationToken) =>
 {
     using var reader = new StreamReader(context.Request.Body);
-    var payload = await reader.ReadToEndAsync(cancellationToken);
+    string payload = await reader.ReadToEndAsync(cancellationToken);
     var headers = context.Request.Headers.ToDictionary(
         header => header.Key,
         header => header.Value.ToString(),

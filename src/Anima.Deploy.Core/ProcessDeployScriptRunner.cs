@@ -31,7 +31,7 @@ public sealed class ProcessDeployScriptRunner : IDeployScriptRunner
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
 
-        var scriptRoot = Path.IsPathRooted(_options.ScriptRoot)
+        string scriptRoot = Path.IsPathRooted(_options.ScriptRoot)
             ? _options.ScriptRoot
             : Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), _options.ScriptRoot));
 
@@ -54,7 +54,7 @@ public sealed class ProcessDeployScriptRunner : IDeployScriptRunner
             WorkingDirectory = scriptRoot,
         };
 
-        foreach (var argument in interpreter.PrefixArguments)
+        foreach (string argument in interpreter.PrefixArguments)
         {
             startInfo.ArgumentList.Add(argument);
         }

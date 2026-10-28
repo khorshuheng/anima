@@ -39,7 +39,7 @@ public static class BusEnvelopeJson
 
         if (IsJsonContentType(envelope.ContentType) && !envelope.Payload.IsEmpty)
         {
-            var text = Encoding.UTF8.GetString(envelope.Payload.Span);
+            string text = Encoding.UTF8.GetString(envelope.Payload.Span);
             try
             {
                 json["payloadJson"] = JsonNode.Parse(text);

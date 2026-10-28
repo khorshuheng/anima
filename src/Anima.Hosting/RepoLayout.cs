@@ -20,7 +20,7 @@ public static class RepoLayout
 
     private static string FindRoot()
     {
-        var configured = Environment.GetEnvironmentVariable("ANIMA_REPO_ROOT");
+        string? configured = Environment.GetEnvironmentVariable("ANIMA_REPO_ROOT");
         if (!string.IsNullOrWhiteSpace(configured))
         {
             return Path.GetFullPath(configured);

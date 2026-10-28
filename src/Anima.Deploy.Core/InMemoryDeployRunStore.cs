@@ -6,7 +6,7 @@ public sealed class InMemoryDeployRunStore : IDeployRunStore
 {
     private readonly ConcurrentDictionary<string, DeployRun> _runs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentQueue<string>> _logs = new(StringComparer.Ordinal);
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
 
     public void Add(DeployRun run)
     {
@@ -33,7 +33,7 @@ public sealed class InMemoryDeployRunStore : IDeployRunStore
         }
 
         var queue = _logs.GetOrAdd(runId, _ => new ConcurrentQueue<string>());
-        foreach (var entry in line.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (string entry in line.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             queue.Enqueue(entry);
         }
@@ -43,7 +43,7 @@ public sealed class InMemoryDeployRunStore : IDeployRunStore
         => _runs.TryGetValue(runId, out var run) ? run : null;
 
     public IReadOnlyList<DeployRun> List()
-        => _runs.Values.OrderByDescending(run => run.QueuedAt).ToArray();
+        => [.. _runs.Values.OrderByDescending(run => run.QueuedAt)];
 
     public IReadOnlyList<string> GetLog(string runId)
         => _logs.TryGetValue(runId, out var queue) ? queue.ToArray() : [];

@@ -45,7 +45,7 @@ public static class BrowserLaunchPlanResolver
         var locateExecutable = executableLocator ?? (name => BrowserExecutableLocator.Find(name));
         options ??= new PlaywrightOptions();
 
-        var browserName = (FirstNonEmpty(options.BrowserName, readEnvironment("ANIMA_BROWSER")) ?? "chrome")
+        string browserName = (FirstNonEmpty(options.BrowserName, readEnvironment("ANIMA_BROWSER")) ?? "chrome")
             .ToLowerInvariant();
 
         if (!SupportedBrowsers.Contains(browserName, StringComparer.Ordinal))
@@ -56,7 +56,7 @@ public static class BrowserLaunchPlanResolver
                 "chrome, chromium, msedge, firefox or webkit.");
         }
 
-        var modeName = (FirstNonEmpty(options.Mode, readEnvironment(ModeEnvironmentVariable)) ?? LaunchModeName)
+        string modeName = (FirstNonEmpty(options.Mode, readEnvironment(ModeEnvironmentVariable)) ?? LaunchModeName)
             .ToLowerInvariant();
 
         if (options.EventBufferSize <= 0)
@@ -82,11 +82,11 @@ public static class BrowserLaunchPlanResolver
                 "cannot run with a persistent profile or be attached over CDP.");
         }
 
-        var profileDirectory = FirstNonEmpty(
+        string? profileDirectory = FirstNonEmpty(
             options.UserDataDirectory,
             readEnvironment(ProfileEnvironmentVariable));
 
-        var endpointText = FirstNonEmpty(
+        string? endpointText = FirstNonEmpty(
             options.ConnectEndpoint,
             readEnvironment(EndpointEnvironmentVariable));
 
@@ -189,7 +189,7 @@ public static class BrowserLaunchPlanResolver
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(browserName);
 
-        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         if (string.IsNullOrWhiteSpace(root))
         {
             root = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
@@ -239,13 +239,13 @@ public static class BrowserLaunchPlanResolver
             return path;
         }
 
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         return path.Length == 1 ? home : Path.Combine(home, path[2..]);
     }
 
     private static string? FirstNonEmpty(params string?[] values)
     {
-        foreach (var value in values)
+        foreach (string? value in values)
         {
             if (!string.IsNullOrWhiteSpace(value))
             {

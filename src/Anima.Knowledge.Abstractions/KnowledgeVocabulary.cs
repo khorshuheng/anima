@@ -81,7 +81,7 @@ public static class KnowledgeEdgeTypes
     public const string Supersedes = "supersedes";
 
     private static HashSet<string> Set(params string[] values)
-        => new HashSet<string>(values, StringComparer.OrdinalIgnoreCase);
+        => new(values, StringComparer.OrdinalIgnoreCase);
 
     public static IReadOnlyList<EdgeTypeDefinition> Definitions { get; } =
     [

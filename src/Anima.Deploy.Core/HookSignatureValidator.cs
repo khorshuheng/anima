@@ -21,11 +21,11 @@ public static class HookSignatureValidator
             return false;
         }
 
-        var value = signature.StartsWith("sha256=", StringComparison.OrdinalIgnoreCase)
+        string value = signature.StartsWith("sha256=", StringComparison.OrdinalIgnoreCase)
             ? signature[7..]
             : signature;
 
-        var expected = Compute(secret, payload);
+        string expected = Compute(secret, payload);
         return CryptographicOperations.FixedTimeEquals(
             Encoding.ASCII.GetBytes(expected),
             Encoding.ASCII.GetBytes(value.ToLowerInvariant()));
@@ -35,7 +35,7 @@ public static class HookSignatureValidator
     {
         ArgumentException.ThrowIfNullOrEmpty(secret);
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
-        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        byte[] hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 }

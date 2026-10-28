@@ -26,26 +26,25 @@ public sealed class ScriptCatalog
 
     public IReadOnlyList<ScriptDescriptor> LoadAll()
     {
-        var directory = ResolveDirectory();
+        string directory = ResolveDirectory();
         if (!Directory.Exists(directory))
         {
             return [];
         }
 
-        return Directory
+        return [.. Directory
             .EnumerateFiles(directory, "*.y*ml", SearchOption.TopDirectoryOnly)
             .Order(StringComparer.Ordinal)
             .Select(path =>
             {
-                var source = File.ReadAllText(path);
+                string source = File.ReadAllText(path);
                 var parsed = _parser.Parse(source);
                 return new ScriptDescriptor(
                     parsed.Script?.Name ?? Path.GetFileNameWithoutExtension(path),
                     path,
                     source,
                     parsed.IsValid);
-            })
-            .ToArray();
+            })];
     }
 
     private string ResolveDirectory()

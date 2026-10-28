@@ -32,7 +32,7 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
     {
         ArgumentNullException.ThrowIfNull(draft);
         var vocabulary = await GetVocabularyAsync(cancellationToken);
-        var kindId = vocabulary.KindId(draft.Kind);
+        long kindId = vocabulary.KindId(draft.Kind);
 
         using var response = await _http.PostAsJsonAsync(
             "api/nodes",
@@ -70,13 +70,13 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
     {
         ArgumentNullException.ThrowIfNull(query);
         var vocabulary = await GetVocabularyAsync(cancellationToken);
-        var path = BuildNodeQuery("api/nodes", query);
+        string path = BuildNodeQuery("api/nodes", query);
         var page = await _http.GetFromJsonAsync<NodeEnvelope>(path, JsonOptions, cancellationToken)
             ?? new NodeEnvelope([]);
         var items = page.Items ?? [];
 
         return new NodePage(
-            items.Select(item => item.ToModel(vocabulary.KindName(item.KindId))).ToArray(),
+            [.. items.Select(item => item.ToModel(vocabulary.KindName(item.KindId)))],
             page.Total ?? items.Count,
             query.Limit,
             query.Offset);
@@ -90,7 +90,7 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         var vocabulary = await GetVocabularyAsync(cancellationToken);
         var effective = query ?? new NodeQuery();
-        var path = BuildNodeQuery("api/search", effective, text);
+        string path = BuildNodeQuery("api/search", effective, text);
 
         var envelope = await _http.GetFromJsonAsync<SearchEnvelope>(path, JsonOptions, cancellationToken)
             ?? new SearchEnvelope(null, null, null);
@@ -177,7 +177,7 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(edgeType);
         var vocabulary = await GetVocabularyAsync(cancellationToken);
-        var path = $"api/edges?source={source}&destination={destination}&edge_type_id={vocabulary.EdgeTypeId(edgeType)}";
+        string path = $"api/edges?source={source}&destination={destination}&edge_type_id={vocabulary.EdgeTypeId(edgeType)}";
 
         using var response = await _http.DeleteAsync(path, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -195,14 +195,14 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
     {
         ArgumentNullException.ThrowIfNull(query);
         var vocabulary = await GetVocabularyAsync(cancellationToken);
-        var direction = query.Direction switch
+        string direction = query.Direction switch
         {
             EdgeDirection.Outgoing => "outgoing",
             EdgeDirection.Incoming => "incoming",
             _ => "both",
         };
 
-        var path = $"api/nodes/{query.NodeId}/neighbors?direction={direction}";
+        string path = $"api/nodes/{query.NodeId}/neighbors?direction={direction}";
         if (!string.IsNullOrWhiteSpace(query.EdgeType))
         {
             path += $"&edge_type={Uri.EscapeDataString(query.EdgeType)}";
@@ -211,12 +211,12 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
         var envelope = await _http.GetFromJsonAsync<NeighborEnvelope>(path, JsonOptions, cancellationToken)
             ?? new NeighborEnvelope([]);
 
-        return (envelope.Items ?? []).Select(item => new NeighborResult(
+        return [.. (envelope.Items ?? []).Select(item => new NeighborResult(
             item.Node.ToModel(vocabulary.KindName(item.Node.KindId)),
             item.Edge.ToModel(item.Edge.EdgeType ?? vocabulary.EdgeTypeName(item.Edge.EdgeTypeId)),
             string.Equals(item.Direction, "outgoing", StringComparison.OrdinalIgnoreCase)
                 ? EdgeDirection.Outgoing
-                : EdgeDirection.Incoming)).ToArray();
+                : EdgeDirection.Incoming))];
     }
 
     public async Task<IReadOnlyList<NodeKindDefinition>> GetKindsAsync(
@@ -251,7 +251,7 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
-        var path = $"api/graph?maxNodes={query.EffectiveMaxNodes}&maxEdges={query.EffectiveMaxEdges}";
+        string path = $"api/graph?maxNodes={query.EffectiveMaxNodes}&maxEdges={query.EffectiveMaxEdges}";
         if (query.Newest)
         {
             path += "&newest=true";
@@ -305,12 +305,11 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
 
         return new PlanResult(
             result.Goal?.ToModel(vocabulary.KindName(result.Goal.KindId)),
-            (result.Tasks ?? [])
+            [.. (result.Tasks ?? [])
                 .Select(item => new PlanTaskResult(
                     item.Key,
                     item.Node.ToModel(vocabulary.KindName(item.Node.KindId)),
-                    dependencies.GetValueOrDefault(item.Key) ?? []))
-                .ToArray());
+                    dependencies.GetValueOrDefault(item.Key) ?? []))]);
     }
 
     public async Task<KnowledgeNode> CreateTaskAsync(
@@ -448,7 +447,7 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
             return;
         }
 
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        string body = await response.Content.ReadAsStringAsync(cancellationToken);
         throw response.StatusCode switch
         {
             HttpStatusCode.NotFound => new KnowledgeNotFoundException(body),
@@ -596,10 +595,9 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
                 type.Resolves,
                 type.SingleOutgoing)
             {
-                Pairs = (type.Pairs ?? [])
+                Pairs = [.. (type.Pairs ?? [])
                     .Where(pair => pair.Length == 2)
-                    .Select(pair => new EdgeKindPair(pair[0], pair[1]))
-                    .ToArray(),
+                    .Select(pair => new EdgeKindPair(pair[0], pair[1]))],
                 InverseName = type.InverseName,
                 Symmetric = type.Symmetric,
                 Acyclic = type.Acyclic,
@@ -608,29 +606,28 @@ public sealed class HttpKnowledgeGraph : IKnowledgeGraph, IDisposable
                 Deprecated = type.Deprecated,
             });
 
-            Kinds = kinds
+            Kinds = [.. kinds
                 .Select(kind => new NodeKindDefinition((int)kind.Id, kind.Name, kind.Description ?? string.Empty)
                 {
                     RequiredProps = kind.RequiredProps ?? [],
                     Traits = kind.Traits ?? [],
                     Source = kind.Source ?? KnowledgeVocabularyCatalog.CorePack,
                     Deprecated = kind.Deprecated,
-                })
-                .ToArray();
-            EdgeTypes = _edgeTypesById.Values.ToArray();
+                })];
+            EdgeTypes = [.. _edgeTypesById.Values];
         }
 
         public IReadOnlyList<NodeKindDefinition> Kinds { get; }
 
         public IReadOnlyList<EdgeTypeDefinition> EdgeTypes { get; }
 
-        public long KindId(string kind) => _kindIds.TryGetValue(kind, out var id)
+        public long KindId(string kind) => _kindIds.TryGetValue(kind, out long id)
             ? id
             : throw new KnowledgeValidationException($"unknown node kind '{kind}'");
 
         public string KindName(long id) => _kindNames.GetValueOrDefault(id, $"kind-{id}");
 
-        public long EdgeTypeId(string edgeType) => _edgeTypeIds.TryGetValue(edgeType, out var id)
+        public long EdgeTypeId(string edgeType) => _edgeTypeIds.TryGetValue(edgeType, out long id)
             ? id
             : throw new KnowledgeValidationException($"unknown edge type '{edgeType}'");
 

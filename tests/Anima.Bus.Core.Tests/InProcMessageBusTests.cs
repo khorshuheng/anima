@@ -31,7 +31,7 @@ public sealed class InProcMessageBusTests
     public async Task Handler_failure_is_retried_and_then_dead_lettered()
     {
         await using var bus = CreateBus();
-        var attempts = 0;
+        int attempts = 0;
         var deadLetter = new TaskCompletionSource<MessageEnvelope>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var failing = await bus.SubscribeAsync(

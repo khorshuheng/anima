@@ -10,7 +10,7 @@ namespace Anima.Knowledge;
 /// </summary>
 public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
 {
-    private readonly object _gate = new();
+    private readonly Lock _gate = new();
     private readonly KnowledgeOptions _options;
     private readonly ILogger<InMemoryKnowledgeGraph> _logger;
     private readonly Dictionary<long, NodeState> _nodes = [];
@@ -147,7 +147,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
         cancellationToken.ThrowIfCancellationRequested();
-        var terms = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] terms = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (terms.Length == 0)
         {
             return Task.FromResult(new NodePage([], 0, 0, 0));
@@ -160,7 +160,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             var scored = new List<(NodeState Node, int Score)>();
             foreach (var node in candidates)
             {
-                var score = terms.Count(term => Matches(node, term));
+                int score = terms.Count(term => Matches(node, term));
                 if (score > 0)
                 {
                     scored.Add((node, score));
@@ -172,8 +172,8 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
                 .ThenBy(pair => pair.Node.Id)
                 .ToList();
 
-            var limit = ClampLimit(effective.Limit);
-            var offset = Math.Max(effective.Offset, 0);
+            int limit = ClampLimit(effective.Limit);
+            int offset = Math.Max(effective.Offset, 0);
             var items = ordered
                 .Skip(offset)
                 .Take(limit)
@@ -227,7 +227,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         cancellationToken.ThrowIfCancellationRequested();
         lock (_gate)
         {
-            var type = Normalize(edgeType);
+            string type = Normalize(edgeType);
             var edge = _edges.Values.FirstOrDefault(candidate =>
                 candidate.Source == source &&
                 candidate.Destination == destination &&
@@ -295,7 +295,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         lock (_gate)
         {
             return Task.FromResult<IReadOnlyList<NodeKindDefinition>>(
-                _kinds.Values.Where(kind => !kind.Deprecated).OrderBy(kind => kind.Id).ToArray());
+                [.. _kinds.Values.Where(kind => !kind.Deprecated).OrderBy(kind => kind.Id)]);
         }
     }
 
@@ -306,7 +306,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         lock (_gate)
         {
             return Task.FromResult<IReadOnlyList<EdgeTypeDefinition>>(
-                _edgeTypes.Values.Where(type => !type.Deprecated).OrderBy(type => type.Id).ToArray());
+                [.. _edgeTypes.Values.Where(type => !type.Deprecated).OrderBy(type => type.Id)]);
         }
     }
 
@@ -322,10 +322,10 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
                 connected.Add(edge.Destination);
             }
 
-            var unanchored = _nodes.Values.Count(node =>
+            int unanchored = _nodes.Values.Count(node =>
                 _plannableKinds.Contains(node.Kind) && !IsAnchored(node));
 
-            var duplicatePairs = _edges.Values
+            int duplicatePairs = _edges.Values
                 .GroupBy(edge => (edge.Source, edge.Destination, edge.EdgeType))
                 .Count(group => group.Count() > 1);
 
@@ -431,12 +431,12 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
 
             AddEdgeCore(node.Id, parentId, KnowledgeEdgeTypes.PartOf);
 
-            foreach (var dependency in draft.DependsOn ?? [])
+            foreach (long dependency in draft.DependsOn ?? [])
             {
                 AddEdgeCore(node.Id, dependency, KnowledgeEdgeTypes.DependsOn);
             }
 
-            foreach (var affect in draft.Affects ?? [])
+            foreach (long affect in draft.Affects ?? [])
             {
                 AddEdgeCore(node.Id, affect, KnowledgeEdgeTypes.Affects);
             }
@@ -533,15 +533,15 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         foreach (var task in tasks)
         {
             var node = created[task.Key];
-            var parentId = task.Parent is { } parentKey ? created[parentKey].Id : goal.Id;
+            long parentId = task.Parent is { } parentKey ? created[parentKey].Id : goal.Id;
             AddEdgeCore(node.Id, parentId, KnowledgeEdgeTypes.PartOf);
 
-            foreach (var dependency in task.DependsOn ?? [])
+            foreach (string dependency in task.DependsOn ?? [])
             {
                 AddEdgeCore(node.Id, created[dependency].Id, KnowledgeEdgeTypes.DependsOn);
             }
 
-            foreach (var affect in task.Affects ?? [])
+            foreach (long affect in task.Affects ?? [])
             {
                 AddEdgeCore(node.Id, affect, KnowledgeEdgeTypes.Affects);
             }
@@ -564,8 +564,8 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
     {
         var resolved = ResolvedIds();
         var matching = FilterCandidates(query, resolved).ToList();
-        var limit = ClampLimit(query.Limit);
-        var offset = Math.Max(query.Offset, 0);
+        int limit = ClampLimit(query.Limit);
+        int offset = Math.Max(query.Offset, 0);
 
         var items = matching
             .OrderBy(node => node.Id)
@@ -590,7 +590,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
 
         if (!string.IsNullOrWhiteSpace(query.Kind))
         {
-            var kind = Normalize(query.Kind);
+            string kind = Normalize(query.Kind);
             candidates = candidates.Where(node =>
                 string.Equals(node.Kind, kind, StringComparison.OrdinalIgnoreCase));
         }
@@ -598,7 +598,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         if (query.Properties is { Count: > 0 } properties)
         {
             candidates = candidates.Where(node => properties.All(pair =>
-                node.Properties.TryGetValue(pair.Key, out var value) &&
+                node.Properties.TryGetValue(pair.Key, out string? value) &&
                 string.Equals(value, pair.Value, StringComparison.Ordinal)));
         }
 
@@ -619,7 +619,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
     /// </summary>
     private HashSet<long> Reachable(long start, string? via, string? descend)
     {
-        var viaType = CanonicalEdgeType(via);
+        string? viaType = CanonicalEdgeType(via);
         var hop = new HashSet<long>();
         foreach (var edge in _edges.Values)
         {
@@ -647,12 +647,12 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         // descend narrows away from the hop nodes. Children are always the edge's
         // source side (they point at their parent), so naming the relation by its
         // inverse changes which edges match, never the walk direction.
-        var descendType = descendResolution.Definition.Name;
+        string descendType = descendResolution.Definition.Name;
         var reachable = new HashSet<long>(hop);
         var queue = new Queue<long>(hop);
         while (queue.Count > 0)
         {
-            var current = queue.Dequeue();
+            long current = queue.Dequeue();
             foreach (var edge in _edges.Values)
             {
                 if (!string.Equals(edge.EdgeType, descendType, StringComparison.OrdinalIgnoreCase))
@@ -684,19 +684,17 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             return [];
         }
 
-        return _edges.Values
+        return [.. _edges.Values
             .Where(edge => resolvingTypes.Contains(edge.EdgeType))
-            .Select(edge => edge.Destination)
-            .ToHashSet();
+            .Select(edge => edge.Destination)];
     }
 
     private void EnsureAnchor(NodeState goal, PlanAnchor anchor)
     {
-        var existing = _edges.Values
+        long[] existing = [.. _edges.Values
             .Where(edge => edge.Source == goal.Id &&
                            string.Equals(edge.EdgeType, anchor.EdgeType, StringComparison.OrdinalIgnoreCase))
-            .Select(edge => edge.Destination)
-            .ToArray();
+            .Select(edge => edge.Destination)];
 
         if (existing.Length == 0)
         {
@@ -739,7 +737,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
 
     private NodeState CreateNodeCore(NodeDraft draft)
     {
-        var kind = Normalize(draft.Kind);
+        string kind = Normalize(draft.Kind);
         if (!_kinds.TryGetValue(kind, out var kindDefinition))
         {
             if (!_options.AllowAdHocKinds)
@@ -747,7 +745,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
                 throw new KnowledgeValidationException($"unknown node kind '{draft.Kind}'");
             }
 
-            var nextId = _kinds.Count == 0 ? 1 : _kinds.Values.Max(existing => existing.Id) + 1;
+            int nextId = _kinds.Count == 0 ? 1 : _kinds.Values.Max(existing => existing.Id) + 1;
             kindDefinition = new NodeKindDefinition(nextId, kind, "Ad-hoc kind.");
             _kinds[kind] = kindDefinition;
             _logger.LogInformation("Registered ad-hoc node kind {Kind}.", kind);
@@ -783,7 +781,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
     {
         var source = RequireNode(sourceId);
         var destination = RequireNode(destinationId);
-        var typeName = Normalize(edgeType);
+        string typeName = Normalize(edgeType);
 
         if (!_edgeTypes.TryGetValue(typeName, out var definition))
         {
@@ -896,7 +894,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
         queue.Enqueue(from);
         while (queue.Count > 0)
         {
-            var current = queue.Dequeue();
+            long current = queue.Dequeue();
             foreach (var edge in _edges.Values)
             {
                 if (edge.Source != current ||
@@ -949,7 +947,7 @@ public sealed class InMemoryKnowledgeGraph : IKnowledgeGraph
             return null;
         }
 
-        return _vocabulary.TryGetCanonicalEdgeTypeName(name, out var canonical)
+        return _vocabulary.TryGetCanonicalEdgeTypeName(name, out string? canonical)
             ? canonical
             : Normalize(name);
     }

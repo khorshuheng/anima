@@ -45,7 +45,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
 
         if (script is null || diagnostics.Any(diagnostic => diagnostic.IsError))
         {
-            var error = string.Join(
+            string error = string.Join(
                 "; ",
                 diagnostics.Where(diagnostic => diagnostic.IsError).Select(diagnostic => diagnostic.Message));
             return new ScriptRunResult(
@@ -65,16 +65,16 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
         }
 
         var results = new List<ScriptStepResult>();
-        for (var index = 0; index < script.Steps.Count; index++)
+        for (int index = 0; index < script.Steps.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var step = script.Steps[index];
-            var action = ActionName(step);
+            string action = ActionName(step);
             var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                var output = await ExecuteAsync(
+                string? output = await ExecuteAsync(
                     step,
                     session,
                     variables,
@@ -121,7 +121,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
         int index,
         CancellationToken cancellationToken)
     {
-        var resolve = (string value) => ResolveVariables(value, variables, diagnostics, index);
+        string resolve(string value) => ResolveVariables(value, variables, diagnostics, index);
 
         switch (step)
         {
@@ -246,7 +246,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                     {
                         // An empty string here would silently hide a write whose
                         // response was never readable.
-                        var reason = response.Detail is { } detail
+                        string reason = response.Detail is { } detail
                             ? $"the body was not retained ({detail})"
                             : "the response was empty, or the page navigated before the body could be read";
 
@@ -281,9 +281,9 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 }
 
             case ExtractStep extract:
-                var name = resolve(extract.Name);
-                var target = resolve(extract.Target);
-                var value = extract.Attribute is null or "text"
+                string name = resolve(extract.Name);
+                string target = resolve(extract.Target);
+                string? value = extract.Attribute is null or "text"
                     ? await session.GetTextAsync(target, cancellationToken)
                     : await session.GetAttributeAsync(target, resolve(extract.Attribute), cancellationToken);
                 variables[name] = value ?? string.Empty;
@@ -340,7 +340,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
     {
         if (expect.Url is { } url)
         {
-            var expected = resolve(url);
+            string expected = resolve(url);
             if (session.CurrentUrl is null ||
                 !session.CurrentUrl.Contains(expected, StringComparison.OrdinalIgnoreCase))
             {
@@ -351,9 +351,9 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
 
         if (expect.Target is { } target && expect.Text is { } text)
         {
-            var resolvedTarget = resolve(target);
-            var expected = resolve(text);
-            var actual = await session.GetTextAsync(resolvedTarget, cancellationToken);
+            string resolvedTarget = resolve(target);
+            string expected = resolve(text);
+            string? actual = await session.GetTextAsync(resolvedTarget, cancellationToken);
             if (actual is null || !actual.Contains(expected, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
@@ -363,7 +363,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
 
         if (expect.Value is { } value)
         {
-            var expected = resolve(value);
+            string expected = resolve(value);
             if (session.CurrentUrl is null ||
                 !string.Equals(session.CurrentUrl, expected, StringComparison.Ordinal))
             {
@@ -410,11 +410,11 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
 
         return VariablePattern.Replace(value, match =>
         {
-            var key = match.Groups[1].Value;
+            string key = match.Groups[1].Value;
             if (key.StartsWith("env.", StringComparison.OrdinalIgnoreCase))
             {
-                var environmentKey = key[4..];
-                var environmentValue = Environment.GetEnvironmentVariable(environmentKey);
+                string environmentKey = key[4..];
+                string? environmentValue = Environment.GetEnvironmentVariable(environmentKey);
                 if (environmentValue is null)
                 {
                     diagnostics.Add(new ScriptDiagnostic(
@@ -428,7 +428,7 @@ public sealed class YamlAutomationScriptRunner : IScriptRunner
                 return environmentValue;
             }
 
-            if (variables.TryGetValue(key, out var resolved))
+            if (variables.TryGetValue(key, out string? resolved))
             {
                 return resolved;
             }

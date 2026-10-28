@@ -80,8 +80,8 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
         ArgumentNullException.ThrowIfNull(handler);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        var id = $"sub-{Interlocked.Increment(ref _subscriptionCounter)}";
-        var capacity = options?.Capacity ?? _options.SubscriptionCapacity;
+        string id = $"sub-{Interlocked.Increment(ref _subscriptionCounter)}";
+        int capacity = options?.Capacity ?? _options.SubscriptionCapacity;
         var channel = Channel.CreateBounded<MessageEnvelope>(new BoundedChannelOptions(capacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -127,7 +127,7 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
         MessageEnvelope envelope,
         CancellationToken cancellationToken)
     {
-        var attempt = 0;
+        int attempt = 0;
         while (true)
         {
             attempt++;
@@ -229,7 +229,7 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
             return tracked;
         }
 
-        var reserved = Interlocked.Increment(ref _topicSlots);
+        int reserved = Interlocked.Increment(ref _topicSlots);
         if (reserved > _options.MaxTrackedTopics)
         {
             Interlocked.Decrement(ref _topicSlots);
@@ -344,7 +344,7 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
                 return;
             }
 
-            var reserved = Interlocked.Increment(ref count);
+            int reserved = Interlocked.Increment(ref count);
             if (reserved > maximum)
             {
                 Interlocked.Decrement(ref count);
@@ -359,20 +359,26 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
 
         public BusTopicSnapshot ToSnapshot()
         {
-            var lastTimestamp = Interlocked.Read(ref _lastTimestampMilliseconds);
+            long lastTimestamp = Interlocked.Read(ref _lastTimestampMilliseconds);
             return new BusTopicSnapshot(
                 topic,
                 Interlocked.Read(ref _publishedCount),
                 lastTimestamp == 0 ? null : DateTimeOffset.FromUnixTimeMilliseconds(lastTimestamp),
-                _typeNames.Keys.Order(StringComparer.Ordinal).ToArray(),
-                _senders.Keys.Order(StringComparer.Ordinal).ToArray());
+                [.. _typeNames.Keys.Order(StringComparer.Ordinal)],
+                [.. _senders.Keys.Order(StringComparer.Ordinal)]);
         }
     }
 
-    private sealed class Subscription : IAsyncDisposable
+    private sealed class Subscription(
+        InProcMessageBus bus,
+        string id,
+        string name,
+        string pattern,
+        Func<MessageEnvelope, CancellationToken, Task> handler,
+        Channel<MessageEnvelope> channel) : IAsyncDisposable
     {
-        private readonly InProcMessageBus _bus;
-        private readonly Channel<MessageEnvelope> _channel;
+        private readonly InProcMessageBus _bus = bus;
+        private readonly Channel<MessageEnvelope> _channel = channel;
         private readonly CancellationTokenSource _cts = new();
         private Task? _pump;
         private long _deliveredCount;
@@ -380,38 +386,19 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
         private long _failedCount;
         private long _lastActivityMilliseconds;
 
-        public Subscription(
-            InProcMessageBus bus,
-            string id,
-            string name,
-            string pattern,
-            Func<MessageEnvelope, CancellationToken, Task> handler,
-            Channel<MessageEnvelope> channel)
-        {
-            _bus = bus;
-            Id = id;
-            Name = name;
-            Pattern = pattern;
-            Handler = handler;
-            _channel = channel;
-        }
+        public string Id { get; } = id;
 
-        public string Id { get; }
+        public string Name { get; } = name;
 
-        public string Name { get; }
+        public string Pattern { get; } = pattern;
 
-        public string Pattern { get; }
-
-        public Func<MessageEnvelope, CancellationToken, Task> Handler { get; }
+        public Func<MessageEnvelope, CancellationToken, Task> Handler { get; } = handler;
 
         public ChannelWriter<MessageEnvelope> Writer => _channel.Writer;
 
         public ChannelReader<MessageEnvelope> Reader => _channel.Reader;
 
-        public void Start(Func<CancellationToken, Task> pump)
-        {
-            _pump = Task.Run(() => pump(_cts.Token));
-        }
+        public void Start(Func<CancellationToken, Task> pump) => _pump = Task.Run(() => pump(_cts.Token));
 
         public void RecordDelivered()
         {
@@ -433,7 +420,7 @@ public sealed class InProcMessageBus : IMessageBus, IBusDiagnostics, IAsyncDispo
 
         public BusSubscriptionSnapshot ToSnapshot()
         {
-            var lastActivity = Interlocked.Read(ref _lastActivityMilliseconds);
+            long lastActivity = Interlocked.Read(ref _lastActivityMilliseconds);
             return new BusSubscriptionSnapshot(
                 Id,
                 Name,

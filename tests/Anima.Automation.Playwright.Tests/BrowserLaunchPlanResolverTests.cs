@@ -273,7 +273,7 @@ public sealed class BrowserLaunchPlanResolverTests
 
         return BrowserLaunchPlanResolver.Resolve(
             options,
-            name => environment is not null && environment.TryGetValue(name, out var value) ? value : null,
+            name => environment is not null && environment.TryGetValue(name, out string? value) ? value : null,
             locator);
     }
 }
